@@ -18,6 +18,9 @@ import kotlinx.coroutines.launch
 import okhttp3.Cookie
 import java.time.Duration
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 
 /**
  * 共享内置 API 客户端管理器。
@@ -70,6 +73,14 @@ class EmbeddedClientManager(
     private var sharedClient: SharedClient? = null
     private val sharedSessionGeneration = AtomicLong(0L)
     private val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    // Process-owned: candidate clients share this executor and must not shut it down on close.
+    // Idle workers expire so logging out leaves no permanent SDK worker threads behind.
+    private val clientExecutor = EmbeddedTaskExecutor(
+        ThreadPoolExecutor(2, 2, 30L, TimeUnit.SECONDS, LinkedBlockingQueue()).apply {
+            allowCoreThreadTimeOut(true)
+        },
+        onFailure = { log("内置 API 后台初始化失败，可重试请求：${it.message}") },
+    )
 
     fun getClient(): JmApiClient {
         return getSharedClient().client
@@ -166,6 +177,7 @@ class EmbeddedClientManager(
     ): JmApiClient {
         val config = JmConfiguration.Builder()
             .clientType(ClientType.API)
+            .executor(clientExecutor)
             .timeout(Duration.ofSeconds(20))
             .imageTimeout(Duration.ofSeconds(60))
             .downloadThreadPoolSize(2)

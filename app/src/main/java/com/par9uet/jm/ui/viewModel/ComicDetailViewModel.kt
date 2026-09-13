@@ -4,7 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
-import androidx.paging.cachedIn
 import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.data.models.ComicChapter
 import com.par9uet.jm.download.coordinator.DownloadManager
@@ -384,27 +383,12 @@ class ComicDetailViewModel(
 
     private fun currentAccountId(): Int = favoriteSession.currentAccountId()
 
-    private val _commentComicIdState = MutableStateFlow(0)
-    val commentComicIdState = _commentComicIdState.asStateFlow()
-
-    @OptIn(ExperimentalCoroutinesApi::class)
-    val commentPager = _commentComicIdState.flatMapLatest { comicId ->
-        Pager(
-            config = PagingConfig(pageSize = 20, prefetchDistance = 6, initialLoadSize = 20),
-            pagingSourceFactory = {
-                ComicCommentPagingSource(
-                    comicRepository,
-                    comicId
-                )
-            }
-        ).flow
-    }.cachedIn(viewModelScope)
-
-    fun changeCommentComicId(comicId: Int) {
-        _commentComicIdState.update {
-            comicId
-        }
-    }
+    // Each screen remembers its own flow. A shared cached flow replays the previous comic's
+    // pages, and Paging keeps those items visible until the new refresh finishes.
+    fun commentPager(comicId: Int) = Pager(
+        config = PagingConfig(pageSize = 20, prefetchDistance = 6, initialLoadSize = 20),
+        pagingSourceFactory = { ComicCommentPagingSource(comicRepository, comicId) },
+    ).flow
 
     private val _commentComicState = MutableStateFlow(CommonUIState(data = null))
     val commentComicState = _commentComicState.asStateFlow()

@@ -50,7 +50,7 @@ class DohManager(
     val latencyState = _latencyState.asStateFlow()
 
     @Volatile
-    private var sessionEnabled = false
+    private var sessionEnabled = dohPrefs.doh.value.let { it.enabled && it.autoStart }
 
     @Volatile
     private var resolverKey = ""
@@ -150,9 +150,14 @@ class DohManager(
     suspend fun init() {
         val setting = dohPrefs.doh.value
         sessionEnabled = setting.enabled && setting.autoStart
-        rebuildResolver()
+        // A first screen request may already have created it. Reuse that resolver so startup
+        // does not close it and cancel the requests that are restoring the reader.
+        ensureResolver()
     }
 
+    // Rebuild publishes the key before constructing the TLS client. Readers must take the
+    // same lock or they can accept the new key while still seeing the old (possibly null) resolver.
+    @Synchronized
     private fun ensureResolver(): DohResolver? {
         val setting = dohPrefs.doh.value
         val key = setting.resolverKey(sessionEnabled)

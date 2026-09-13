@@ -308,7 +308,9 @@ fun ComicDetailScreen(
     val requestedComic = comicDetailState.data?.takeIf { it.id == id }
     val readHistory by readHistoryManager.readHistoryState.collectAsState()
     val authState by userManager.authState.collectAsState()
-    val commentLazyPagingItems = comicDetailViewModel.commentPager.collectAsLazyPagingItems()
+    val commentLazyPagingItems = remember(id, comicDetailViewModel) {
+        comicDetailViewModel.commentPager(id)
+    }.collectAsLazyPagingItems()
     val commentInputFocusRequester = remember { FocusRequester() }
     var showDownloadChapterDialog by remember { mutableStateOf(false) }
     var selectedChapterIds by remember { mutableStateOf<Set<Int>>(emptySet()) }
@@ -348,7 +350,6 @@ fun ComicDetailScreen(
     }
 
     LaunchedEffect(id) {
-        comicDetailViewModel.changeCommentComicId(id)
         if (comicDetailState.data?.id != id) {
             comicDetailViewModel.getComicDetail(id)
         }

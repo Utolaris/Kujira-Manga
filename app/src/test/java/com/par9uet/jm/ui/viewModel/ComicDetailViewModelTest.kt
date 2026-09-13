@@ -1,6 +1,9 @@
 package com.par9uet.jm.ui.viewModel
 
 import androidx.paging.PagingSource
+import androidx.paging.PagingDataEvent
+import androidx.paging.PagingDataPresenter
+import androidx.paging.LoadState
 import androidx.paging.PagingState
 import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.data.models.ComicChapter
@@ -29,11 +32,13 @@ import com.par9uet.jm.data.models.ComicPage
 import com.par9uet.jm.data.models.ComicPageList
 import com.par9uet.jm.data.models.ComicSearchPage
 import com.par9uet.jm.data.models.CommentPage
+import com.par9uet.jm.data.models.Comment
 import com.par9uet.jm.data.models.HomeComicSwiperItem
 import com.par9uet.jm.data.models.WeekData
 import com.par9uet.jm.core.network.NetWorkResult
 import com.par9uet.jm.core.ToastManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
@@ -41,6 +46,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
@@ -72,6 +78,54 @@ class ComicDetailViewModelTest {
     @After
     fun tearDown() {
         Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `slow or failed comic B comments never display comic A and retry stays on B`() = runTest(scheduler) {
+        val environment = environment()
+        val pendingB = CompletableDeferred<NetWorkResult<CommentPage>>()
+        val commentA = commentFor(11)
+        val commentB = commentFor(22)
+        val requestedIds = mutableListOf<Int>()
+        var failB = true
+        environment.repository.comments = { id ->
+            requestedIds += id
+            when {
+                id == 11 -> NetWorkResult.Success(CommentPage(listOf(commentA), 1))
+                failB -> pendingB.await()
+                else -> NetWorkResult.Success(CommentPage(listOf(commentB), 1))
+            }
+        }
+        fun presenter() = object : PagingDataPresenter<Comment>(StandardTestDispatcher(scheduler)) {
+            override suspend fun presentPagingDataEvent(event: PagingDataEvent<Comment>) = Unit
+        }
+        val a = presenter()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            environment.viewModel.commentPager(11).collectLatest(a::collectFrom)
+        }
+        runCurrent()
+        assertEquals(listOf(commentA), a.snapshot().items)
+
+        val b = presenter()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            environment.viewModel.commentPager(22).collectLatest(b::collectFrom)
+        }
+        runCurrent()
+        assertTrue(b.loadStateFlow.value?.refresh is LoadState.Loading)
+        assertTrue(b.snapshot().items.isEmpty())
+        assertEquals(listOf(commentA), a.snapshot().items)
+
+        pendingB.complete(NetWorkResult.Error("slow API failed"))
+        runCurrent()
+        assertTrue(b.loadStateFlow.value?.refresh is LoadState.Error)
+        assertTrue(b.snapshot().items.isEmpty())
+
+        failB = false
+        b.retry()
+        runCurrent()
+        assertEquals(listOf(commentB), b.snapshot().items)
+        assertEquals(listOf(11, 22, 22), requestedIds)
+        assertEquals(listOf(commentA), a.snapshot().items)
     }
 
     @Test
@@ -265,6 +319,7 @@ class ComicDetailViewModelTest {
             testDownloadCoordinator(downloadDao),
         )
         val environment = TestEnvironment(
+            repository = repository,
             viewModel = ComicDetailViewModel(
                 comicRepository = repository,
                 toastManager = toastManager,
@@ -289,6 +344,7 @@ class ComicDetailViewModelTest {
     }
 
     private data class TestEnvironment(
+        val repository: StubComicRepository,
         val viewModel: ComicDetailViewModel,
         val toastManager: ToastManager,
         val local: FakeFavoriteLocalData,
@@ -439,6 +495,7 @@ class ComicDetailViewModelTest {
     }
 
     private class StubComicRepository : ComicRepository {
+        var comments: suspend (Int) -> NetWorkResult<CommentPage> = { unused() }
         override suspend fun getComicDetail(id: Int): NetWorkResult<Comic> =
             NetWorkResult.Error("detail not needed")
 
@@ -451,7 +508,7 @@ class ComicDetailViewModelTest {
         override suspend fun getComicList(page: Int, order: ComicSearchOrderFilter, searchContent: String): NetWorkResult<ComicSearchPage> = unused()
         override suspend fun getWeekData(): NetWorkResult<WeekData> = unused()
         override suspend fun getWeekRecommendComicList(page: Int, categoryId: String, typeId: String): NetWorkResult<ComicPage> = unused()
-        override suspend fun getCommentList(page: Int, comicId: Int): NetWorkResult<CommentPage> = unused()
+        override suspend fun getCommentList(page: Int, comicId: Int): NetWorkResult<CommentPage> = comments(comicId)
         override suspend fun comment(content: String, comicId: Int, commentId: Int?): NetWorkResult<ActionResult> = unused()
         override suspend fun getComicIdsByTag(tagName: String, maxPages: Int): Set<Int> = emptySet()
 
@@ -460,6 +517,12 @@ class ComicDetailViewModelTest {
 
     private companion object {
         const val COMIC_ID = 11
+
+        fun commentFor(comicId: Int) = Comment(
+            userId = 1, comicId = comicId, id = comicId, time = "", content = "Comment $comicId",
+            username = "Reader", nickname = "", avatar = "", parentId = 0,
+            spoiler = false, replyCommentList = emptyList(),
+        )
 
         fun comic(isCollected: Boolean): Comic =
             Comic.create(COMIC_ID, "Comic", listOf("Author")).copy(isCollect = isCollected)

@@ -604,12 +604,13 @@ fun ComicCommentScreen(
     val mainNavController = LocalMainNavController.current
     val authState by userManager.authState.collectAsState()
     val commentInputFocusRequester = remember { FocusRequester() }
-    val commentLazyPagingItems = comicDetailViewModel.commentPager.collectAsLazyPagingItems()
+    val commentLazyPagingItems = remember(comicId, comicDetailViewModel) {
+        comicDetailViewModel.commentPager(comicId)
+    }.collectAsLazyPagingItems()
     var replyComment by remember(comicId) { mutableStateOf<Comment?>(null) }
     val comicDetailState by comicDetailViewModel.comicDetailState.collectAsState()
 
     LaunchedEffect(comicId) {
-        comicDetailViewModel.changeCommentComicId(comicId)
         if (comicDetailState.data?.id != comicId) {
             comicDetailViewModel.getComicDetail(comicId)
         }
@@ -620,7 +621,8 @@ fun ComicCommentScreen(
         }
     }
 
-    val comicTitle = comicDetailState.data?.let { "${it.name} · JM${it.id}" } ?: "评论"
+    val comicTitle = comicDetailState.data?.takeIf { it.id == comicId }
+        ?.let { "${it.name} · JM${it.id}" } ?: "评论"
     CommonScaffold(
         title = comicTitle,
         titleTopPadding = 8.dp,
