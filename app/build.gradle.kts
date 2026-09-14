@@ -99,7 +99,7 @@ android {
         }
     }
     compileOptions {
-        // Aligned with GraalVM 21.0.9 LTS language level (see gradle.properties).
+        // Aligned with the Eclipse Temurin 21 language level (see gradle.properties).
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
         isCoreLibraryDesugaringEnabled = true

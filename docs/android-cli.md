@@ -10,7 +10,7 @@
 | cmdline-tools | `…/cmdline-tools/latest` | `sdkmanager` / `avdmanager` / `apkanalyzer` |
 | platform-tools | `…/platform-tools` | `adb` |
 | build-tools | `…/build-tools/37.0.0` | `aapt` / `apksigner` |
-| JDK | `/opt/homebrew/opt/openjdk@21` | 跑 Gradle；**不要**用 GraalVM 当 `JAVA_HOME` |
+| JDK | `/Library/Java/JavaVirtualMachines/temurin-21.jdk` | 跑 Gradle（Eclipse Temurin 21）；**不要**用 GraalVM 当 `JAVA_HOME` |
 
 CLI 会自动探测 SDK（`ANDROID_HOME` → `ANDROID_SDK_ROOT` → 常见路径），并把上述 bin 加入 PATH。
 
@@ -63,7 +63,8 @@ eval "$(./scripts/android signing-env)"   # 导出 KUJIRA_MANGA_RELEASE_*_PASSWO
 1. **真机优先**：不带序列号时自动选唯一真机，忽略模拟器；多台真机会报错并列出。
 2. **安装默认覆盖安装**（`install -r -t`），保留登录/设置；只有插桩脚本的 `--fresh` 才卸载。
 3. **结果以输出流为准**，不要只看 adb 退出码（见 `docs/instrumented-tests.md`）。
-4. **JDK**：CLI 在缺省时会把 `JAVA_HOME` 指到 Homebrew OpenJDK 21。
+4. **JDK**：CLI 编译前会过 `scripts/jdk-guard.sh`，把 `JAVA_HOME` 锁到 Eclipse Temurin 21
+   （`brew install --cask temurin@21`）；解析不到合格 JDK 会直接失败并打印安装命令。
 5. 新调试能力请加进 `scripts/android`，并在本文件补一行用法，而不是另起碎片脚本。
 
 ## 与既有脚本的关系
@@ -71,7 +72,7 @@ eval "$(./scripts/android signing-env)"   # 导出 KUJIRA_MANGA_RELEASE_*_PASSWO
 | 脚本 | 关系 |
 |---|---|
 | `scripts/android` | **默认入口** |
-| `scripts/install-debug.sh` | 仍可用；逻辑与 `install-debug` 一致 |
+| `scripts/install-debug.sh` | 兼容入口，转调 `install-debug`（不再有第二份实现） |
 | `scripts/run-instrumented-tests.sh` | `./scripts/android test` 转调它；细粒度参数直接用原脚本 |
 
 ## 相关文档

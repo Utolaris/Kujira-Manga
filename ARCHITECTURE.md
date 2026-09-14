@@ -514,8 +514,10 @@ L4 设施，或反向依赖上层；`data.models` 是共享契约，不算违规
 ## 构建与密钥（2026-09-12 核对）
 
 - **语言级别**：Java / Kotlin bytecode **21**（`JvmTarget.JVM_21`，`source/targetCompatibility = 21`），
-  与本机 GraalVM 21.0.9 LTS 语言级对齐。
-- **构建 JDK**：Gradle daemon 必须使用标准 **OpenJDK 21**（如 Homebrew `openjdk@21`）。
+  与本机 Eclipse Temurin 21 语言级对齐（2026-09-14 由 GraalVM 21.0.9 切到 Temurin 21）。
+- **构建 JDK**：Gradle daemon 必须使用 **Eclipse Temurin 21**（`brew install --cask temurin@21`，
+  装在 `/Library/Java/JavaVirtualMachines/temurin-21.jdk`）。`scripts/jdk-guard.sh` 会在
+  编译前强制校验，Homebrew `openjdk@21` 只作为缺省兜底。
   不要用 GraalVM 当 `JAVA_HOME`：AGP 的 `JdkImageTransform` 会对
   `core-for-system-modules.jar` 跑 jlink，而 GraalVM 的 `java.base` 仍依赖 `jdk.internal.vm.ci`，变换会失败。
   `gradle/wrapper` 为 Gradle **9.7.1**，AGP **9.4.0**，KSP **2.3.12**。本地 `gradlew` 默认走 wrapper；

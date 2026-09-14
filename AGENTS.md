@@ -34,7 +34,9 @@
 
 ## 构建
 
-- JDK：Homebrew `openjdk@21`（`JAVA_HOME=/opt/homebrew/opt/openjdk@21`）。GraalVM 会挂 AGP `JdkImageTransform`。
+- JDK：**Eclipse Temurin 21**（`brew install --cask temurin@21`，装在
+  `/Library/Java/JavaVirtualMachines/temurin-21.jdk`）。GraalVM 会挂 AGP `JdkImageTransform`。
+  构建脚本由 `scripts/jdk-guard.sh` 强制校验（找不到合格 JDK 时直接失败并给出安装命令）。
 - SDK：`local.properties` → `/opt/homebrew/share/android-commandlinetools`。
 - 单测：`./gradlew :app:testDebugUnitTest`
 - Release 签名密码：环境变量 `KUJIRA_MANGA_RELEASE_STORE_PASSWORD` / `KUJIRA_MANGA_RELEASE_KEY_PASSWORD`。

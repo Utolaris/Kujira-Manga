@@ -60,7 +60,7 @@
 
 ### 环境
 
-- 语言级别 Java 21（构建请用标准 OpenJDK 21，不要用 GraalVM 当 Gradle daemon）
+- 语言级别 Java 21（构建请用 Eclipse Temurin 21：`brew install --cask temurin@21`；不要用 GraalVM 当 Gradle daemon）
 - Gradle Wrapper 9.7.1 / AGP 9.4.0 / Kotlin 2.3.20
 
 ### 装到手机
