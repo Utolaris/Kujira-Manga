@@ -45,6 +45,7 @@ import java.util.concurrent.TimeUnit
 class EmbeddedClientManager(
     private val cookieStorage: CookieStorage,
     private val dohManager: com.par9uet.jm.network.DohManager,
+    private val userStorage: com.par9uet.jm.storage.UserStorage,
 ) {
     sealed class EmbeddedLoginResult {
         /**
@@ -142,7 +143,11 @@ class EmbeddedClientManager(
      * 调用方（UserManager）必须在持有会话锁、且确认用户 session generation 仍然有效之后
      * 调用；本方法内部再用内置会话 generation 做第二道守卫。
      */
-    fun activateCandidateSession(cookies: List<Cookie>) {
+    /**
+     * @param username 可选。写入客户端内存中的登录名缓存；恢复 cookie 不会自动填充该字段，
+     * 而 `postComment`/`replyToComment` 在服务端已接受后仍会读取它。
+     */
+    fun activateCandidateSession(cookies: List<Cookie>, username: String? = null) {
         if (cookies.isEmpty()) return
         val persistenceGeneration = sharedSessionGeneration.get()
         synchronized(this) {
@@ -154,6 +159,7 @@ class EmbeddedClientManager(
         if (shared != null && isCurrentSession(shared.clientSessionGeneration)) {
             runCatching { shared.client.setCookies(cookies) }
                 .onFailure { log("EmbeddedClientManager: 同步活动客户端 cookie 失败：" + it.message) }
+            username?.let { cacheEmbeddedLoggedInUserName(shared.client, it) }
         }
     }
 
@@ -240,6 +246,10 @@ class EmbeddedClientManager(
         if (storedCookies.isEmpty()) return
         runCatching { client.setCookies(storedCookies) }
             .onFailure { log("EmbeddedClientManager: 恢复内置 API 会话失败：" + it.message) }
+        // setCookies does not populate the library's in-memory username; comment submit
+        // still needs it after a cold start with restored cookies.
+        val username = runCatching { userStorage.get().username }.getOrNull()
+        cacheEmbeddedLoggedInUserName(client, username.orEmpty())
     }
 
     private fun isCurrentSession(clientSessionGeneration: Long?): Boolean {

@@ -3,8 +3,9 @@
 [JM](https://jmcomic.plus) 第三方 Android 客户端。基于 [HongShi2333/jmcomic-next](https://github.com/HongShi2333/jmcomic-next) 持续维护，数据解析依赖 [JUKOMU/JMComic-Api-Java](https://github.com/JUKOMU/JMComic-Api-Java)。
 
 - 系统要求：Android 11（API 30）及以上
-- 当前版本：`1.4.3`（versionCode `143`）
+- 当前版本：`1.4.4`（versionCode `144`）
 - Release 包名：`jmcomic.plus`（与旧包名签名不同，系统会视为新应用，数据不会自动迁移）
+- 调试入口：`./scripts/android`（设备、安装、logcat、插桩测试等，见 [docs/android-cli.md](docs/android-cli.md)）
 
 ---
 
@@ -49,6 +50,7 @@
 ### 文档
 
 - [四层架构约束](ARCHITECTURE.md)
+- [Android 调试 CLI](docs/android-cli.md)（默认调试入口）
 - [真机插桩测试](docs/instrumented-tests.md)
 
 ### 环境
@@ -59,13 +61,17 @@
 ### 装到手机
 
 ```bash
-./scripts/install-debug.sh          # 自动选真机（忽略模拟器）
-./scripts/install-debug.sh <序列号>
+./scripts/android doctor           # 检查 SDK / 设备
+./scripts/android install-debug    # 编译并安装到唯一真机
+./scripts/android logcat
 ```
+
+仍兼容 `./scripts/install-debug.sh`；细粒度插桩测试用 `./scripts/android test` 或原脚本。
 
 ### 真机插桩测试
 
 ```bash
+./scripts/android test             # 等价 run-instrumented-tests.sh
 ./scripts/run-instrumented-tests.sh                      # 全量
 ./scripts/run-instrumented-tests.sh -p com.par9uet.jm.ui # 一个包
 ./scripts/run-instrumented-tests.sh -c <类名> -m <方法名>

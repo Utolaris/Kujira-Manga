@@ -2,6 +2,7 @@ package com.par9uet.jm
 
 import android.content.Context
 import android.os.Build
+import android.view.WindowManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -116,12 +117,31 @@ fun App(
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, appLock.enabled) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP && appLock.enabled) {
+            // ON_PAUSE (not only ON_STOP): leaving via home/recents must lock before the
+            // window freezes, otherwise the next foreground frame can flash the old UI.
+            if (appLock.enabled &&
+                (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP)
+            ) {
                 isLocked = true
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // FLAG_SECURE only while actually locked. ON_PAUSE already flips isLocked before the
+    // window freezes, so recents cannot capture unlocked content; unlocked usage may screenshot.
+    val secureWindowContext = LocalContext.current
+    DisposableEffect(isLocked) {
+        val window = secureWindowContext.findActivity()?.window
+        if (window != null) {
+            if (isLocked) {
+                window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            } else {
+                window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            }
+        }
+        onDispose { }
     }
 
     val showAppLock = !securityLoadBlocked && appLock.enabled && isLocked
@@ -141,70 +161,73 @@ fun App(
         }
     }
 
-    when {
-        securityLoadBlocked -> SettingsUnavailableScreen(
-            onRetry = { localSettingManager.reloadSettings() }
-        )
-
-        showOnboarding -> WelcomeScreen(
-            onComplete = {
-                isLocked = localSettingManager.appLock.value.enabled
-            }
-        )
-
-        showAppLock -> AppLockScreen(
-            unlockMode = appLock.unlockMode,
-            correctPassword = appLock.password,
-            correctPattern = appLock.pattern,
-            passwordLength = appLock.passwordLength,
-            onUnlock = { isLocked = false }
-        )
-
-    }
-    // 远端图片主机是 App 级环境值：在这里读一次，组件与页面只消费环境值，
-    // 避免每个看图的地方各自依赖 storage 端口。
-    val remoteImageHost by remoteConfigPreferences.remoteImageHost.collectAsState()
-    val koin = getKoin()
-    val detailLoader = remember(koin) {
-        ComicDetailLoader { id ->
-            withContext(Dispatchers.IO) {
-                val outcome = runCatching { koin.get<ComicRepository>().getComicDetail(id) }
-                // runCatching 会连 CancellationException 一起吞掉，把它当成"详情获取失败"
-                // 会让协程取消无法传播（经典坑）。必须原样抛出。
-                outcome.exceptionOrNull()?.let { error ->
-                    if (error is CancellationException) throw error
-                }
-                when (val result = outcome.getOrNull()) {
-                    is NetWorkResult.Success -> result.data
-                    else -> null
+    // Main content first, lock/onboarding/security overlay after: lock must win z-order
+    // if a frame ever composes both (recents restore, HyperOS resume animation).
+    Box(modifier = Modifier.fillMaxSize()) {
+        // 远端图片主机是 App 级环境值：在这里读一次，组件与页面只消费环境值，
+        // 避免每个看图的地方各自依赖 storage 端口。
+        val remoteImageHost by remoteConfigPreferences.remoteImageHost.collectAsState()
+        val koin = getKoin()
+        val detailLoader = remember(koin) {
+            ComicDetailLoader { id ->
+                withContext(Dispatchers.IO) {
+                    val outcome = runCatching { koin.get<ComicRepository>().getComicDetail(id) }
+                    // runCatching 会连 CancellationException 一起吞掉，把它当成"详情获取失败"
+                    // 会让协程取消无法传播（经典坑）。必须原样抛出。
+                    outcome.exceptionOrNull()?.let { error ->
+                        if (error is CancellationException) throw error
+                    }
+                    when (val result = outcome.getOrNull()) {
+                        is NetWorkResult.Success -> result.data
+                        else -> null
+                    }
                 }
             }
         }
-    }
-    CompositionLocalProvider(
-        LocalRemoteImageHost provides remoteImageHost,
-        LocalComicDetailLoader provides detailLoader,
-    ) {
-        RetainedMainNavigation(visible = !showOnboarding && !showAppLock && !securityLoadBlocked) { mainNavController ->
-            // 在根上准备"打开详情"的编排：先用列表项预置详情状态，再导航。
-            // ui/components 只读 CompositionLocal，不依赖 ViewModel。
-            val comicDetailViewModel: ComicDetailViewModel = koinActivityViewModel()
-            val detailOpener = remember(mainNavController, comicDetailViewModel) {
-                ComicDetailOpener { comic ->
-                    comicDetailViewModel.prepareDetail(comic)
-                    mainNavController.navigate("comicDetail/${comic.id}")
+        CompositionLocalProvider(
+            LocalRemoteImageHost provides remoteImageHost,
+            LocalComicDetailLoader provides detailLoader,
+        ) {
+            RetainedMainNavigation(visible = !showOnboarding && !showAppLock && !securityLoadBlocked) { mainNavController ->
+                // 在根上准备"打开详情"的编排：先用列表项预置详情状态，再导航。
+                // ui/components 只读 CompositionLocal，不依赖 ViewModel。
+                val comicDetailViewModel: ComicDetailViewModel = koinActivityViewModel()
+                val detailOpener = remember(mainNavController, comicDetailViewModel) {
+                    ComicDetailOpener { comic ->
+                        comicDetailViewModel.prepareDetail(comic)
+                        mainNavController.navigate("comicDetail/${comic.id}")
+                    }
+                }
+                CompositionLocalProvider(LocalComicDetailOpener provides detailOpener) {
+                    MainAppContent(
+                        mainNavController = mainNavController,
+                        clipboardAutoDetectEnabled = miscSettings.clipboardAutoDetectEnabled,
+                        localSettingManager = localSettingManager,
+                        toastManager = toastManager,
+                        showNsfwDialog = showNsfwDialog,
+                        onNsfwDismissed = { sessionNsfwDismissed = true },
+                    )
                 }
             }
-            CompositionLocalProvider(LocalComicDetailOpener provides detailOpener) {
-                MainAppContent(
-                    mainNavController = mainNavController,
-                    clipboardAutoDetectEnabled = miscSettings.clipboardAutoDetectEnabled,
-                    localSettingManager = localSettingManager,
-                    toastManager = toastManager,
-                    showNsfwDialog = showNsfwDialog,
-                    onNsfwDismissed = { sessionNsfwDismissed = true },
-                )
-            }
+        }
+        when {
+            securityLoadBlocked -> SettingsUnavailableScreen(
+                onRetry = { localSettingManager.reloadSettings() }
+            )
+
+            showOnboarding -> WelcomeScreen(
+                onComplete = {
+                    isLocked = localSettingManager.appLock.value.enabled
+                }
+            )
+
+            showAppLock -> AppLockScreen(
+                unlockMode = appLock.unlockMode,
+                correctPassword = appLock.password,
+                correctPattern = appLock.pattern,
+                passwordLength = appLock.passwordLength,
+                onUnlock = { isLocked = false }
+            )
         }
     }
 }

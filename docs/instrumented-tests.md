@@ -2,6 +2,8 @@
 
 JVM 测试覆盖不了真机行为：文件型 Room、真实文件系统 / SAF、`PdfDocument`、`WorkerParameters`。这些走 `app/src/androidTest`。
 
+> 日常调试请优先用统一 CLI：`./scripts/android test` / `./scripts/android test-class <FQCN>`，详见 [android-cli.md](./android-cli.md)。下文是底层脚本细节。
+
 ## 怎么跑
 
 ```bash

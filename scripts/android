@@ -1,0 +1,411 @@
+#!/usr/bin/env bash
+# jmcomic-plus 统一 Android 调试 CLI。
+# 后续所有真机/模拟器调试默认走本入口，不要再裸写 adb 长命令。
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_DIR"
+
+GRADLE_FLAGS="-Dhttp.proxyHost= -Dhttp.proxyPort= -Dhttps.proxyHost= -Dhttps.proxyPort="
+DEBUG_APPLICATION_ID="jmcomic.debug"
+RELEASE_APPLICATION_ID="jmcomic.plus"
+TEST_PACKAGE="jmcomic.debug.test"
+RUNNER="androidx.test.runner.AndroidJUnitRunner"
+
+# ---------------------------------------------------------------------------
+# SDK / PATH
+# ---------------------------------------------------------------------------
+
+detect_sdk() {
+  if [ -n "${ANDROID_HOME:-}" ] && [ -d "$ANDROID_HOME" ]; then
+    printf '%s\n' "$ANDROID_HOME"; return 0
+  fi
+  if [ -n "${ANDROID_SDK_ROOT:-}" ] && [ -d "$ANDROID_SDK_ROOT" ]; then
+    printf '%s\n' "$ANDROID_SDK_ROOT"; return 0
+  fi
+  local candidate
+  for candidate in \
+    "$HOME/Library/Android/sdk" \
+    "/opt/homebrew/share/android-commandlinetools" \
+    "/usr/local/share/android-commandlinetools" \
+    "$HOME/Android/Sdk"
+  do
+    if [ -d "$candidate/platforms" ] || [ -d "$candidate/platform-tools" ]; then
+      printf '%s\n' "$candidate"; return 0
+    fi
+  done
+  return 1
+}
+
+SDK_ROOT="$(detect_sdk)" || {
+  echo "找不到 Android SDK。请安装 android-commandlinetools，或设置 ANDROID_HOME。" >&2
+  exit 1
+}
+export ANDROID_HOME="$SDK_ROOT"
+export ANDROID_SDK_ROOT="$SDK_ROOT"
+
+CMDLINE_BIN="$SDK_ROOT/cmdline-tools/latest/bin"
+[ -d "$CMDLINE_BIN" ] || CMDLINE_BIN="$SDK_ROOT/cmdline-tools/bin"
+PLATFORM_TOOLS="$SDK_ROOT/platform-tools"
+BUILD_TOOLS="$(ls -1d "$SDK_ROOT"/build-tools/* 2>/dev/null | sort -V | tail -1 || true)"
+
+export PATH="$CMDLINE_BIN:$PLATFORM_TOOLS:${BUILD_TOOLS:+$BUILD_TOOLS:}$PATH"
+
+ADB="${PLATFORM_TOOLS}/adb"
+SDKMANAGER="${CMDLINE_BIN}/sdkmanager"
+AVDMANAGER="${CMDLINE_BIN}/avdmanager"
+APKANALYZER="${CMDLINE_BIN}/apkanalyzer"
+AAPT="${BUILD_TOOLS:+$BUILD_TOOLS/aapt}"
+APKSIGNER="${BUILD_TOOLS:+$BUILD_TOOLS/apksigner}"
+[ -x "$ADB" ] || ADB="$(command -v adb)"
+
+# ---------------------------------------------------------------------------
+# Device helpers（与 install-debug.sh 同一套真机优先逻辑）
+# ---------------------------------------------------------------------------
+
+is_emulator() {
+  local serial="$1" qemu characteristics
+  case "$serial" in
+    emulator-*) return 0 ;;
+  esac
+  qemu="$("$ADB" -s "$serial" shell getprop ro.kernel.qemu </dev/null 2>/dev/null | tr -d '\r\n' || true)"
+  if [ "$qemu" = "1" ]; then
+    return 0
+  fi
+  characteristics="$("$ADB" -s "$serial" shell getprop ro.build.characteristics </dev/null 2>/dev/null | tr -d '\r\n' || true)"
+  case "$characteristics" in
+    *emulator*) return 0 ;;
+  esac
+  return 1
+}
+
+device_table() {
+  local serial state details kind
+  while read -r serial state details; do
+    [ -z "$serial" ] && continue
+    if [ "$state" != "device" ]; then
+      printf '  %s [%s]\n' "$serial" "$state"
+      continue
+    fi
+    if is_emulator "$serial"; then kind="模拟器"; else kind="真机"; fi
+    local model
+    model="$("$ADB" -s "$serial" shell getprop ro.product.model </dev/null 2>/dev/null | tr -d '\r\n' || true)"
+    printf '  %s [%s]%s\n' "$serial" "$kind" "${model:+ — $model}"
+  done < <("$ADB" devices -l | sed -n '2,$p')
+}
+
+list_phones() {
+  local serial state
+  while read -r serial state; do
+    [ -z "$serial" ] || [ "$state" != "device" ] && continue
+    is_emulator "$serial" && continue
+    printf '%s\n' "$serial"
+  done < <("$ADB" devices | sed -n '2,$p')
+}
+
+select_device() {
+  local requested="${1:-}" state
+  if [ -n "$requested" ]; then
+    state="$("$ADB" -s "$requested" get-state 2>/dev/null || true)"
+    if [ "$state" != "device" ]; then
+      echo "设备 '$requested' 不可用（${state:-未连接}）。当前设备：" >&2
+      device_table >&2
+      return 1
+    fi
+    printf '%s\n' "$requested"
+    return 0
+  fi
+  local phones count
+  phones="$(list_phones)"
+  if [ -z "$phones" ]; then
+    echo "没有检测到真机。当前设备：" >&2
+    device_table >&2
+    echo "手机请打开「开发者选项 → 无线调试」并完成配对；USB 时确认已授权调试。" >&2
+    return 1
+  fi
+  count="$(printf '%s\n' "$phones" | wc -l | tr -d ' ')"
+  if [ "$count" -gt 1 ]; then
+    echo "检测到多台真机，请指定序列号：" >&2
+    printf '%s\n' "$phones" | sed 's/^/  /' >&2
+    return 1
+  fi
+  printf '%s\n' "$phones"
+}
+
+latest_apk() {
+  local dir="$1"
+  ls -t "$dir"/*.apk 2>/dev/null | head -1
+}
+
+require_gradle_jdk() {
+  if [ -z "${JAVA_HOME:-}" ] && [ -d /opt/homebrew/opt/openjdk@21 ]; then
+    export JAVA_HOME=/opt/homebrew/opt/openjdk@21
+  fi
+}
+
+usage() {
+  cat <<'USAGE'
+jmcomic-plus Android 调试 CLI
+
+用法：./scripts/android <命令> [参数]
+
+设备与环境
+  doctor                 检查 SDK / adb / JAVA_HOME / 设备
+  devices                列出设备（真机/模拟器）
+  sdk-list               已安装的 SDK 包
+  sdk-update [pkg...]    更新/安装 SDK 包（默认 platform-tools）
+
+安装与启动
+  install-debug [serial] 编译并安装 debug APK（默认真机）
+  install-release [serial] 安装已有 release APK（需已构建）
+  uninstall [serial]     卸载 debug 应用（保留数据需手动备份）
+  clear [serial]         清除 debug 应用数据
+  launch [serial]        启动 debug 主界面
+  stop [serial]          强制停止应用
+
+调试
+  logcat [serial] [-c]   实时 logcat；-c 先清空
+  screenshot [serial]    截图到 build/screenshot.png 并打开
+  screenrecord [serial] [秒]  录屏到 build/screen.mp4（默认 30s）
+  dumpsys [serial]       当前 Activity / 窗口摘要
+  bugreport [serial]     导出 bugreport zip
+
+分析
+  apk-info <apk>         包名 / 版本 / 权限摘要
+  apk-sign <apk>         签名证书信息
+
+测试
+  test [args...]         等价 ./scripts/run-instrumented-tests.sh
+  test-class <fqcn> [serial]  只跑一个插桩测试类
+
+HyperOS
+  appops-allow [serial]  允许 debug 包「后台弹出界面」(10021)
+
+示例
+  ./scripts/android doctor
+  ./scripts/android install-debug
+  ./scripts/android logcat
+  ./scripts/android test-class com.par9uet.jm.cache.atom.CacheFilesDeviceTest
+USAGE
+}
+
+cmd_doctor() {
+  echo "SDK        : $SDK_ROOT"
+  echo "cmdline    : ${CMDLINE_BIN}"
+  echo "platform   : ${PLATFORM_TOOLS} ($( [ -x "$ADB" ] && "$ADB" version 2>/dev/null | head -1 || echo missing ))"
+  echo "build-tools: ${BUILD_TOOLS:-none}"
+  echo "JAVA_HOME  : ${JAVA_HOME:-unset}"
+  require_gradle_jdk
+  echo "JAVA_HOME→ : ${JAVA_HOME:-unset}（assemble 需要 OpenJDK 21，勿用 GraalVM）"
+  echo "local.properties sdk.dir:"
+  grep '^sdk.dir=' local.properties 2>/dev/null || echo "  (missing)"
+  echo "设备："
+  device_table
+  if [ -x "$APKANALYZER" ]; then
+    echo "apkanalyzer: ok"
+  else
+    echo "apkanalyzer: missing"
+  fi
+}
+
+cmd_devices() {
+  device_table
+}
+
+cmd_sdk_list() {
+  "$SDKMANAGER" --list_installed
+}
+
+cmd_sdk_update() {
+  local pkgs=("$@")
+  if [ ${#pkgs[@]} -eq 0 ]; then
+    pkgs=("platform-tools")
+  fi
+  yes | "$SDKMANAGER" "${pkgs[@]}"
+}
+
+cmd_install_debug() {
+  local serial
+  serial="$(select_device "${1:-}")"
+  require_gradle_jdk
+  echo "==> 设备 $serial"
+  echo "==> assembleDebug"
+  ./gradlew $GRADLE_FLAGS assembleDebug --console=plain
+  local apk
+  apk="$(latest_apk app/build/outputs/apk/debug)"
+  [ -n "$apk" ] || { echo "未找到 debug APK" >&2; exit 1; }
+  echo "==> install $(basename "$apk")"
+  "$ADB" -s "$serial" install -r -t "$apk"
+  echo "==> 完成"
+}
+
+cmd_install_release() {
+  local serial
+  serial="$(select_device "${1:-}")"
+  local apk
+  apk="$(latest_apk app/build/outputs/apk/release)"
+  [ -n "$apk" ] || { echo "未找到 release APK，请先 assembleRelease" >&2; exit 1; }
+  "$ADB" -s "$serial" install -r "$apk"
+}
+
+cmd_uninstall() {
+  local serial
+  serial="$(select_device "${1:-}")"
+  "$ADB" -s "$serial" uninstall "$DEBUG_APPLICATION_ID" || true
+}
+
+cmd_clear() {
+  local serial
+  serial="$(select_device "${1:-}")"
+  "$ADB" -s "$serial" shell pm clear "$DEBUG_APPLICATION_ID"
+}
+
+cmd_launch() {
+  local serial
+  serial="$(select_device "${1:-}")"
+  "$ADB" -s "$serial" shell monkey -p "$DEBUG_APPLICATION_ID" -c android.intent.category.LAUNCHER 1 >/dev/null
+}
+
+cmd_stop() {
+  local serial
+  serial="$(select_device "${1:-}")"
+  "$ADB" -s "$serial" shell am force-stop "$DEBUG_APPLICATION_ID"
+}
+
+cmd_logcat() {
+  local serial clear=0
+  serial="$(select_device "${1:-}")" || exit 1
+  shift || true
+  if [ "${1:-}" = "-c" ]; then
+    clear=1
+    shift || true
+  fi
+  if [ "$clear" -eq 1 ]; then
+    "$ADB" -s "$serial" logcat -c
+  fi
+  "$ADB" -s "$serial" logcat "$@"
+}
+
+cmd_screenshot() {
+  local serial out
+  serial="$(select_device "${1:-}")"
+  mkdir -p build
+  out="build/screenshot.png"
+  "$ADB" -s "$serial" exec-out screencap -p > "$out"
+  echo "已保存 $out"
+  command -v open >/dev/null 2>&1 && open "$out" || true
+}
+
+cmd_screenrecord() {
+  local serial seconds="${2:-30}" out remote
+  serial="$(select_device "${1:-}")"
+  mkdir -p build
+  out="build/screen.mp4"
+  remote="/sdcard/jmcomic-screenrecord.mp4"
+  echo "==> 录屏 ${seconds}s（Ctrl+C 可提前结束）"
+  "$ADB" -s "$serial" shell screenrecord --time-limit "$seconds" "$remote" || true
+  "$ADB" -s "$serial" pull "$remote" "$out"
+  "$ADB" -s "$serial" shell rm -f "$remote"
+  echo "已保存 $out"
+}
+
+cmd_dumpsys() {
+  local serial
+  serial="$(select_device "${1:-}")"
+  "$ADB" -s "$serial" shell dumpsys activity activities | sed -n '1,80p'
+  echo "----"
+  "$ADB" -s "$serial" shell dumpsys window | rg -n 'mCurrentFocus|mFocusedApp' || true
+}
+
+cmd_bugreport() {
+  local serial out
+  serial="$(select_device "${1:-}")"
+  mkdir -p build
+  out="build/bugreport.zip"
+  echo "==> 生成 bugreport（可能较慢）"
+  "$ADB" -s "$serial" bugreport "$out"
+  echo "已保存 $out"
+}
+
+cmd_apk_info() {
+  local apk="${1:-}"
+  [ -n "$apk" ] && [ -f "$apk" ] || { echo "用法: apk-info <apk>" >&2; exit 1; }
+  if [ -n "$AAPT" ] && [ -x "$AAPT" ]; then
+    "$AAPT" dump badging "$apk" | sed -n '1,20p'
+  elif [ -x "$APKANALYZER" ]; then
+    "$APKANALYZER" manifest print "$apk" | sed -n '1,40p'
+  else
+    echo "缺少 aapt/apkanalyzer" >&2
+    exit 1
+  fi
+}
+
+cmd_apk_sign() {
+  local apk="${1:-}"
+  [ -n "$apk" ] && [ -f "$apk" ] || { echo "用法: apk-sign <apk>" >&2; exit 1; }
+  if [ -x "$APKSIGNER" ]; then
+    "$APKSIGNER" verify --print-certs "$apk"
+  else
+    echo "缺少 apksigner" >&2
+    exit 1
+  fi
+}
+
+cmd_test() {
+  exec ./scripts/run-instrumented-tests.sh "$@"
+}
+
+cmd_test_class() {
+  local class="${1:-}"
+  local serial="${2:-}"
+  [ -n "$class" ] || { echo "用法: test-class <完整类名> [serial]" >&2; exit 1; }
+  if [ -n "$serial" ]; then
+    exec ./scripts/run-instrumented-tests.sh -c "$class" "$serial"
+  else
+    exec ./scripts/run-instrumented-tests.sh -c "$class"
+  fi
+}
+
+cmd_appops_allow() {
+  local serial
+  serial="$(select_device "${1:-}")"
+  "$ADB" -s "$serial" shell appops set --user 0 "$DEBUG_APPLICATION_ID" 10021 allow
+  "$ADB" -s "$serial" shell appops set --user 0 "$TEST_PACKAGE" 10021 allow
+  "$ADB" -s "$serial" shell appops get "$DEBUG_APPLICATION_ID" | grep 10021 || true
+}
+
+main() {
+  local cmd="${1:-}"
+  shift || true
+  case "$cmd" in
+    ""|-h|--help|help) usage ;;
+    doctor) cmd_doctor "$@" ;;
+    devices) cmd_devices "$@" ;;
+    sdk-list) cmd_sdk_list "$@" ;;
+    sdk-update) cmd_sdk_update "$@" ;;
+    install-debug) cmd_install_debug "$@" ;;
+    install-release) cmd_install_release "$@" ;;
+    uninstall) cmd_uninstall "$@" ;;
+    clear) cmd_clear "$@" ;;
+    launch) cmd_launch "$@" ;;
+    stop) cmd_stop "$@" ;;
+    logcat) cmd_logcat "$@" ;;
+    screenshot) cmd_screenshot "$@" ;;
+    screenrecord) cmd_screenrecord "$@" ;;
+    dumpsys) cmd_dumpsys "$@" ;;
+    bugreport) cmd_bugreport "$@" ;;
+    apk-info) cmd_apk_info "$@" ;;
+    apk-sign) cmd_apk_sign "$@" ;;
+    test) cmd_test "$@" ;;
+    test-class) cmd_test_class "$@" ;;
+    appops-allow) cmd_appops_allow "$@" ;;
+    *)
+      echo "未知命令: $cmd" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"

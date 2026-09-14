@@ -43,6 +43,7 @@ internal fun JmAlbum.toComicDetailResponse(): ComicDetailResponse {
         series_id = seriesId().orEmpty(),
         price = price().orEmpty(),
         purchased = purchased().equals("true", ignoreCase = true),
+        addTime = addTime().orEmpty(),
     )
 }
 

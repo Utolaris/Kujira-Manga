@@ -17,4 +17,6 @@ data class ComicDetailResponse(
     val series_id: String,
     val price: String,
     val purchased: Boolean,
+    /** Album 上架时间（上游 `addtime`）；旧构造/测试可为空。 */
+    val addTime: String = "",
 )

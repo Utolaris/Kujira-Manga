@@ -19,15 +19,12 @@ class AuthenticatedEmbeddedClient(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: ParseResponseException) {
-            // JMComic-Api-Java 1.1.8 compatibility workaround: postComment/replyToComment call
-            // the protected getLoggedInUserName() AFTER the server accepted the comment POST.
-            // A restored-cookie session (no in-process login) has no cached username, so the
-            // library throws before returning even though the comment was created remotely.
-            // The parser wraps that IllegalStateException into a ParseResponseException whose
-            // cause message starts with "Username is required". Retrying here would duplicate
-            // the remote comment, so we treat this exact shape as success and rebuild the
-            // response locally. HTTP auth failures surface as ResponseException instead, so
-            // they never match this path.
+            // Defense in depth after EmbeddedClientManager now caches username on cookie
+            // restore. JMComic-Api-Java 1.1.8 postComment/replyToComment still call
+            // getLoggedInUserName() AFTER the server accepted the comment POST. If that
+            // cache is missing for any reason, the parser wraps IllegalStateException into
+            // ParseResponseException. Retrying would duplicate the remote comment, so treat
+            // this exact shape as success.
             if (error.isUpstreamCommentUsernameMappingFailure()) {
                 null
             } else {

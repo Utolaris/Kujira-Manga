@@ -86,7 +86,10 @@ class UserRepositoryImpl(
      * 把已验证的候选会话提升为活动会话。调用方（UserManager）已确认 generation 有效。
      */
     override fun activateVerifiedSession(verified: CandidateSession) {
-        embeddedClientManager.activateCandidateSession(verified.embeddedCookies)
+        embeddedClientManager.activateCandidateSession(
+            cookies = verified.embeddedCookies,
+            username = verified.loginResponse.username,
+        )
     }
 
     override fun clearSession() {

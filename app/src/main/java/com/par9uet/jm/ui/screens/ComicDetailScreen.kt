@@ -102,6 +102,7 @@ import com.par9uet.jm.ui.glass.GlassSurface
 import com.par9uet.jm.ui.glass.GlassSurfaceStyle
 import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.ComicDetailViewModel
+import com.par9uet.jm.utils.formatAlbumAddTimeDisplay
 import com.par9uet.jm.utils.shimmer
 import androidx.paging.compose.collectAsLazyPagingItems
 import org.koin.compose.getKoin
@@ -458,6 +459,7 @@ fun ComicDetailScreen(
                                                     .fillMaxWidth()
                                                     .height(viewportHeight),
                                                 listBottomPadding = detailBarHeight + detailBarBottomPadding + 100.dp,
+                                                publishDateText = formatAlbumAddTimeDisplay(comic.addTime),
                                             )
                                         }
                                     }
@@ -487,6 +489,7 @@ fun ComicDetailScreen(
                                                     .fillMaxWidth()
                                                     .height(viewportHeight),
                                                 listBottomPadding = detailBarHeight + detailBarBottomPadding + 100.dp,
+                                                publishDateText = formatAlbumAddTimeDisplay(comic.addTime),
                                             )
                                         }
                                     }

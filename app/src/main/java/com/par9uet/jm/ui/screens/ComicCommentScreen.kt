@@ -87,6 +87,7 @@ import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.components.PullRefreshAndLoadMoreGrid
 import com.par9uet.jm.ui.glass.GlassMaterialStyle
 import com.par9uet.jm.ui.glass.GlassSurface
+import com.par9uet.jm.utils.formatAlbumAddTimeDisplay
 import com.par9uet.jm.ui.glass.GlassSurfaceStyle
 import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.ComicDetailViewModel
@@ -237,13 +238,28 @@ internal fun ComicCommentContent(
     listBottomPadding: Dp = 10.dp,
     topContentPadding: Dp = 0.dp,
     bottomContentPadding: Dp = 0.dp,
+    publishDateText: String = "",
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(
-            text = "评论",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "评论",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            if (publishDateText.isNotBlank()) {
+                Text(
+                    text = publishDateText,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
         HorizontalDivider()
         CommentList(
             modifier = Modifier
@@ -663,6 +679,9 @@ fun ComicCommentScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = ComicDetailHorizontalPadding),
+            publishDateText = formatAlbumAddTimeDisplay(
+                comicDetailState.data?.takeIf { it.id == comicId }?.addTime.orEmpty()
+            ),
         )
     }
 }

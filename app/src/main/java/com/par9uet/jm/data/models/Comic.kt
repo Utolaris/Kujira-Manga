@@ -25,6 +25,8 @@ data class Comic(
     val price: Int,
     // 是否购买
     val isBuy: Boolean = false,
+    /** 上架时间原文（上游 addtime）；仅详情有值。 */
+    val addTime: String = "",
 ) {
     companion object {
         fun create(
