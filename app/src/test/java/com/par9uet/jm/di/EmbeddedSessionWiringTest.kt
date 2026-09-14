@@ -74,6 +74,7 @@ class EmbeddedSessionWiringTest {
     private class NoOpDohPreferencesEditor : DohPreferencesEditor {
         override fun persistEnabled(enabled: Boolean) = true
         override fun persistAutoStart(enabled: Boolean) = true
+        override fun persistAutoSelectFastest(enabled: Boolean) = true
         override fun persistServer(serverId: String) = true
         override fun persistCustomServer(name: String, url: String) = true
         override fun persistUseDeviceCertificates(enabled: Boolean) = true

@@ -107,6 +107,7 @@ interface AppSecurityEditor {
 data class DohSettingsState(
     val enabled: Boolean = true,
     val autoStart: Boolean = true,
+    val autoSelectFastest: Boolean = true,
     val serverId: String = "tencent",
     val customServerName: String = "",
     val customServerUrl: String = "",
@@ -122,6 +123,7 @@ interface DohPreferencesEditor {
     /** @return true only when the new preference was persisted. */
     fun persistEnabled(enabled: Boolean): Boolean
     fun persistAutoStart(enabled: Boolean): Boolean
+    fun persistAutoSelectFastest(enabled: Boolean): Boolean
     fun persistServer(serverId: String): Boolean
     fun persistCustomServer(name: String, url: String): Boolean
     fun persistUseDeviceCertificates(enabled: Boolean): Boolean

@@ -19,6 +19,7 @@ import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -166,6 +167,13 @@ fun DohSettingScreen(
                             summary = "打开应用后自动恢复 DoH；关闭时可在本页手动开启",
                             checked = doh.autoStart,
                             onCheckedChange = dohManager::setAutoStart,
+                        )
+                        DohSwitchRow(
+                            title = "自动选择最低延迟",
+                            summary = "启动后在后台测速，自动切到最快的内置线路；关闭后固定使用你选的线路",
+                            checked = doh.autoSelectFastest,
+                            onCheckedChange = dohManager::setAutoSelectFastest,
+                            icon = Icons.Rounded.Sync,
                         )
                         DohSwitchRow(
                             title = "使用设备证书",

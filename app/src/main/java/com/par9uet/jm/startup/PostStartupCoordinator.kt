@@ -43,6 +43,12 @@ class PostStartupCoordinator(
         launchTask("桌面图标入口") {
             koin.get<LocalSettingManager>().applyLauncherDisguiseIfNeeded()
         }
+        // Runs beside the task above rather than after it: the probe is best-effort and multi-second
+        // on a bad link, so nothing may wait on it. A switch retires the previous resolver, which is
+        // why DohManager grants in-flight lookups a grace period instead of cancelling them.
+        launchTask("DoH 自动选线") {
+            koin.get<DohManager>().autoSelectFastest()
+        }
         launchTask("搜索历史") {
             koin.get<HistorySearchManager>().load()
         }

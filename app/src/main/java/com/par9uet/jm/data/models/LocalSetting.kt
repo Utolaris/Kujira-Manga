@@ -72,6 +72,8 @@ data class LocalSetting(
     // DoH 默认启用；dohAutoStart 控制进程启动时自动激活
     val dohEnabled: Boolean = true,
     val dohAutoStart: Boolean = true,
+    // 启动后在后台对内置线路测速并切到延迟最低的一条；关掉后可手动固定线路
+    val dohAutoSelectFastest: Boolean = true,
     val dohServerId: String = "tencent",
     val dohCustomServerName: String = "",
     val dohCustomServerUrl: String = "",

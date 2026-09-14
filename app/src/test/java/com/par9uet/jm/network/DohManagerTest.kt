@@ -58,6 +58,30 @@ class DohManagerTest {
         assertEquals("https://dns.example/dns-query", editor.customUrl)
     }
 
+    @Test
+    fun `auto select fastest preference round-trips through the editor`() {
+        val prefs = FakePreferences(DohSettingsState())
+        val manager = DohManager(prefs, FakeEditor(prefs))
+
+        assertEquals(true, manager.setAutoSelectFastest(false))
+        assertFalse(prefs.doh.value.autoSelectFastest)
+    }
+
+    @Test
+    fun `auto select is skipped without probing when disabled or DoH is inactive`() = runTest {
+        // Both guards must return before any probe is attempted, otherwise a disabled feature would
+        // still pay for four DNS lookups on every launch.
+        val autoSelectOff = FakePreferences(
+            DohSettingsState(enabled = true, autoStart = true, autoSelectFastest = false)
+        )
+        assertEquals(null, DohManager(autoSelectOff, FakeEditor(autoSelectOff)).autoSelectFastest())
+
+        val dohOff = FakePreferences(
+            DohSettingsState(enabled = false, autoStart = true, autoSelectFastest = true)
+        )
+        assertEquals(null, DohManager(dohOff, FakeEditor(dohOff)).autoSelectFastest())
+    }
+
     private class FakePreferences(initial: DohSettingsState) : DohPreferences {
         override val doh = MutableStateFlow(initial)
     }
@@ -76,6 +100,11 @@ class DohManagerTest {
 
         override fun persistAutoStart(enabled: Boolean): Boolean {
             prefs.doh.value = prefs.doh.value.copy(autoStart = enabled)
+            return true
+        }
+
+        override fun persistAutoSelectFastest(enabled: Boolean): Boolean {
+            prefs.doh.value = prefs.doh.value.copy(autoSelectFastest = enabled)
             return true
         }
 

@@ -5,6 +5,9 @@ import com.par9uet.jm.storage.DohPreferences
 import com.par9uet.jm.storage.DohPreferencesEditor
 import com.par9uet.jm.utils.applyCertificateTrust
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
@@ -20,6 +23,12 @@ import java.net.UnknownHostException
 import java.security.SecureRandom
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+
+/**
+ * How long a replaced resolver stays alive so its in-flight lookups can finish. Roughly one DNS
+ * round trip on a slow mobile link; only the retired object waits, new lookups use the new one.
+ */
+private const val ResolverRetireGraceMillis = 5_000L
 
 data class DohRuntimeStatus(
     val active: Boolean = false,
@@ -92,6 +101,36 @@ class DohManager(
     }
 
     fun setAutoStart(enabled: Boolean): Boolean = dohEditor.persistAutoStart(enabled)
+
+    fun setAutoSelectFastest(enabled: Boolean): Boolean =
+        dohEditor.persistAutoSelectFastest(enabled)
+
+    /**
+     * Probes every built-in route in parallel and switches to the fastest one that answered.
+     *
+     * Deliberately not part of [init]: the probe is best-effort and must never delay the first
+     * screen or the authenticated startup traffic. A switch retires the previous resolver, so the
+     * caller should let that traffic settle before invoking this (see the retire grace below).
+     *
+     * @return the winning server, or null when auto-select is off, DoH is inactive, or nothing
+     *         answered.
+     */
+    suspend fun autoSelectFastest(): DohServer? {
+        val setting = dohPrefs.doh.value
+        if (!setting.autoSelectFastest) return null
+        if (!sessionEnabled || !setting.enabled) return null
+
+        val probes = coroutineScope {
+            builtinDohServers.map { server -> async { server to testServer(server) } }.awaitAll()
+        }
+        val winner = probes
+            .mapNotNull { (server, result) -> result.elapsedMs?.let { server to it } }
+            .minByOrNull { (_, elapsedMs) -> elapsedMs }
+            ?.first
+            ?: return null
+        if (winner.id != setting.serverId) selectServer(winner.id)
+        return winner
+    }
 
     fun selectServer(serverId: String): Boolean {
         if (!dohEditor.persistServer(serverId)) return false
@@ -187,9 +226,12 @@ class DohManager(
             null
         }
         // Switching resolvers cancels outstanding lookups on the previous resolver (close →
-        // cancelAll). Callers that need a graceful drain must finish work before a switch.
+        // cancelAll), which surfaces to the caller as a failed request. Retiring it on a delay
+        // instead lets lookups already in flight finish - this is what makes a startup auto-switch
+        // safe while the first requests are still resolving.
         if (previousResolver != null && previousResolver !== resolver) {
             Thread {
+                runCatching { Thread.sleep(ResolverRetireGraceMillis) }
                 runCatching { previousResolver.close() }
             }.apply { isDaemon = true }.start()
         }

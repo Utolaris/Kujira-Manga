@@ -387,6 +387,9 @@ class LocalSettingManager(
     override fun persistAutoStart(enabled: Boolean) =
         updateSetting { it.copy(dohAutoStart = enabled) }
 
+    override fun persistAutoSelectFastest(enabled: Boolean) =
+        updateSetting { it.copy(dohAutoSelectFastest = enabled) }
+
     override fun persistServer(serverId: String) =
         updateSetting { it.copy(dohServerId = serverId) }
 
@@ -475,6 +478,7 @@ class LocalSettingManager(
     private fun toDohSettingsState(setting: LocalSetting) = DohSettingsState(
         enabled = setting.dohEnabled,
         autoStart = setting.dohAutoStart,
+        autoSelectFastest = setting.dohAutoSelectFastest,
         serverId = setting.dohServerId,
         customServerName = setting.dohCustomServerName,
         customServerUrl = setting.dohCustomServerUrl,
