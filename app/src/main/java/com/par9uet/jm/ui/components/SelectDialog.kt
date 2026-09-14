@@ -19,6 +19,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -56,8 +57,15 @@ fun SelectDialog(
                     .padding(horizontal = 20.dp, vertical = 16.dp),
             )
             HorizontalDivider()
-            val screenHeight = LocalWindowInfo.current.containerSize.height.dp
-            val maxHeight = screenHeight * 0.6f
+            // containerSize is in PIXELS, so `.dp` on it would treat pixels as dp and inflate this
+            // cap by the display density. The list would then swallow the whole viewport: the
+            // title slides up under the status bar, the option rows run past the bottom edge and
+            // the footer is measured to zero height. Convert through LocalDensity, the same way
+            // every other list-height cap in the app does it.
+            val density = LocalDensity.current
+            val maxHeight = with(density) {
+                LocalWindowInfo.current.containerSize.height.toDp() * 0.6f
+            }
             LazyColumn(
                 modifier = Modifier.heightIn(max = maxHeight)
             ) {
