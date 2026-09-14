@@ -1,31 +1,29 @@
 package com.par9uet.jm.ui.screens
 
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.paging.compose.collectAsLazyPagingItems
 import com.par9uet.jm.ui.components.Comic
 import com.par9uet.jm.ui.components.CommonScaffold
-import com.par9uet.jm.ui.components.FilterItem
 import com.par9uet.jm.ui.components.PullRefreshAndLoadMoreGrid
 import com.par9uet.jm.ui.components.SelectDialog
 import com.par9uet.jm.ui.components.SelectOption
@@ -33,18 +31,15 @@ import com.par9uet.jm.ui.components.adaptiveComicGridCells
 import com.par9uet.jm.ui.viewModel.WeekViewModel
 import org.koin.compose.viewmodel.koinActivityViewModel
 
-@Composable
-private fun ComicWeekCategorySelect(
-    category: Pair<String, String>,
-    onClick: () -> Unit,
-) {
-    FilterItem(
-        label = category.second,
-        onClick = onClick,
-        active = true
-    )
-}
-
+/**
+ * Weekly picks for one issue.
+ *
+ * The issue (刊号) is the only axis this screen filters on, so it lives as a single calendar
+ * affordance in the top bar instead of a filter row: the upstream API has no per-type endpoint
+ * (see the note in ComicWeekRecommendScreen's history — `getWeeklyPicksDetail` takes the issue
+ * only), so the former 韩漫 / 日漫 / 其他 chips could never change the result. Every issue now
+ * shows its full list, mixed categories included.
+ */
 @Composable
 fun ComicWeekRecommendScreen(
     weekViewModel: WeekViewModel = koinActivityViewModel()
@@ -53,12 +48,11 @@ fun ComicWeekRecommendScreen(
     val weekFilterState by weekViewModel.weekFilterState.collectAsState()
     val weekRecommendComicPagingItems = weekViewModel.weekComicPager.collectAsLazyPagingItems()
     var showSelectDialog by remember { mutableStateOf(false) }
-    val weekCategoryFilter by remember(weekFilterState) {
-        derivedStateOf {
-            val categoryList = weekDataState.data?.categoryList ?: listOf()
-            categoryList.find { it.first == weekFilterState.categoryId }
-        }
-    }
+    val categoryList = weekDataState.data?.categoryList.orEmpty()
+    val currentCategoryLabel = categoryList
+        .firstOrNull { it.first == weekFilterState.categoryId }
+        ?.second
+
     LaunchedEffect(Unit) {
         if (weekDataState.data != null) {
             return@LaunchedEffect
@@ -67,13 +61,41 @@ fun ComicWeekRecommendScreen(
     }
     CommonScaffold(
         title = "每周推荐",
+        titleContent = {
+            // Two lines so the issue stays readable once the selection chip is gone.
+            Text(
+                text = "每周推荐",
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            if (currentCategoryLabel != null) {
+                Text(
+                    text = currentCategoryLabel,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        actions = {
+            IconButton(onClick = { showSelectDialog = true }) {
+                Icon(
+                    imageVector = Icons.Rounded.CalendarMonth,
+                    contentDescription = "选择日期",
+                )
+            }
+        },
         overlayContent = {
             SelectDialog(
                 visible = showSelectDialog,
                 title = "选择日期",
                 value = weekFilterState.categoryId,
                 modifier = Modifier.widthIn(max = 420.dp),
-                selectOptionList = weekDataState.data?.categoryList.orEmpty().map {
+                selectOptionList = categoryList.map {
                     SelectOption(label = it.second, value = it.first)
                 },
                 onSelect = {
@@ -84,57 +106,19 @@ fun ComicWeekRecommendScreen(
             )
         },
     ) { topContentPadding, bottomContentPadding ->
-        Column(modifier = Modifier.fillMaxSize()) {
-            if (weekDataState.data != null) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.padding(
-                        start = 10.dp,
-                        top = topContentPadding + 10.dp,
-                        end = 10.dp,
-                    )
-                ) {
-                    val typeList = weekDataState.data?.typeList ?: emptyList()
-                    Row(
-                        modifier = Modifier
-                            .weight(1f)
-                            .horizontalScroll(rememberScrollState())
-                    ) {
-                        typeList.forEach { item ->
-                            key(item.first) {
-                                FilterItem(
-                                    label = item.second,
-                                    onClick = {
-                                        weekViewModel.changeWeekTypeFilter(item.first)
-                                    },
-                                    active = weekFilterState.typeId == item.first
-                                )
-                            }
-                        }
-                    }
-                    weekCategoryFilter?.let {
-                        ComicWeekCategorySelect(
-                            category = it,
-                            onClick = { showSelectDialog = true },
-                        )
-                    }
-                }
-                HorizontalDivider()
-            }
-            PullRefreshAndLoadMoreGrid(
-                modifier = Modifier
-                    .weight(1f),
-                lazyPagingItems = weekRecommendComicPagingItems,
-                key = { it.id },
-                columns = adaptiveComicGridCells(),
-                contentPadding = PaddingValues(
-                    start = 10.dp,
-                    end = 10.dp,
-                    bottom = bottomContentPadding + 10.dp,
-                ),
-            ) {
-                Comic(it)
-            }
+        PullRefreshAndLoadMoreGrid(
+            modifier = Modifier.fillMaxSize(),
+            lazyPagingItems = weekRecommendComicPagingItems,
+            key = { it.id },
+            columns = adaptiveComicGridCells(),
+            contentPadding = PaddingValues(
+                start = 10.dp,
+                end = 10.dp,
+                top = topContentPadding + 10.dp,
+                bottom = bottomContentPadding + 10.dp,
+            ),
+        ) {
+            Comic(it)
         }
     }
 }
