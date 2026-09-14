@@ -28,6 +28,18 @@ import androidx.compose.ui.unit.dp
 import com.par9uet.jm.ui.glass.GlassSurface
 import com.par9uet.jm.ui.glass.GlassSurfaceStyle
 
+/**
+ * The one spec shared by the pill's grow and its retract, so entering and leaving the pull state
+ * look like the same motion played in opposite directions.
+ */
+private val PullDownSearchRevealSpec = tween<Float>(
+    durationMillis = 90,
+    easing = FastOutSlowInEasing,
+)
+
+/** Reveal fraction at which the pill reaches full opacity; before that the alpha ramps with it. */
+private const val PullDownSearchAlphaSaturation = 1.35f
+
 @Composable
 internal fun PullDownSearchIndicator(
     state: PullDownActionState,
@@ -36,25 +48,26 @@ internal fun PullDownSearchIndicator(
     modifier: Modifier = Modifier,
 ) {
     val phase = state.phase
-    val progress = when (phase) {
+    val targetProgress = when (phase) {
         PullDownActionPhase.ARMED,
         PullDownActionPhase.TRIGGERING -> 1f
         PullDownActionPhase.IDLE,
         PullDownActionPhase.PULLING -> state.progress
     }
-    val targetAlpha = when (phase) {
-        PullDownActionPhase.IDLE -> 0f
-        PullDownActionPhase.PULLING -> (progress * 1.35f).coerceIn(0f, 1f)
-        PullDownActionPhase.ARMED,
-        PullDownActionPhase.TRIGGERING -> 1f
-    }
-    val alpha by animateFloatAsState(
-        targetValue = targetAlpha,
-        animationSpec = tween(90, easing = FastOutSlowInEasing),
-        label = "$surfaceId-alpha",
+    // Size, position and alpha all read this single animated value. Driving the geometry straight
+    // off the live pull progress used to snap the pill back to its resting size and offset in one
+    // frame whenever the gesture was abandoned (release below threshold, or the list regaining
+    // scroll while a pull was in flight), while the separately animated alpha kept fading over the
+    // next frames -- a hard cut followed by a ghost. One source, one spec: no desync is possible
+    // and the exit mirrors the entrance.
+    val progress by animateFloatAsState(
+        targetValue = targetProgress,
+        animationSpec = PullDownSearchRevealSpec,
+        label = "$surfaceId-reveal",
     )
     val width = 116.dp + 28.dp * progress
     val translation = (-12).dp + 18.dp * progress
+    val alpha = (progress * PullDownSearchAlphaSaturation).coerceIn(0f, 1f)
     val emphasized = phase == PullDownActionPhase.ARMED ||
         phase == PullDownActionPhase.TRIGGERING
     val label = when (phase) {
