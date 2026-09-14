@@ -473,7 +473,7 @@ L4 设施，或反向依赖上层；`data.models` 是共享契约，不算违规
 
 每次只迁移一个可独立验证的边界，并为 L2 分支、L3 组合和 L4 契约分别补测试。
 
-## 安全与状态契约（v1.4.3 起为架构不变量）
+## 安全与状态契约（v1.4.3 起为架构不变量，v1.4.4 增补 7–9）
 
 这些边界不是实现细节，改动时需同步测试与本文：
 
@@ -496,6 +496,20 @@ L4 设施，或反向依赖上层；`data.models` 是共享契约，不算违规
 6. **引导不得绕锁**（`App` / `LocalSettingManager.applyLocalSetting` / `WelcomeScreen`）：
    已有启用锁时 onboarding 不显示；恢复备份不得把 `onboardingCompleted` 打回 false
    以打开可 `disableAndClearAppLock` 的引导路径。
+7. **应用锁加锁时机与截图策略**（`App.kt` 的 `LifecycleEventObserver`）：启用应用锁时
+   `ON_PAUSE` **或** `ON_STOP` 都要立即 `isLocked = true`；只依赖 `ON_STOP` 会让 recents
+   在窗口冻结前拿到未锁定界面，切回前台闪现旧内容。
+   `FLAG_SECURE` 只在 `isLocked` 为 true 时 `addFlags`、解锁后 `clearFlags`：
+   锁定时禁止系统截取，解锁后必须允许正常截图与录屏，不能全程挂安全标志。
+8. **内置 API 共享执行器**（`network/EmbeddedClientManager` / `EmbeddedTaskExecutor`）：
+   候选客户端共用进程级 `clientExecutor`，`close()` **不得**关闭它（核心线程 30s 空闲回收，
+   登出后不留常驻 SDK 线程）。SDK 在构造期就用 `execute()` 启动异步初始化并把
+   `JmComicException` 抛出来，必须在 `execute` 边界兜住——异常逃出仓库层请求协程会直接杀进程；
+   `submit` 的 future 仍向调用方报错，非 API 的编程错误保持原样传播。
+9. **DoH 解析器发布顺序**（`network/DohManager`）：`ensureResolver()` 为 `@Synchronized`，
+   且先发布 `resolverKey` 再构造 TLS 客户端；读者必须取同一把锁，否则会拿到新 key
+   配旧（可能为 `null`）的 resolver。`init()` 复用首屏已建 resolver（`ensureResolver()`），
+   不要用 `rebuildResolver()`——那会关掉正在恢复阅读器的连接。
 
 ## 构建与密钥（2026-09-12 核对）
 
