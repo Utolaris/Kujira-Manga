@@ -11,8 +11,8 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 APK_DIR="$PROJECT_DIR/app/build/outputs/apk"
 GRADLE_FLAGS="-Dhttp.proxyHost= -Dhttp.proxyPort= -Dhttps.proxyHost= -Dhttps.proxyPort="
 
-APPLICATION_ID="jmcomic.debug"
-TEST_PACKAGE="jmcomic.debug.test"
+APPLICATION_ID="kujira.manga.debug"
+TEST_PACKAGE="kujira.manga.debug.test"
 RUNNER="androidx.test.runner.AndroidJUnitRunner"
 
 # Gradle 找不到 SDK 时只会报一句含糊的 "SDK location not found"。

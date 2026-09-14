@@ -76,7 +76,7 @@ class AppUpdateViewModel(
         downloads.start(
             AppUpdateDownloadRequest(
                 version = release.version,
-                fileName = release.fileName.ifBlank { "jm-mobile_v${release.version}_unknown.apk" },
+                fileName = release.fileName.ifBlank { "kujira-manga_v${release.version}_unknown.apk" },
                 downloadUrl = release.downloadUrl,
             )
         )

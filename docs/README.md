@@ -6,6 +6,7 @@
 |---|---|
 | [android-cli.md](./android-cli.md) | 统一 Android 调试 CLI（`./scripts/android`）用法与约定 |
 | [instrumented-tests.md](./instrumented-tests.md) | 真机插桩测试、HyperOS 限制、结果判定 |
+| [release-signing.md](./release-signing.md) | 发布签名密钥、钥匙串条目与打 Release 包的流程 |
 
 根目录另有：
 

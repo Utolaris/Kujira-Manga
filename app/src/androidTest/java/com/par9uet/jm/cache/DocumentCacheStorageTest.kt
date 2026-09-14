@@ -24,7 +24,7 @@ class DocumentCacheStorageTest {
     @Test fun strictListingFailsWhereLenientListingLooksEmpty() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val base = instrumentation.targetContext
-        val missing = "content://jmcomic.debug.test.cache-documents/document/root/not-there"
+        val missing = "content://kujira.manga.debug.test.cache-documents/document/root/not-there"
 
         assertEquals(emptyList<CacheImageEntry>(), listComicImageEntries(base, missing))
         val failure = runCatching { listComicImageEntriesOrThrow(base, missing) }.exceptionOrNull()
@@ -39,7 +39,7 @@ class DocumentCacheStorageTest {
             override fun getCacheDir() = File(base.cacheDir, token).also { it.mkdirs() }
             override fun getSharedPreferences(name: String, mode: Int) = base.getSharedPreferences("$token-$name", mode)
         }
-        val tree = DocumentsContract.buildTreeDocumentUri("jmcomic.debug.test.cache-documents", "root")
+        val tree = DocumentsContract.buildTreeDocumentUri("kujira.manga.debug.test.cache-documents", "root")
         val treeRoot = DocumentsContract.buildDocumentUriUsingTree(tree, "root")
         val testRoot = requireNotNull(findOrCreateCacheDocument(context, treeRoot, token, DocumentsContract.Document.MIME_TYPE_DIR))
         val testTree = DocumentsContract.buildTreeDocumentUri(tree.authority, DocumentsContract.getDocumentId(testRoot))

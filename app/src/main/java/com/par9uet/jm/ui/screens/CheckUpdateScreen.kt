@@ -228,7 +228,7 @@ private fun CurrentVersionCard(
             }
             Column {
                 Text(
-                    text = "JMcomic Plus",
+                    text = "Kujira-Manga",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface

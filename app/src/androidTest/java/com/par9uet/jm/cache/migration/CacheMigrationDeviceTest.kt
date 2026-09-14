@@ -129,7 +129,7 @@ class CacheMigrationDeviceTest {
     @Test
     fun `unreachable source fails without changing db or active tree`() = runBlocking {
         setDownloadTreeUri(context, "")
-        val unreachable = "content://jmcomic.debug.test.missing-documents/document/chapter"
+        val unreachable = "content://kujira.manga.debug.test.missing-documents/document/chapter"
         val original = DownloadComic(
             id = 4207,
             name = "不可读测试",
@@ -340,6 +340,6 @@ class CacheMigrationDeviceTest {
     private data class SafFixture(val comic: DownloadComic)
 
     private companion object {
-        const val PROVIDER_AUTHORITY = "jmcomic.debug.test.cache-documents"
+        const val PROVIDER_AUTHORITY = "kujira.manga.debug.test.cache-documents"
     }
 }

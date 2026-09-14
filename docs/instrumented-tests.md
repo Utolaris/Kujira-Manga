@@ -32,14 +32,14 @@ HyperOS 4 把 instrumentation 拉起的 Activity 当成**后台弹窗**。未授
 脚本只做 **preflight 检查**，**不会**自动改写 appops。若为 `ignore`，会失败并打印：
 
 ```bash
-adb shell appops set --user 0 jmcomic.debug      10021 allow
-adb shell appops set --user 0 jmcomic.debug.test 10021 allow
+adb shell appops set --user 0 kujira.manga.debug      10021 allow
+adb shell appops set --user 0 kujira.manga.debug.test 10021 allow
 ```
 
 检查当前状态：
 
 ```bash
-adb shell appops get jmcomic.debug | grep 10021
+adb shell appops get kujira.manga.debug | grep 10021
 # 期望：MIUIOP(10021): allow
 ```
 
@@ -58,16 +58,16 @@ adb shell appops get jmcomic.debug | grep 10021
 ```bash
 adb install -r -t app/build/outputs/apk/debug/*.apk
 adb install -r -t app/build/outputs/apk/androidTest/debug/*.apk
-adb shell appops set --user 0 jmcomic.debug      10021 allow
-adb shell appops set --user 0 jmcomic.debug.test 10021 allow
+adb shell appops set --user 0 kujira.manga.debug      10021 allow
+adb shell appops set --user 0 kujira.manga.debug.test 10021 allow
 
-adb shell am instrument -w -r jmcomic.debug.test/androidx.test.runner.AndroidJUnitRunner
+adb shell am instrument -w -r kujira.manga.debug.test/androidx.test.runner.AndroidJUnitRunner
 adb shell am instrument -w -r -e class <类名> \
-  jmcomic.debug.test/androidx.test.runner.AndroidJUnitRunner
+  kujira.manga.debug.test/androidx.test.runner.AndroidJUnitRunner
 adb shell am instrument -w -r -e class <类名>#<方法名> \
-  jmcomic.debug.test/androidx.test.runner.AndroidJUnitRunner
+  kujira.manga.debug.test/androidx.test.runner.AndroidJUnitRunner
 adb shell am instrument -w -r -e package <包名> \
-  jmcomic.debug.test/androidx.test.runner.AndroidJUnitRunner
+  kujira.manga.debug.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
 ## 测试集（当前 20 个类 / 约 69 条）
@@ -92,8 +92,8 @@ adb shell am instrument -w -r -e package <包名> \
 
 - 定位阶段只跑 `-c` / `-m`；改完代码后**不要**再加 `--no-build`。
 - 堆栈用 `-l` 看 `build/instrumented-logcat.txt`。
-- 测数据库残留：`adb shell ls /data/data/jmcomic.debug/databases`。
+- 测数据库残留：`adb shell ls /data/data/kujira.manga.debug/databases`。
 - 整套不发起真实网络请求，飞行模式也能跑。
-- PDF/SAF 用例依赖 debug 变体 Provider `jmcomic.debug.test.cache-documents`（`app/src/debug/AndroidManifest.xml`），release 上不存在。
+- PDF/SAF 用例依赖 debug 变体 Provider `kujira.manga.debug.test.cache-documents`（`app/src/debug/AndroidManifest.xml`），release 上不存在。
 
 静态 import 边界由 JVM 的 `ArchitectureBoundaryTest` 负责；这里只测运行时行为。

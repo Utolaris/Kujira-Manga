@@ -1,11 +1,16 @@
-# JMcomic Plus
+# Kujira-Manga
 
 [JM](https://jmcomic.plus) 第三方 Android 客户端。基于 [HongShi2333/jmcomic-next](https://github.com/HongShi2333/jmcomic-next) 持续维护，数据解析依赖 [JUKOMU/JMComic-Api-Java](https://github.com/JUKOMU/JMComic-Api-Java)。
 
+> 本仓库原名 `jmcomic-plus`，自 v1.4.4 起更名为 **Kujira-Manga**：仓库名、应用显示名和安装包名
+> 都已更换。应用标识由 `jmcomic.plus` 变为 `kujira.manga`，签名密钥也已重建，
+> 系统会将其视为**全新应用**，旧版本的设置、收藏与下载数据都不会自动迁移。
+
 - 系统要求：Android 11（API 30）及以上
 - 当前版本：`1.4.4`（versionCode `144`）
-- Release 包名：`jmcomic.plus`（与旧包名签名不同，系统会视为新应用，数据不会自动迁移）
+- 安装包名：release `kujira.manga`，debug `kujira.manga.debug`（与旧包名签名不同，系统会视为新应用，数据不会自动迁移）
 - 调试入口：`./scripts/android`（设备、安装、logcat、插桩测试等，见 [docs/android-cli.md](docs/android-cli.md)）
+- 发布签名：密钥库 `release-key/Kujira-Manga-Key.p12`，密码存于钥匙串条目 `Kujira-Manga-Key`（见 [docs/release-signing.md](docs/release-signing.md)）
 
 ---
 

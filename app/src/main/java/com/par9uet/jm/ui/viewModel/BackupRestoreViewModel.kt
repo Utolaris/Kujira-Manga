@@ -119,7 +119,7 @@ internal class BackupRestoreViewModel(
     private fun requestCreateDocument() {
         val timestamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.CHINESE).format(Date())
         _state.update {
-            it.copy(backupStep = BackupStep.None, createDocumentName = "jm-mobile-backup-$timestamp.json", awaitingDocument = true)
+            it.copy(backupStep = BackupStep.None, createDocumentName = "kujira-manga-backup-$timestamp.json", awaitingDocument = true)
         }
     }
 

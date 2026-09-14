@@ -20,7 +20,7 @@ fun rememberPositionScrollState(
     val scrollState = rememberSaveable(saver = ScrollState.Saver) {
         val state = SaveMap[key]
         val value = state?.scrollValue ?: initial
-        Log.d("JM-MOBILE", "value = $value")
+        Log.d("KUJIRA-MANGA", "value = $value")
         ScrollState(
             state?.scrollValue ?: initial
         )
@@ -29,7 +29,7 @@ fun rememberPositionScrollState(
         onDispose {
             val value = scrollState.value
             SaveMap[key] = State(scrollValue = value)
-            Log.d("JM-MOBILE", "save value = $value")
+            Log.d("KUJIRA-MANGA", "save value = $value")
         }
     }
     return scrollState

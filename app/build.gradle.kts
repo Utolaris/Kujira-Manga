@@ -16,8 +16,10 @@ val versionProps = Properties().apply {
 
 val versionCodeProp = versionProps.getProperty("VERSION_CODE", "1").toIntOrNull()
 val versionNameProp: String = versionProps.getProperty("VERSION_NAME", "1.1.0")
-val releaseStorePassword = providers.environmentVariable("JMCOMIC_RELEASE_STORE_PASSWORD").orNull
-val releaseKeyPassword = providers.environmentVariable("JMCOMIC_RELEASE_KEY_PASSWORD").orNull
+// Signing secrets live in the macOS keychain. Retrieve them with
+// `eval "$(./scripts/android signing-env)"` before running assembleRelease.
+val releaseStorePassword = providers.environmentVariable("KUJIRA_MANGA_RELEASE_STORE_PASSWORD").orNull
+val releaseKeyPassword = providers.environmentVariable("KUJIRA_MANGA_RELEASE_KEY_PASSWORD").orNull
 
 fun getGitHash() = providers
     .exec {
@@ -36,9 +38,9 @@ androidComponents {
     onVariants { variant ->
         val hash = getGitHash()
         val fileName = if (variant.buildType == "debug") {
-            "jm-mobile_v${versionNameProp}_debug.apk"
+            "kujira-manga_v${versionNameProp}_debug.apk"
         } else {
-            "jm-mobile_v${versionNameProp}_${hash}.apk"
+            "kujira-manga_v${versionNameProp}_${hash}.apk"
         }
         variant.outputs.forEach { output ->
             if (output is com.android.build.api.variant.impl.VariantOutputImpl) {
@@ -61,15 +63,15 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = rootProject.file("release-key/jmcomic-plus-release.p12")
+            storeFile = rootProject.file("release-key/Kujira-Manga-Key.p12")
             storePassword = releaseStorePassword
-            keyAlias = "jmcomic-plus-release"
+            keyAlias = "Kujira-Manga-Key"
             keyPassword = releaseKeyPassword
         }
     }
 
     defaultConfig {
-        applicationId = "jmcomic"
+        applicationId = "kujira.manga"
         minSdk = 30
         targetSdk = 37
         versionCode = versionCodeProp
@@ -87,7 +89,6 @@ android {
             versionNameSuffix = "-debug"
         }
         release {
-            applicationIdSuffix = ".plus"
             isMinifyEnabled = true
             isShrinkResources = true
             signingConfig = signingConfigs.getByName("release")

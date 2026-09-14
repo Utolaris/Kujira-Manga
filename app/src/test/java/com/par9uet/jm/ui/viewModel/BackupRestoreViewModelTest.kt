@@ -66,7 +66,7 @@ class BackupRestoreViewModelTest {
         assertEquals(BackupStep.SetPattern, vm.state.value.backupStep)
         assertNull(vm.state.value.createDocumentName)
         vm.setPattern("0123")
-        assertTrue(vm.state.value.createDocumentName!!.startsWith("jm-mobile-backup-"))
+        assertTrue(vm.state.value.createDocumentName!!.startsWith("kujira-manga-backup-"))
         vm.documentPickerLaunched()
         vm.beginBackup()
         assertTrue(vm.state.value.awaitingDocument)

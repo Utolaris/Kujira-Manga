@@ -16,7 +16,7 @@ class AppUpdateFlowTest {
     @Test
     fun `release parser selects the compatible apk asset`() {
         val release = parseGithubRelease(
-            """{"tag_name":"v1.4.1","name":"JMcomic Plus v1.4.1","body":"changes","assets":[{"name":"jm-mobile_v1.4.1.apk","browser_download_url":"https://example.com/app.apk"}]}"""
+            """{"tag_name":"v1.4.1","name":"Kujira-Manga v1.4.1","body":"changes","assets":[{"name":"kujira-manga_v1.4.1.apk","browser_download_url":"https://example.com/app.apk"}]}"""
         )
 
         assertEquals("1.4.1", release.version)

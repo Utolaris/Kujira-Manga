@@ -8,8 +8,8 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
-private const val GITHUB_RELEASE_API = "https://api.github.com/repos/Utolaris/jmcomic-plus/releases/latest"
-private const val GITHUB_RELEASE_URL = "https://github.com/Utolaris/jmcomic-plus/releases"
+private const val GITHUB_RELEASE_API = "https://api.github.com/repos/Utolaris/Kujira-Manga/releases/latest"
+private const val GITHUB_RELEASE_URL = "https://github.com/Utolaris/Kujira-Manga/releases"
 
 fun interface ReleaseSource {
     suspend fun latest(): GithubRelease
@@ -23,7 +23,7 @@ class GithubReleaseSource(
         val request = Request.Builder()
             .url(GITHUB_RELEASE_API)
             .header("Accept", "application/vnd.github+json")
-            .header("User-Agent", "jmcomic-plus-android")
+            .header("User-Agent", "kujira-manga-android")
             .build()
         client.newCall(request).execute().use { response ->
             check(response.isSuccessful) { "GitHub 返回 ${response.code}" }
@@ -68,7 +68,7 @@ private fun selectApkAsset(assets: JsonArray?, version: String): ReleaseAsset? {
         }
     }
     return apkAssets.firstOrNull {
-        it.name.contains("jm-mobile_v$version", ignoreCase = true)
+        it.name.contains("kujira-manga_v$version", ignoreCase = true)
     } ?: apkAssets.firstOrNull()
 }
 

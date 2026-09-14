@@ -1,4 +1,4 @@
-# jmcomic-plus 工作约定
+# Kujira-Manga 工作约定
 
 ## 文档目录（docs/）
 
@@ -37,7 +37,10 @@
 - JDK：Homebrew `openjdk@21`（`JAVA_HOME=/opt/homebrew/opt/openjdk@21`）。GraalVM 会挂 AGP `JdkImageTransform`。
 - SDK：`local.properties` → `/opt/homebrew/share/android-commandlinetools`。
 - 单测：`./gradlew :app:testDebugUnitTest`
-- Release 签名密码：环境变量 `JMCOMIC_RELEASE_STORE_PASSWORD` / `JMCOMIC_RELEASE_KEY_PASSWORD`（钥匙串服务名 `jmcomic-plus-release-signing`）。
+- Release 签名密码：环境变量 `KUJIRA_MANGA_RELEASE_STORE_PASSWORD` / `KUJIRA_MANGA_RELEASE_KEY_PASSWORD`。
+  密码存在 macOS 钥匙串条目 **`Kujira-Manga-Key`**（acct `Utolaris`）里，构建前先取值：
+  `eval "$(./scripts/android signing-env)"`。密钥库 `release-key/Kujira-Manga-Key.p12`，别名 `Kujira-Manga-Key`。
+  细节见 `docs/release-signing.md`。
 
 ## 分支
 

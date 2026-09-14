@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# jmcomic-plus 统一 Android 调试 CLI。
+# Kujira-Manga 统一 Android 调试 CLI。
 # 后续所有真机/模拟器调试默认走本入口，不要再裸写 adb 长命令。
 set -euo pipefail
 
@@ -8,10 +8,16 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_DIR"
 
 GRADLE_FLAGS="-Dhttp.proxyHost= -Dhttp.proxyPort= -Dhttps.proxyHost= -Dhttps.proxyPort="
-DEBUG_APPLICATION_ID="jmcomic.debug"
-RELEASE_APPLICATION_ID="jmcomic.plus"
-TEST_PACKAGE="jmcomic.debug.test"
+DEBUG_APPLICATION_ID="kujira.manga.debug"
+RELEASE_APPLICATION_ID="kujira.manga"
+TEST_PACKAGE="kujira.manga.debug.test"
 RUNNER="androidx.test.runner.AndroidJUnitRunner"
+
+# 发布签名密钥：密钥库 release-key/Kujira-Manga-Key.p12，别名 Kujira-Manga-Key。
+# 密码存在 macOS 钥匙串条目 KEYCHAIN_SIGNING_ITEM 里（acct 见 KEYCHAIN_ACCOUNT）。
+# 取用：eval "$(./scripts/android signing-env)"
+KEYCHAIN_SIGNING_ITEM="Kujira-Manga-Key"
+KEYCHAIN_ACCOUNT="Utolaris"
 
 # ---------------------------------------------------------------------------
 # SDK / PATH
@@ -146,7 +152,7 @@ require_gradle_jdk() {
 
 usage() {
   cat <<'USAGE'
-jmcomic-plus Android 调试 CLI
+Kujira-Manga Android 调试 CLI
 
 用法：./scripts/android <命令> [参数]
 
@@ -174,6 +180,9 @@ jmcomic-plus Android 调试 CLI
 分析
   apk-info <apk>         包名 / 版本 / 权限摘要
   apk-sign <apk>         签名证书信息
+
+发布
+  signing-env            打印签名密码的 export 语句；用法：eval "$(./scripts/android signing-env)"
 
 测试
   test [args...]         等价 ./scripts/run-instrumented-tests.sh
@@ -302,7 +311,7 @@ cmd_screenrecord() {
   serial="$(select_device "${1:-}")"
   mkdir -p build
   out="build/screen.mp4"
-  remote="/sdcard/jmcomic-screenrecord.mp4"
+  remote="/sdcard/kujira-manga-screenrecord.mp4"
   echo "==> 录屏 ${seconds}s（Ctrl+C 可提前结束）"
   "$ADB" -s "$serial" shell screenrecord --time-limit "$seconds" "$remote" || true
   "$ADB" -s "$serial" pull "$remote" "$out"
@@ -352,6 +361,17 @@ cmd_apk_sign() {
   fi
 }
 
+cmd_signing_env() {
+  local password
+  if ! password="$(security find-generic-password -s "$KEYCHAIN_SIGNING_ITEM" -a "$KEYCHAIN_ACCOUNT" -w 2>/dev/null)"; then
+    echo "读取钥匙串条目 '$KEYCHAIN_SIGNING_ITEM' 失败。" >&2
+    echo "先确认条目存在：security find-generic-password -s $KEYCHAIN_SIGNING_ITEM" >&2
+    return 1
+  fi
+  printf 'export KUJIRA_MANGA_RELEASE_STORE_PASSWORD=%q\n' "$password"
+  printf 'export KUJIRA_MANGA_RELEASE_KEY_PASSWORD=%q\n' "$password"
+}
+
 cmd_test() {
   exec ./scripts/run-instrumented-tests.sh "$@"
 }
@@ -397,6 +417,7 @@ main() {
     bugreport) cmd_bugreport "$@" ;;
     apk-info) cmd_apk_info "$@" ;;
     apk-sign) cmd_apk_sign "$@" ;;
+    signing-env) cmd_signing_env "$@" ;;
     test) cmd_test "$@" ;;
     test-class) cmd_test_class "$@" ;;
     appops-allow) cmd_appops_allow "$@" ;;

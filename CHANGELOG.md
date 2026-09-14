@@ -2,6 +2,17 @@
 
 发布日期：2026-09-14
 
+## 更名
+
+- 项目更名为 **Kujira-Manga**：仓库名、应用显示名（桌面图标名、关于页、更新页）全部更换。
+- 安装包名由 `jmcomic.plus` 改为 `kujira.manga`，debug 变体为 `kujira.manga.debug`。
+- 重建了发布密钥库：密钥库由 `release-key/jmcomic-plus-release.p12` 换成
+  `release-key/Kujira-Manga-Key.p12`，别名换成 `Kujira-Manga-Key`，密码保存于本机钥匙串
+  条目 `Kujira-Manga-Key`。证书与私钥沿用原样（指纹未变），签名身份不变。
+- **升级须知**：包名与签名同时变更，系统会把本版视为一个全新的应用。旧版 `jmcomic.plus`
+  的设置、登录、收藏与下载数据都不会自动迁移，需要重新登录并按需重新下载。
+  旧的 `jmcomic.plus` 可以继续与新版共存，确认新版本可用后再手动卸载。
+
 ## 评论与登录
 
 - 修复已登录仍提示 “Please login first” / 无法发表评论的问题：恢复会话时同步写入内置 API 的用户名缓存，评论在服务端成功后不再被客户端误判失败。
@@ -27,7 +38,8 @@
 
 ## 安装包
 
-- Release 包名：`jmcomic.plus`
+- 应用名：`Kujira-Manga`
+- Release 包名：`kujira.manga`
 - 版本号：`1.4.4`（versionCode `144`）
 
 # v1.4.3

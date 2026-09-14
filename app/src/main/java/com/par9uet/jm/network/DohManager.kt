@@ -286,7 +286,7 @@ private class DohResolver(
         val request = Request.Builder()
             .url(endpoint.newBuilder().addQueryParameter("dns", encoded).build())
             .header("Accept", "application/dns-message")
-            .header("User-Agent", "JM-Mobile-DoH")
+            .header("User-Agent", "Kujira-Manga-DoH")
             .get()
             .build()
         client.newCall(request).execute().use { response ->

@@ -182,6 +182,6 @@ class PdfExportDeviceTest {
     }
 
     private companion object {
-        const val PROVIDER_AUTHORITY = "jmcomic.debug.test.cache-documents"
+        const val PROVIDER_AUTHORITY = "kujira.manga.debug.test.cache-documents"
     }
 }

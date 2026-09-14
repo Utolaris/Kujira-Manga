@@ -136,7 +136,7 @@ class AppUpdateDownloadManager(
         val call = client.newCall(
             Request.Builder()
                 .url(request.downloadUrl)
-                .header("User-Agent", "jmcomic-plus-android")
+                .header("User-Agent", "kujira-manga-android")
                 .build()
         )
         activeCall.set(call)

@@ -46,6 +46,10 @@ CLI 会自动探测 SDK（`ANDROID_HOME` → `ANDROID_SDK_ROOT` → 常见路径
 ./scripts/android apk-info app/build/outputs/apk/debug/*.apk
 ./scripts/android apk-sign  app/build/outputs/apk/release/*.apk
 
+# 发布签名（从钥匙串取密码，详见 docs/release-signing.md）
+eval "$(./scripts/android signing-env)"   # 导出 KUJIRA_MANGA_RELEASE_*_PASSWORD
+./gradlew :app:assembleRelease
+
 # 插桩测试（转调 run-instrumented-tests.sh）
 ./scripts/android test
 ./scripts/android test-class com.par9uet.jm.cache.atom.CacheFilesDeviceTest

@@ -13,7 +13,7 @@ class GithubReleaseSourceTest {
         "tag_name":"v1.12.0", "name":"release", "body":"changes", "assets":[
             {"name":"source.zip", "browser_download_url":"https://example.com/source.zip"},
             {"name":"other.apk", "browser_download_url":"https://example.com/other.apk"},
-            {"name":"jm-mobile_v1.12.0_arm64.apk", "browser_download_url":"https://example.com/app.apk"}
+            {"name":"kujira-manga_v1.12.0_arm64.apk", "browser_download_url":"https://example.com/app.apk"}
         ]
     }"""
 
@@ -21,7 +21,7 @@ class GithubReleaseSourceTest {
         val release = parseGithubRelease(releaseJson)
         assertEquals("1.12.0", release.version)
         assertEquals("https://example.com/app.apk", release.downloadUrl)
-        assertEquals("https://github.com/Utolaris/jmcomic-plus/releases/tag/v1.12.0", release.url)
+        assertEquals("https://github.com/Utolaris/Kujira-Manga/releases/tag/v1.12.0", release.url)
         assertEquals("changes", release.body)
     }
 
@@ -44,7 +44,7 @@ class GithubReleaseSourceTest {
         var code = 200
         val client = OkHttpClient.Builder().addInterceptor { chain ->
             assertEquals("application/vnd.github+json", chain.request().header("Accept"))
-            assertEquals("jmcomic-plus-android", chain.request().header("User-Agent"))
+            assertEquals("kujira-manga-android", chain.request().header("User-Agent"))
             Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1)
                 .code(code).message("test").body(releaseJson.toResponseBody()).build()
         }.build()

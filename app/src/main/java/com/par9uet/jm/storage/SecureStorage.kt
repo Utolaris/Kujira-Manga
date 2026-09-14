@@ -137,7 +137,7 @@ class SecureStorage(
 
     companion object {
         /** Names of the files that hold encoded values, for callers that inspect stored ciphertext. */
-        const val DATA_PREFERENCES_NAME = "jm-mobile-g-data"
-        const val STARTUP_PREFERENCES_NAME = "jm-mobile-startup"
+        const val DATA_PREFERENCES_NAME = "kujira-manga-g-data"
+        const val STARTUP_PREFERENCES_NAME = "kujira-manga-startup"
     }
 }

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Android 11 uses these rules; Android 12+ uses data_extraction_rules.xml. -->
 <full-backup-content>
-    <exclude domain="sharedpref" path="jm-mobile-g-data.xml" />
+    <exclude domain="sharedpref" path="kujira-manga-g-data.xml" />
     <!-- Startup prefs hold Keystore-encrypted identity/settings; do not transfer across devices. -->
-    <exclude domain="sharedpref" path="jm-mobile-startup.xml" />
+    <exclude domain="sharedpref" path="kujira-manga-startup.xml" />
 </full-backup-content>

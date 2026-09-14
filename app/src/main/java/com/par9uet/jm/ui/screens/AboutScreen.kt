@@ -37,7 +37,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.par9uet.jm.ui.components.CommonScaffold
 
-private const val GITHUB_REPO_URL = "https://github.com/Utolaris/jmcomic-plus"
+private const val GITHUB_REPO_URL = "https://github.com/Utolaris/Kujira-Manga"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -99,7 +99,7 @@ private fun AppHeaderCard(
                 }
             }
             Text(
-                text = "JMcomic Plus",
+                text = "Kujira-Manga",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface

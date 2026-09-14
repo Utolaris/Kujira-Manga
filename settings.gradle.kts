@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "jmcomic-plus"
+rootProject.name = "Kujira-Manga"
 include(":app")

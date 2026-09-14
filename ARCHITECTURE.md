@@ -521,7 +521,8 @@ L4 设施，或反向依赖上层；`data.models` 是共享契约，不算违规
   `gradle/wrapper` 为 Gradle **9.7.1**，AGP **9.4.0**，KSP **2.3.12**。本地 `gradlew` 默认走 wrapper；
   需要本机 brew Gradle 时设 `JM_USE_LOCAL_GRADLE=1`。
 - **签名密钥**：`release` 的 `storePassword` / `keyPassword` 只读环境变量
-  `JMCOMIC_RELEASE_STORE_PASSWORD` / `JMCOMIC_RELEASE_KEY_PASSWORD`；`release-key/`、
+  `KUJIRA_MANGA_RELEASE_STORE_PASSWORD` / `KUJIRA_MANGA_RELEASE_KEY_PASSWORD`（值为钥匙串条目
+  `Kujira-Manga-Key` 保存的密码，用 `eval "$(./scripts/android signing-env)"` 注入）；`release-key/`、
   `*.p12` / `*.jks` / `*.keystore`、`.env*` 均在 `.gitignore` 中，**git 历史中从未出现过签名材料**。
 - **客户端协议常量**：`retrofit/ApiContext.kt` 的 `APP_DATA_SECRET`（推荐接口 payload 解密用）
   是**写死在源码里的协议盐**，不是用户密钥、也不是签名密钥。它会随 APK 一起被逆向，
