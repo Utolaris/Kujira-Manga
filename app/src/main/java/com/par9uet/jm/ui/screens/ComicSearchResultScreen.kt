@@ -5,6 +5,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,10 +13,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -24,6 +27,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -88,6 +92,40 @@ private fun ComicSearchResultSkeleton(
     ) {
         for (i in 0 until 18) {
             ComicSkeleton(modifier = Modifier.weight(1f))
+        }
+    }
+}
+
+/**
+ * Stated reload failure, shown above results that stay on screen. Silent staleness reads exactly
+ * like a working search, which is what made the failure invisible before.
+ */
+@Composable
+private fun SearchRefreshErrorBanner(
+    message: String,
+    onRetry: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 10.dp, vertical = 6.dp)
+            .background(
+                color = MaterialTheme.colorScheme.errorContainer,
+                shape = RoundedCornerShape(16.dp),
+            )
+            .padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = message,
+            modifier = Modifier.weight(1f),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onErrorContainer,
+        )
+        TextButton(onClick = onRetry) {
+            Text("重试")
         }
     }
 }
@@ -206,7 +244,7 @@ fun ComicSearchResultScreen(
     }
 
     val isLoading = comicSearchLazyPagingItems.loadState.refresh is LoadState.Loading
-    val hasError = comicSearchLazyPagingItems.loadState.refresh is LoadState.Error
+    val refreshError = comicSearchLazyPagingItems.loadState.refresh as? LoadState.Error
 
     CommonScaffold(
         title = comicSearchFilterState.searchContent.ifBlank { "搜索" },
@@ -267,7 +305,7 @@ fun ComicSearchResultScreen(
                 )
                 return@Column
             }
-            if (hasError && comicSearchLazyPagingItems.itemCount == 0) {
+            if (refreshError != null && comicSearchLazyPagingItems.itemCount == 0) {
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -277,13 +315,21 @@ fun ComicSearchResultScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = (comicSearchLazyPagingItems.loadState.refresh as? LoadState.Error)?.error?.message
-                            ?: "加载失败，请重试",
+                        text = refreshError.error.message ?: "加载失败，请重试",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 return@Column
+            }
+            if (refreshError != null) {
+                // A failed reload keeps the previously loaded pages on screen, which is the right
+                // thing to do - but doing it silently is indistinguishable from a working search,
+                // so the failure has to be stated while the results stay visible.
+                SearchRefreshErrorBanner(
+                    message = refreshError.error.message ?: "加载失败，请重试",
+                    onRetry = { comicSearchLazyPagingItems.retry() },
+                )
             }
             PullRefreshAndLoadMoreGrid(
                 modifier = Modifier.weight(1f),

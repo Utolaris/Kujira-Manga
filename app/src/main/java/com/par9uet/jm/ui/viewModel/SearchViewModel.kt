@@ -87,6 +87,21 @@ class SearchViewModel(
         )
     }
 
+    /**
+     * Called when the user submits the search editor. Unlike [changeSearchComicContent] - which the
+     * result destination replays on every re-entry and therefore must stay idempotent - this always
+     * asks for a fresh load, so repeating the exact same query surfaces a network failure instead of
+     * silently re-rendering the results that are still cached in this ViewModel.
+     */
+    fun submitSearch(searchContent: String, excludedTags: List<String>) {
+        _searchComicIdState.update { null }
+        val current = _searchComicFilterState.value
+        _searchComicFilterState.value = current
+            .copy(searchContent = searchContent, excludedTags = excludedTags)
+            .copy(revision = current.revision + 1L)
+        _searchViewportState.update(SearchViewportState::reset)
+    }
+
     fun saveSearchViewport(
         firstVisibleItemIndex: Int,
         firstVisibleItemScrollOffset: Int,
@@ -105,8 +120,9 @@ class SearchViewModel(
     }
 
     private fun updateSearchFilter(next: SearchComicFilter) {
-        if (next == _searchComicFilterState.value) return
-        _searchComicFilterState.value = next
+        val current = _searchComicFilterState.value
+        if (next.matchesQuery(current)) return
+        _searchComicFilterState.value = next.copy(revision = current.revision + 1L)
         _searchViewportState.update(SearchViewportState::reset)
     }
 

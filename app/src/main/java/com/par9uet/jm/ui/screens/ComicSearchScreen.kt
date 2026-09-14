@@ -109,6 +109,9 @@ fun ComicSearchScreen(
         if (visibleSearchContent.isBlank()) return
 
         historySearchManager.addItem(visibleSearchContent)
+        // Hand the query to the ViewModel here, on the user's explicit submit, so the result screen
+        // always issues a real request even when the query repeats the previous one.
+        searchViewModel.submitSearch(visibleSearchContent, finalExcludedTags)
         val encodedSearchContent = Uri.encode(visibleSearchContent)
         val encodedExcludedTags = Uri.encode(serializeExcludedTags(finalExcludedTags))
         mainNavController.navigate(

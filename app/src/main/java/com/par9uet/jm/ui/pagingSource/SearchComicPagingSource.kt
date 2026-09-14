@@ -16,7 +16,20 @@ data class SearchComicFilter(
     val order: ComicSearchOrderFilter = ComicSearchOrderFilter.NEWEST,
     val searchContent: String = "",
     val excludedTags: List<String> = emptyList(),
-)
+    /**
+     * Bumped by every explicit search so that repeating the same query still reaches the network.
+     * The paging source ignores it; it exists only to make `flatMapLatest` create a new Pager.
+     * Without it a repeat search was a no-op that left the previous results on screen, with no
+     * request made and therefore no error to report.
+     */
+    val revision: Long = 0L,
+) {
+    /** Query-level equality, i.e. everything except the reload trigger. */
+    fun matchesQuery(other: SearchComicFilter): Boolean =
+        order == other.order &&
+            searchContent == other.searchContent &&
+            excludedTags == other.excludedTags
+}
 
 class SearchComicPagingSource(
     private val comicRepository: ComicRepository,
