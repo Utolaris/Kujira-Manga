@@ -11,6 +11,10 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 APK_DIR="$PROJECT_DIR/app/build/outputs/apk"
 GRADLE_FLAGS="-Dhttp.proxyHost= -Dhttp.proxyPort= -Dhttps.proxyHost= -Dhttps.proxyPort="
 
+# Gradle JDK 守卫：严格锁定非 GraalVM 的 OpenJDK 21，见该文件头部的说明。
+# 与 scripts/android 共用同一份实现，避免两处规则各自漂移。
+source "$SCRIPT_DIR/jdk-guard.sh"
+
 APPLICATION_ID="kujira.manga.debug"
 TEST_PACKAGE="kujira.manga.debug.test"
 RUNNER="androidx.test.runner.AndroidJUnitRunner"
@@ -133,6 +137,9 @@ install_apk() {
 build_and_install() {
   local serial="$1"
   echo "==> 编译 debug APK 与 androidTest APK..."
+  # 编译前先锁定 Gradle 用的 JDK，否则 PATH 上的 GraalVM 会让 AGP JdkImageTransform 失败。
+  # 本函数在 `||` 列表里被调用，errexit 已被关掉，所以失败必须显式判。
+  require_gradle_jdk || die "找不到可用的 OpenJDK 21，已中止编译。"
   # 注意：这个函数是在 `[ ... ] || build_and_install ...` 里调的，bash 在 `||` 列表里会
   # 关掉 errexit，所以失败必须自己判——否则编译失败会拿着上一次的 APK 接着装、接着测，
   # 结果看着全绿，测的却是旧包。

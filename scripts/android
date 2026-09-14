@@ -13,6 +13,10 @@ RELEASE_APPLICATION_ID="kujira.manga"
 TEST_PACKAGE="kujira.manga.debug.test"
 RUNNER="androidx.test.runner.AndroidJUnitRunner"
 
+# Gradle JDK 守卫：严格锁定非 GraalVM 的 OpenJDK 21，见该文件头部的说明。
+# 与 scripts/run-instrumented-tests.sh 共用同一份实现，避免两处规则各自漂移。
+source "$SCRIPT_DIR/jdk-guard.sh"
+
 # 发布签名密钥：密钥库 release-key/Kujira-Manga-Key.p12，别名 Kujira-Manga-Key。
 # 密码存在 macOS 钥匙串条目 KEYCHAIN_SIGNING_ITEM 里（acct 见 KEYCHAIN_ACCOUNT）。
 # 取用：eval "$(./scripts/android signing-env)"
@@ -67,7 +71,7 @@ APKSIGNER="${BUILD_TOOLS:+$BUILD_TOOLS/apksigner}"
 [ -x "$ADB" ] || ADB="$(command -v adb)"
 
 # ---------------------------------------------------------------------------
-# Device helpers（与 install-debug.sh 同一套真机优先逻辑）
+# Device helpers（真机优先）。install-debug.sh 已改为转调到本脚本，共用这一份实现。
 # ---------------------------------------------------------------------------
 
 is_emulator() {
@@ -144,12 +148,6 @@ latest_apk() {
   ls -t "$dir"/*.apk 2>/dev/null | head -1
 }
 
-require_gradle_jdk() {
-  if [ -z "${JAVA_HOME:-}" ] && [ -d /opt/homebrew/opt/openjdk@21 ]; then
-    export JAVA_HOME=/opt/homebrew/opt/openjdk@21
-  fi
-}
-
 usage() {
   cat <<'USAGE'
 Kujira-Manga Android 调试 CLI
@@ -205,8 +203,9 @@ cmd_doctor() {
   echo "platform   : ${PLATFORM_TOOLS} ($( [ -x "$ADB" ] && "$ADB" version 2>/dev/null | head -1 || echo missing ))"
   echo "build-tools: ${BUILD_TOOLS:-none}"
   echo "JAVA_HOME  : ${JAVA_HOME:-unset}"
-  require_gradle_jdk
-  echo "JAVA_HOME→ : ${JAVA_HOME:-unset}（assemble 需要 OpenJDK 21，勿用 GraalVM）"
+  # doctor 是诊断入口：即使解析不到合格 JDK 也要把上面几行报完，所以这里容错。
+  require_gradle_jdk || true
+  echo "JAVA_HOME→ : ${JAVA_HOME:-unset}（assemble 必须是非 GraalVM 的 OpenJDK 21）"
   echo "local.properties sdk.dir:"
   grep '^sdk.dir=' local.properties 2>/dev/null || echo "  (missing)"
   echo "设备："
