@@ -17,6 +17,8 @@ class WeekComicPagingSource(
     private val filter: WeekFilter,
     private val blockedTagList: List<String> = listOf(),
 ) : PagingSource<Int, Comic>() {
+    private val deduplicator = PageItemDeduplicator<Comic> { it.id }
+
     override suspend fun load(params: LoadParams<Int>): LoadResult<Int, Comic> {
         val currentPage = params.key ?: 1
         if (filter.categoryId == null || filter.typeId == null) {
@@ -36,13 +38,10 @@ class WeekComicPagingSource(
             }
 
             is NetWorkResult.Success -> {
-                val list = data.data.items.filterBlockedTags(blockedTagList)
+                val list = deduplicator.filter(currentPage, data.data.items)
+                    .filterBlockedTags(blockedTagList)
                 val total = data.data.total
-                val isLastPage = if (total != null) {
-                    currentPage >= (total + params.loadSize - 1) / params.loadSize
-                } else {
-                    data.data.items.size < params.loadSize
-                }
+                val isLastPage = isLastRemotePage(currentPage, data.data.items.size, total)
                 LoadResult.Page(
                     data = list,
                     prevKey = if (currentPage == 1) null else currentPage - 1,

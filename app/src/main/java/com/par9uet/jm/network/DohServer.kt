@@ -73,4 +73,19 @@ fun resolveDohServer(
     return builtinDohServers.firstOrNull { it.id == selectedId } ?: builtinDohServers.first()
 }
 
+/**
+ * DoH 设置页展示用的服务列表。
+ *
+ * 同一 `id` 只能出现一次：它是 `LazyColumn` 的 key（等同 `SubcomposeLayout` 的 slotId），
+ * 重复即抛 `IllegalArgumentException`。自定义项覆盖同名内置项（自定义项带着用户填的地址），
+ * 位置沿用该 id 首次出现的位置，避免开关设置后列表跳序。
+ */
+fun mergeDohServers(
+    builtin: List<DohServer>,
+    custom: DohServer,
+): List<DohServer> = (builtin + custom)
+    .associateBy({ it.id }, { it })
+    .values
+    .toList()
+
 fun isValidDohUrl(value: String): Boolean = value.trim().toHttpUrlOrNull()?.isHttps == true

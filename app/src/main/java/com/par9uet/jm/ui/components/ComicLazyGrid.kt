@@ -49,7 +49,7 @@ fun ComicLazyGrid(
     blockedTags: List<String> = emptyList(),
 ) {
     val visibleList = remember(list, blockedTags) {
-        list.filterBlockedTags(blockedTags)
+        list.filterBlockedTags(blockedTags).distinctBy { it.id }
     }
     val shouldLoadMore by remember(gridState, isRefreshing, hasMore) {
         derivedStateOf {

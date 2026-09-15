@@ -222,7 +222,7 @@ internal fun HomeScreen(
         (blockedTags + homeExcludedTags).distinct()
     }
     val comicList = remember(currentContent, allExcludedTags) {
-        currentContent.filterBlockedTags(allExcludedTags)
+        currentContent.filterBlockedTags(allExcludedTags).distinctBy { it.id }
     }
     LazyVerticalGrid(
         modifier = pullDownModifier.fillMaxSize(),

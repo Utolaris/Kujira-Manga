@@ -54,11 +54,15 @@ internal fun buildFavoritePagingQuery(
     }
 
     // Scope-aware ordering: each folder list follows its own synchronized membership order.
-    val orderBy = "m.remoteOrder ASC"
+    // GROUP BY 消除 JOIN 膨胀：同一 album 理论上 folderId 唯一，但同步/迁移异常时
+    // 不该把重复行交给 LazyGrid 的 key（会直接 IllegalArgumentException）。
+    val orderBy = "MIN(m.remoteOrder) ASC"
     return SimpleSQLiteQuery(
         "SELECT c.* FROM favorite_comics c " +
             "JOIN favorite_folder_memberships m ON m.accountId = c.accountId AND m.albumId = c.albumId " +
-            "WHERE ${clauses.joinToString(" AND ")} ORDER BY $orderBy, c.albumId ASC",
+            "WHERE ${clauses.joinToString(" AND ")} " +
+            "GROUP BY c.accountId, c.albumId " +
+            "ORDER BY $orderBy, c.albumId ASC",
         args.toTypedArray(),
     )
 }

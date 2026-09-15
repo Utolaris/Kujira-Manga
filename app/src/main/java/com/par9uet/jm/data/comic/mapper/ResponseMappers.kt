@@ -46,8 +46,8 @@ internal fun ComicDetailResponse.toComic(): Comic {
                 it.name,
                 listOf(it.author)
             )
-        },
-        comicChapterList = series.map { ComicChapter(it.id.toInt(), it.name) },
+        }.distinctBy { it.id },
+        comicChapterList = series.map { ComicChapter(it.id.toInt(), it.name) }.distinctBy { it.id },
         seriesId = series_id,
         price = price.toIntOrNull() ?: 0,
         isBuy = purchased,

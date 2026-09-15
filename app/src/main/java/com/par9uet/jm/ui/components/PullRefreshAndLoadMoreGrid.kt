@@ -24,7 +24,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
-import androidx.paging.compose.itemKey
 
 @Composable
 fun <T : Any> PullRefreshAndLoadMoreGrid(
@@ -52,7 +51,13 @@ fun <T : Any> PullRefreshAndLoadMoreGrid(
         ) {
             items(
                 lazyPagingItems.itemCount,
-                key = lazyPagingItems.itemKey { key(it) },
+                // 业务 id 可能在分页膨胀/竞态下重复；LazyGrid 对重复 key 会直接崩溃。
+                // 用 index 做后缀保证 key 全局唯一（封面仍按 URL 缓存，不受影响）。
+                key = { index ->
+                    val item = lazyPagingItems.peek(index)
+                    if (item == null) "paging_placeholder_$index"
+                    else "${key(item)}#$index"
+                },
             ) { index ->
                 val item = lazyPagingItems[index]
                 if (item != null && itemVisible(item)) {
@@ -62,9 +67,10 @@ fun <T : Any> PullRefreshAndLoadMoreGrid(
             when (val appendState = lazyPagingItems.loadState.append) {
                 is LoadState.Loading -> {
                     item(span = { GridItemSpan(maxLineSpan) }) {
+                        // 页尾指示器只占用自身所需的高度。
                         Box(
                             Modifier
-                                .fillMaxSize()
+                                .fillMaxWidth()
                                 .padding(16.dp),
                             contentAlignment = Alignment.Center
                         ) {

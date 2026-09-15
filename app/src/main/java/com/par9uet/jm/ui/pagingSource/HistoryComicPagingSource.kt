@@ -11,6 +11,8 @@ class HistoryComicPagingSource(
     private val userRepository: UserRepository,
     private val blockedTagList: List<String> = listOf(),
 ) : PagingSource<Int, Comic>() {
+    private val deduplicator = PageItemDeduplicator<Comic> { it.id }
+
     override suspend fun load(params: LoadParams<Int>): LoadResult<Int, Comic> {
         val currentPage = params.key ?: 1
         return when (val data =
@@ -20,10 +22,11 @@ class HistoryComicPagingSource(
             }
 
             is NetWorkResult.Success -> {
-                val list = data.data.items.filterBlockedTags(blockedTagList)
+                val list = deduplicator.filter(currentPage, data.data.items)
+                    .filterBlockedTags(blockedTagList)
                 // watch_list has no total and always uses the server page size. Paging may
                 // request a larger loadSize; tag filtering must not truncate pagination.
-                val isLastPage = data.data.items.size < PAGE_SIZE
+                val isLastPage = isLastRemotePage(currentPage, data.data.items.size)
                 LoadResult.Page(
                     data = list,
                     prevKey = if (currentPage == 1) null else currentPage - 1,
@@ -34,7 +37,7 @@ class HistoryComicPagingSource(
     }
 
     companion object {
-        const val PAGE_SIZE = 20
+        const val PAGE_SIZE = REMOTE_PAGE_SIZE
     }
 
     override fun getRefreshKey(state: PagingState<Int, Comic>): Int? = null

@@ -620,8 +620,12 @@ private fun ComicCacheRestoreDialog(
     onSkip: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    // 备份载荷里同一部漫画可能出现两条（同一 id）。id 是这里唯一的身份——勾选集合也是按 id
+    // 建的，重复 id 会让 `items(key = { it.id })` 抛异常，计数与「全选」也会算错。
+    // 所以先在入口收口，下面一律用 restoreGroups。
+    val restoreGroups = remember(groups) { groups.distinctBy { it.id } }
     // 默认全部勾选
-    val selectedIds = remember(groups) { mutableStateOf(groups.map { it.id }.toSet()) }
+    val selectedIds = remember(restoreGroups) { mutableStateOf(restoreGroups.map { it.id }.toSet()) }
 
     GlassModal(
         visible = visible,
@@ -644,7 +648,7 @@ private fun ComicCacheRestoreDialog(
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "共 ${groups.size} 部漫画。勾选需要重新缓存的漫画，未勾选的不会恢复。恢复时会按编号重新创建缓存任务。",
+                    text = "共 ${restoreGroups.size} 部漫画。勾选需要重新缓存的漫画，未勾选的不会恢复。恢复时会按编号重新创建缓存任务。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -655,15 +659,15 @@ private fun ComicCacheRestoreDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "已选 ${selectedIds.value.size} / ${groups.size}",
+                        text = "已选 ${selectedIds.value.size} / ${restoreGroups.size}",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     TextButton(onClick = {
-                        val allIds = groups.map { it.id }.toSet()
+                        val allIds = restoreGroups.map { it.id }.toSet()
                         selectedIds.value = if (selectedIds.value.size == allIds.size) emptySet() else allIds
                     }) {
-                        Text(if (selectedIds.value.size == groups.size) "取消全选" else "全选")
+                        Text(if (selectedIds.value.size == restoreGroups.size) "取消全选" else "全选")
                     }
                 }
 
@@ -673,7 +677,7 @@ private fun ComicCacheRestoreDialog(
                         .height(360.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(groups, key = { it.id }) { group ->
+                    items(restoreGroups, key = { it.id }) { group ->
                         val checked = group.id in selectedIds.value
                         ComicRestoreRow(
                             group = group,
@@ -700,7 +704,7 @@ private fun ComicCacheRestoreDialog(
                     TextButton(onClick = onSkip) { Text("跳过缓存恢复") }
                     Spacer(modifier = Modifier.size(4.dp))
                     TextButton(onClick = {
-                        val selected = groups.filter { it.id in selectedIds.value }
+                        val selected = restoreGroups.filter { it.id in selectedIds.value }
                         onConfirm(selected)
                     }) { Text("恢复", fontWeight = FontWeight.Bold) }
                 }

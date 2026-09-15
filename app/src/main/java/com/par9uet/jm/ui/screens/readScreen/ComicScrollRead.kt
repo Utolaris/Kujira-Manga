@@ -47,7 +47,8 @@ fun ComicScrollRead(
     var currentIndexState by comicReadViewModel.currentIndexState
     val comicPicState by comicReadViewModel.comicPicState.collectAsState()
     val readTapMode by localSettingManager.readTapMode.collectAsState()
-    val list = comicPicState.data ?: listOf()
+    val list = comicPicState.data.orEmpty()
+        .distinctBy { "${it.comicId}_${it.originSrc}" }
     val context = LocalContext.current
     var programmaticScroll by remember { mutableStateOf(false) }
 

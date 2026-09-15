@@ -306,7 +306,7 @@ private fun CommentList(
     PullRefreshAndLoadMoreGrid(
         modifier = modifier,
         lazyPagingItems = commentLazyPagingItems,
-        key = { it.id },
+        key = { it.identityKey },
         columns = GridCells.Fixed(1),
         contentPadding = PaddingValues(
             top = topContentPadding + 10.dp,

@@ -36,6 +36,8 @@ class SearchComicPagingSource(
     private val filter: SearchComicFilter,
     private val onFindSingleComicId: (id: Int?) -> Unit = {}
 ) : PagingSource<Int, Comic>() {
+    private val deduplicator = PageItemDeduplicator<Comic> { it.id }
+
     companion object {
         private const val DETAIL_FILTER_BATCH_SIZE = 6
     }
@@ -67,9 +69,11 @@ class SearchComicPagingSource(
                     )
                 } else {
                     onFindSingleComicId(null)
-                    val list = filterExcludedComics(data.data.items, excludedTags)
+                    val uniqueItems = deduplicator.filter(currentPage, data.data.items)
+                    val list = filterExcludedComics(uniqueItems, excludedTags)
                     val total = data.data.total
-                    val isLastPage = currentPage >= (total + params.loadSize - 1) / params.loadSize
+                    val isLastPage = data.data.items.size < REMOTE_PAGE_SIZE ||
+                        isLastRemotePage(currentPage, data.data.items.size, total)
                     LoadResult.Page(
                         data = list,
                         prevKey = if (currentPage == 1) null else currentPage - 1,

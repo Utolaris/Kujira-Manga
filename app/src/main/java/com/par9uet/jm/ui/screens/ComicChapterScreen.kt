@@ -36,7 +36,10 @@ fun ComicChapterScreen(
 ) {
     val comicDetailState by comicDetailViewModel.comicDetailState.collectAsState()
     val comic = comicDetailState.data
-    val comicChapterList = comic?.comicChapterList ?: listOf()
+    // 章节 id 在异常数据下可能重复，LazyGrid 对重复 key 会崩溃。
+    val comicChapterList = remember(comic) {
+        (comic?.comicChapterList ?: emptyList()).distinctBy { it.id }
+    }
     val readHistory by readHistoryManager.readHistoryState.collectAsState()
     val readChapterIds = remember(comic, readHistory) {
         comic?.let {

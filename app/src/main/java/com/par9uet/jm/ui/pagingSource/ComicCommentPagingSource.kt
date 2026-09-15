@@ -10,6 +10,8 @@ class ComicCommentPagingSource(
     private val comicRepository: ComicRepository,
     private val comicId: Int,
 ) : PagingSource<Int, Comment>() {
+    private val deduplicator = PageItemDeduplicator<Comment> { it.identityKey }
+
     override suspend fun load(params: LoadParams<Int>): LoadResult<Int, Comment> {
         val currentPage = params.key ?: 1
         return when (val data =
@@ -19,9 +21,9 @@ class ComicCommentPagingSource(
             }
 
             is NetWorkResult.Success -> {
-                val list = data.data.items
+                val list = deduplicator.filter(currentPage, data.data.items)
                 val total = data.data.total
-                val isLastPage = currentPage >= (total + params.loadSize - 1) / params.loadSize
+                val isLastPage = isLastRemotePage(currentPage, data.data.items.size, total)
                 LoadResult.Page(
                     data = list,
                     prevKey = if (currentPage == 1) null else currentPage - 1,

@@ -49,7 +49,7 @@ fun UserHistoryCommentScreen(
         } else {
             PullRefreshAndLoadMoreGrid(
                 lazyPagingItems = historyCommentLazyPagingItems,
-                key = { "${it.comicId}:${it.sourceChapterId}:${it.id}:${it.time}:${it.content.hashCode()}" },
+                key = { it.identityKey },
                 columns = GridCells.Fixed(1),
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(

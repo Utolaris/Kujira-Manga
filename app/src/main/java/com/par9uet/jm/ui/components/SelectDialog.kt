@@ -17,6 +17,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
@@ -66,10 +67,14 @@ fun SelectDialog(
             val maxHeight = with(density) {
                 LocalWindowInfo.current.containerSize.height.toDp() * 0.6f
             }
+            // 单选组的同一个 value 出现两次本身没有意义，但会让下面 `key = { it.value }`
+            // 撞 key（LazyList 的 key 等同 SubcomposeLayout 的 slotId，重复即抛异常）。
+            // 保留首次出现的顺序与文案。
+            val options = remember(selectOptionList) { selectOptionList.distinctBy { it.value } }
             LazyColumn(
                 modifier = Modifier.heightIn(max = maxHeight)
             ) {
-                items(selectOptionList, key = { it.value }) { option ->
+                items(options, key = { it.value }) { option ->
                     Row(
                         modifier = Modifier
                             .clickable(onClick = {

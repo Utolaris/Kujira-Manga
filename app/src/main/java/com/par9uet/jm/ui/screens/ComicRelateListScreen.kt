@@ -29,7 +29,10 @@ fun ComicRelateListScreen(
     CommonScaffold(title = "相关本子") { topContentPadding, bottomContentPadding ->
         if (comicDetailState.data != null) {
             val relateList = remember(comicDetailState.data, blockedTags) {
-                comicDetailState.data?.relateComicList?.filterBlockedTags(blockedTags) ?: emptyList()
+                comicDetailState.data?.relateComicList
+                    ?.filterBlockedTags(blockedTags)
+                    ?.distinctBy { it.id }
+                    ?: emptyList()
             }
             LazyVerticalGrid(
                 columns = adaptiveComicGridCells(),

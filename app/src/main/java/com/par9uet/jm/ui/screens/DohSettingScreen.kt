@@ -49,6 +49,7 @@ import com.par9uet.jm.network.DohManager
 import com.par9uet.jm.network.DohServer
 import com.par9uet.jm.network.builtinDohServers
 import com.par9uet.jm.network.isValidDohUrl
+import com.par9uet.jm.network.mergeDohServers
 import com.par9uet.jm.storage.DohPreferences
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.glass.GlassModal
@@ -87,7 +88,8 @@ fun DohSettingScreen(
             displayUrl = doh.customServerUrl,
         )
     }
-    val servers = remember(customServer) { builtinDohServers + customServer }
+    // 同一 id 出现两次会让下面 `items(key = { it.id })` 直接抛异常；收口规则见 mergeDohServers。
+    val servers = remember(customServer) { mergeDohServers(builtinDohServers, customServer) }
 
     CommonScaffold(
         title = "DoH",
