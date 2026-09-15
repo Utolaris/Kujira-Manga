@@ -5,12 +5,13 @@
 
 > 本文描述的是**当前代码的真实状态**，不是目标状态。文中出现的每个类名、路径和数字都应能在
 > `app/src/main/java/com/par9uet/jm` 下找到；与代码不符的措辞视为文档缺陷，应直接修正。
-> 最近一次核对：v1.4.4（`VERSION_CODE=144`），主源码 **355** 个 Kotlin 文件 / **44,094** 行
+> 最近一次核对：v1.4.4（`VERSION_CODE=144`），主源码 **361** 个 Kotlin 文件 / **44,820** 行
 > （`find app/src/main/java -name '*.kt' | wc -l` + `wc -l` 口径）。
 > 本轮迁移（store 清空 + 依赖环消除）后的全量核对：2026-09-12；
 > 工具链与 hygiene 对齐后的再次核对：2026-09-12（Java 21 / OpenJDK 21 构建，详见文末）；
 > 表现层解耦（`ui/components` 收窄 + 仓库返回领域类型 + `ui/screens` 领域直连下沉）后的核对：2026-09-13；
-> 安全写确认 / 备份 v4 / 组提交串行 / DoH 客户端清单 / 历史会话绑定落地后的核对：2026-09-13（v1.4.3）。
+> 安全写确认 / 备份 v4 / 组提交串行 / DoH 客户端清单 / 历史会话绑定落地后的核对：2026-09-13（v1.4.3）；
+> 平板模式（CompositionLocal + 悬浮导航 + GlassModal 3/4）落地后的核对：2026-09-15。
 >
 > 模块耦合表可用 `python3 scripts/check-coupling.py` 复现（细分口径，见该脚本头部说明）；
 > 该口径与下方「耦合热点」表的粗口径不同，两者不可直接对比。
@@ -19,7 +20,7 @@
 
 | 层 | 职责 | 主要落点 |
 | --- | --- | --- |
-| L1 Entry | 只接收事件并交给 L2，不做业务判断 | `ui/screens`（32 个 `*Screen.kt`）、`ui/navigation`（含 `LocalMainNavController`）、`ui/components`（只收参数、只读 `ui/models` 的环境值）、`MainActivity`、`App`（UI 组合根：提供环境值）、`worker/DownloadComicWorker`（26 行）、`worker/CacheMigrationWorker`（54 行） |
+| L1 Entry | 只接收事件并交给 L2，不做业务判断 | `ui/screens`（`*Screen.kt`）、`ui/navigation`（含 `LocalMainNavController`）、`ui/components`（只收参数、只读 `ui/models` 的环境值）、`MainActivity`、`App`（UI 组合根：提供环境值）、`worker/DownloadComicWorker`、`worker/CacheMigrationWorker`；平板布局经 `ui/models/TabletLayout.kt` 的 CompositionLocal 注入，由 `ProvideTabletLayout` 在组合根提供 |
 | L2 Coordinator | 集中保存流程顺序、分支和跨边界协调 | `ui/viewModel`（15 个，加上 `favorites/presentation/FavoritesViewModel` 共 16 个）、`reader/ReaderImagePipeline`、`reader/coordinator`、`download/coordinator`（含 `DownloadManager`）、`cache/migration` 的协调器与通知适配、`favorites/sync`、`session`（`UserManager`、`UserRepository`、`AuthenticatedRequestRecovery`、`SessionReadinessHolder`）、`startup/PostStartupCoordinator` |
 | L3 Molecule | 组合多个原子能力，完成一个完整业务动作 | `reader/molecule`、`download/molecule`（含 `DownloadLibraryQueries`）、`cache/migration` 的操作端口与实现、`favorites/usecase`、`backup/BackupRestoreOperations`、`download/export/DownloadExportOperations`、`repository/impl`（组合网络服务、内置客户端与领域映射） |
 | L4 Atom | 每个原子只负责一个底层契约 | `database`、`storage`、`retrofit`、`data`、`network`（含内置 API 客户端三件套）、`image`、`coil`、`cache/atom`、`reader/atom`、`download/atom`、`download/export/PdfExport`、`favorites/data`（含 `FavoriteStore`）、`update`（含 `AppUpdateDownloadManager` 下载适配）、`contentfilter`、`launcher`、`utils` |

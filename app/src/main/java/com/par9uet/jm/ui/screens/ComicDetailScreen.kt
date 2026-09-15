@@ -56,8 +56,6 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -365,7 +363,14 @@ fun ComicDetailScreen(
     val detailTopContentPadding = statusBarInset + AppGlassTopBarDefaults.ContentHeight
     val detailBarHeight = 64.dp
     val detailBarBottomPadding = 8.dp + navigationBarInset
-    val detailContentBottomPadding = detailBarHeight + detailBarBottomPadding
+    // 手机底栏是通栏玻璃条，内容需要让出整条高度；平板底栏是左下阅读 + 右下四操作
+    // 两组悬浮玻璃，不必再预留一整条底栏，否则评论滑到底会露出大块主题背景「白框」。
+    val isTabletChrome = LocalTabletLayoutEnabled.current
+    val detailContentBottomPadding = if (isTabletChrome) {
+        detailBarBottomPadding + 16.dp
+    } else {
+        detailBarHeight + detailBarBottomPadding
+    }
 
     // COMMENT mode consumes Back so it never pops ComicDetail; ACTIONS falls through to
     // normal navigation Back behavior.
@@ -414,85 +419,85 @@ fun ComicDetailScreen(
                             )
                         }
 
-                        PullToRefreshBox(
-                            isRefreshing = comicDetailState.isLoading,
-                            state = rememberPullToRefreshState(),
-                            onRefresh = { comicDetailViewModel.getComicDetail(id) },
-                            modifier = Modifier.fillMaxSize(),
-                        ) {
-                            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                                val isTabletLayout = LocalTabletLayoutEnabled.current
-                                val viewportHeight = maxHeight
-                                if (isTabletLayout) {
-                                    Row(
+                        // 详情页不需要整页下拉刷新：平板上与内嵌评论 LazyGrid 嵌套滚动会立刻崩溃，
+                        // 手机上也只是重复 getComicDetail，已删除 PullToRefreshBox。
+                        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                            val isTabletLayout = LocalTabletLayoutEnabled.current
+                            val viewportHeight = maxHeight
+                            if (isTabletLayout) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(
+                                            start = 16.dp,
+                                            top = detailTopContentPadding + 16.dp,
+                                            end = 16.dp,
+                                            bottom = 16.dp,
+                                        ),
+                                    horizontalArrangement = Arrangement.spacedBy(18.dp),
+                                ) {
+                                    ComicCoverImage(
+                                        comic = comic,
                                         modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(
-                                                start = 16.dp,
-                                                top = detailTopContentPadding + 16.dp,
-                                                end = 16.dp,
-                                                bottom = 16.dp,
-                                            ),
-                                        horizontalArrangement = Arrangement.spacedBy(18.dp),
-                                    ) {
-                                        ComicCoverImage(
-                                            comic = comic,
-                                            modifier = Modifier
-                                                .widthIn(max = 320.dp)
-                                                .weight(0.42f),
-                                            showIdChip = true,
-                                        )
-                                        Column(
-                                            modifier = Modifier
-                                                .weight(0.58f)
-                                                .verticalScroll(scrollState)
-                                                .padding(horizontal = ComicDetailHorizontalPadding)
-                                                .padding(bottom = detailContentBottomPadding),
-                                            verticalArrangement = Arrangement.spacedBy(16.dp),
-                                        ) {
-                                            ComicMetadataContent(comic, ::searchTag)
-                                            ComicCommentContent(
-                                                commentLazyPagingItems = commentLazyPagingItems,
-                                                authState = authState,
-                                                onLogin = { mainNavController.navigate("login") },
-                                                onReply = ::enterReplyMode,
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .height(viewportHeight),
-                                                listBottomPadding = detailBarHeight + detailBarBottomPadding + 100.dp,
-                                                publishDateText = formatAlbumAddTimeDisplay(comic.addTime),
-                                            )
-                                        }
-                                    }
-                                } else {
+                                            .widthIn(max = 320.dp)
+                                            .weight(0.42f),
+                                        showIdChip = true,
+                                    )
                                     Column(
                                         modifier = Modifier
-                                            .fillMaxSize()
+                                            .weight(0.58f)
                                             .verticalScroll(scrollState)
-                                            .padding(
-                                                top = detailTopContentPadding,
-                                                bottom = detailContentBottomPadding,
-                                            ),
+                                            .padding(horizontal = ComicDetailHorizontalPadding)
+                                            .padding(bottom = detailContentBottomPadding),
                                         verticalArrangement = Arrangement.spacedBy(16.dp),
                                     ) {
-                                        ComicCoverImage(comic = comic, showIdChip = true)
-                                        Column(
-                                            modifier = Modifier.padding(horizontal = ComicDetailHorizontalPadding),
-                                            verticalArrangement = Arrangement.spacedBy(16.dp),
-                                        ) {
-                                            ComicMetadataContent(comic, ::searchTag)
-                                            ComicCommentContent(
-                                                commentLazyPagingItems = commentLazyPagingItems,
-                                                authState = authState,
-                                                onLogin = { mainNavController.navigate("login") },
-                                                onReply = ::enterReplyMode,
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .height(viewportHeight),
-                                                listBottomPadding = detailBarHeight + detailBarBottomPadding + 100.dp,
-                                                publishDateText = formatAlbumAddTimeDisplay(comic.addTime),
-                                            )
-                                        }
+                                        ComicMetadataContent(comic, ::searchTag)
+                                        ComicCommentContent(
+                                            commentLazyPagingItems = commentLazyPagingItems,
+                                            authState = authState,
+                                            onLogin = { mainNavController.navigate("login") },
+                                            onReply = ::enterReplyMode,
+                                            // heightIn：短评论不再强行撑满一屏，避免底栏外侧出现空白「白框」。
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .heightIn(max = viewportHeight),
+                                            listBottomPadding = if (isTabletLayout) {
+                                                72.dp + detailBarBottomPadding
+                                            } else {
+                                                detailBarHeight + detailBarBottomPadding + 24.dp
+                                            },
+                                            publishDateText = formatAlbumAddTimeDisplay(comic.addTime),
+                                        )
+                                    }
+                                }
+                            } else {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .verticalScroll(scrollState)
+                                        .padding(
+                                            top = detailTopContentPadding,
+                                            bottom = detailContentBottomPadding,
+                                        ),
+                                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                                ) {
+                                    ComicCoverImage(comic = comic, showIdChip = true)
+                                    Column(
+                                        modifier = Modifier.padding(horizontal = ComicDetailHorizontalPadding),
+                                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                                    ) {
+                                        ComicMetadataContent(comic, ::searchTag)
+                                        ComicCommentContent(
+                                            commentLazyPagingItems = commentLazyPagingItems,
+                                            authState = authState,
+                                            onLogin = { mainNavController.navigate("login") },
+                                            onReply = ::enterReplyMode,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .heightIn(max = viewportHeight),
+                                            listBottomPadding = detailBarHeight + detailBarBottomPadding + 24.dp,
+                                            publishDateText = formatAlbumAddTimeDisplay(comic.addTime),
+                                        )
                                     }
                                 }
                             }

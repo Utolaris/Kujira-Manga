@@ -300,7 +300,13 @@ private fun MainAppContent(
     LaunchedEffect(clipboardDetectedComicId) {
         val id = clipboardDetectedComicId ?: return@LaunchedEffect
         val result = withContext(Dispatchers.IO) {
-            runCatching { koin.get<ComicRepository>().getComicDetail(id) }.getOrNull()
+            val outcome = runCatching { koin.get<ComicRepository>().getComicDetail(id) }
+            // 与 detailLoader 相同：runCatching 会吞掉 CancellationException，
+            // LaunchedEffect 取消时不能再弹「编码无效」。
+            outcome.exceptionOrNull()?.let { error ->
+                if (error is CancellationException) throw error
+            }
+            outcome.getOrNull()
         }
         when (result) {
             is NetWorkResult.Success -> {

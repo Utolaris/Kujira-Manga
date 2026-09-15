@@ -6,12 +6,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.MoreVert
@@ -71,21 +71,22 @@ internal fun searchResultBackTarget(previousRoute: String?): SearchResultBackTar
         SearchResultBackTarget.PREVIOUS_SCREEN
     }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ComicSearchResultSkeleton(
-    modifier: Modifier = Modifier
+    gridColumns: Int,
+    modifier: Modifier = Modifier,
 ) {
-    FlowRow(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(10.dp),
-        maxItemsInEachRow = 3,
+    // 骨架与结果列表共用同一套 GridCells，避免 3 列占位换成 N 列内容时的布局跳变。
+    LazyVerticalGrid(
+        modifier = modifier.fillMaxSize(),
+        columns = adaptiveComicGridCells(gridColumns),
+        verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.Top),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.Top)
+        contentPadding = PaddingValues(10.dp),
+        userScrollEnabled = false,
     ) {
-        for (i in 0 until 18) {
-            ComicSkeleton(modifier = Modifier.weight(1f))
+        items(18) {
+            ComicSkeleton()
         }
     }
 }
@@ -95,6 +96,7 @@ private fun ComicSearchResultSkeleton(
 internal fun SearchResultRefreshContent(
     refreshState: LoadState,
     itemCount: Int,
+    searchGridColumns: Int = 0,
     topContentPadding: Dp,
     bottomContentPadding: Dp,
     onRetry: () -> Unit,
@@ -102,9 +104,10 @@ internal fun SearchResultRefreshContent(
 ) {
     when {
         refreshState is LoadState.Loading -> ComicSearchResultSkeleton(
+            gridColumns = searchGridColumns,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = topContentPadding + 8.dp),
+                .padding(top = topContentPadding),
         )
         refreshState is LoadState.Error -> Column(
             modifier = Modifier
@@ -301,6 +304,7 @@ fun ComicSearchResultScreen(
         SearchResultRefreshContent(
             refreshState = comicSearchLazyPagingItems.loadState.refresh,
             itemCount = comicSearchLazyPagingItems.itemCount,
+            searchGridColumns = miscSettings.gridColumns.search,
             topContentPadding = topContentPadding,
             bottomContentPadding = bottomContentPadding,
             onRetry = { comicSearchLazyPagingItems.retry() },

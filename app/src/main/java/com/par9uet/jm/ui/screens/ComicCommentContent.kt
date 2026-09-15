@@ -251,10 +251,10 @@ internal fun ComicCommentContent(
             }
         }
         HorizontalDivider()
+        // 不要用 weight(1f)：在只有 heightIn(max) 的父容器里它会把评论区强制撑满，
+        // 短评论时底部就空出一块「白框」。LazyGrid 自己带 max 高度约束即可内滚。
         CommentList(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
+            modifier = Modifier.fillMaxWidth(),
             commentLazyPagingItems = commentLazyPagingItems,
             authState = authState,
             onLogin = onLogin,
@@ -304,6 +304,7 @@ private fun CommentList(
     }
 
     PullRefreshAndLoadMoreGrid(
+        // Lazy 列表需要有限最大高度才能只组合可见项；外层 heightIn 已经封顶。
         modifier = modifier,
         lazyPagingItems = commentLazyPagingItems,
         key = { it.identityKey },

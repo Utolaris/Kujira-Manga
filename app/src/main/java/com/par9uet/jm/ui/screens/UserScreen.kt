@@ -35,12 +35,9 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -325,7 +322,6 @@ fun UserScreen(
     topContentPadding: Dp = 0.dp,
     bottomContentPadding: Dp = 0.dp,
 ) {
-    val coroutineScope = rememberCoroutineScope()
     val userState by userManager.userState.collectAsState()
     val authState by userManager.authState.collectAsState()
     val hasCachedIdentity = authState != SessionReadiness.Unauthenticated &&
@@ -341,39 +337,28 @@ fun UserScreen(
         onDo()
     }
 
-    PullToRefreshBox(
-        isRefreshing = userState.isLoading,
-        state = rememberPullToRefreshState(),
-        onRefresh = {
-            val user = userState.data
-            if (authState == SessionReadiness.Authenticated && user != null) {
-                coroutineScope.launch {
-                    userManager.refreshAuthenticatedUser(user.username, user.password)
-                }
-            }
-        },
-        modifier = Modifier.fillMaxSize()
+    // 用户页不再整页下拉刷新：与 Column(verticalScroll) 嵌套，在大屏上是崩溃隐患，
+    // 且刷新入口重复（进入页面本身就会拉用户信息）。
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(
+                start = if (LocalTabletLayoutEnabled.current) {
+                    TabletFloatingNavDefaults.settingsHorizontalInset
+                } else {
+                    16.dp
+                },
+                top = 16.dp + topContentPadding,
+                end = if (LocalTabletLayoutEnabled.current) {
+                    TabletFloatingNavDefaults.settingsHorizontalInset
+                } else {
+                    16.dp
+                },
+                bottom = 16.dp + bottomContentPadding,
+            ),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(
-                    start = if (LocalTabletLayoutEnabled.current) {
-                        TabletFloatingNavDefaults.settingsHorizontalInset
-                    } else {
-                        16.dp
-                    },
-                    top = 16.dp + topContentPadding,
-                    end = if (LocalTabletLayoutEnabled.current) {
-                        TabletFloatingNavDefaults.settingsHorizontalInset
-                    } else {
-                        16.dp
-                    },
-                    bottom = 16.dp + bottomContentPadding,
-                ),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
             val user = userState.data
             if (hasCachedIdentity && user != null) {
                 UserHeader(
@@ -444,5 +429,4 @@ fun UserScreen(
                 }
             }
         }
-    }
 }

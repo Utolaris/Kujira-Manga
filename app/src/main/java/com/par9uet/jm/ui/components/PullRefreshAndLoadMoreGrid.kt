@@ -42,7 +42,9 @@ fun <T : Any> PullRefreshAndLoadMoreGrid(
     val isRefreshing = lazyPagingItems.loadState.refresh is LoadState.Loading
     val gridContent: @Composable () -> Unit = {
         LazyVerticalGrid(
-            modifier = Modifier.fillMaxSize(),
+            // 不要 fillMaxSize：在 heightIn(max) 父级里会把列表强行撑到上限，
+            // 短内容底部就空出一块白底。fillMaxWidth + 有界 maxHeight 时 Lazy 会按内容收缩。
+            modifier = Modifier.fillMaxWidth(),
             state = gridState,
             columns = columns,
             verticalArrangement = verticalArrangement,

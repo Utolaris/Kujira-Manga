@@ -121,7 +121,7 @@ fun GlassModal(
             ),
         contentAlignment = alignment,
     ) {
-        // 平板：按整屏宽（含侧栏）的 3/4，而不是捕获宿主内容区宽；
+        // 平板：按整屏宽的 3/4（悬浮导航不占布局位，仍用窗口宽）；
         // 手机：固定收口，避免大对话框。
         val defaultMaxWidth = if (isTabletLayout && windowWidthPx > 0) {
             with(density) { windowWidthPx.toDp() } * GlassModalDefaults.TabletWidthFraction

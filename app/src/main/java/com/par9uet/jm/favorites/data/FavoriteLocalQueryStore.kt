@@ -85,8 +85,8 @@ private class FavoriteComicPagingSource(
             is LoadResult.Error -> LoadResult.Error(result.throwable)
             is LoadResult.Invalid -> LoadResult.Invalid()
             is LoadResult.Page -> LoadResult.Page(
-                // 再去一层：即使 SQL 有异常膨胀，也不能把重复 albumId 交给 LazyGrid key。
-                data = result.data.distinctBy { it.albumId }.map { it.toComic() },
+                // 去重主防线在 SQL GROUP BY；这里只做实体→领域映射。
+                data = result.data.map { it.toComic() },
                 prevKey = result.prevKey,
                 nextKey = result.nextKey,
                 itemsBefore = result.itemsBefore,
