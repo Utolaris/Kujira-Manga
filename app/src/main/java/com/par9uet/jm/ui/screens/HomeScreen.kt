@@ -56,7 +56,9 @@ import androidx.compose.ui.unit.sp
 import com.par9uet.jm.storage.LocalSettingManager
 import com.par9uet.jm.ui.components.Comic
 import com.par9uet.jm.ui.components.ComicSkeleton
+import com.par9uet.jm.ui.components.TabletComicGridMinCellSize
 import com.par9uet.jm.ui.components.adaptiveComicGridCells
+import com.par9uet.jm.ui.models.LocalTabletLayoutEnabled
 import com.par9uet.jm.ui.glass.AppGlassTopBar
 import com.par9uet.jm.ui.glass.GlassAnchoredMenuState
 import com.par9uet.jm.ui.glass.glassMenuAnchor
@@ -225,7 +227,10 @@ internal fun HomeScreen(
     LazyVerticalGrid(
         modifier = pullDownModifier.fillMaxSize(),
         state = gridState,
-        columns = adaptiveComicGridCells(miscSettings.gridColumns.home),
+        columns = adaptiveComicGridCells(
+            columns = miscSettings.gridColumns.home,
+            minSize = if (LocalTabletLayoutEnabled.current) TabletComicGridMinCellSize else 118.dp,
+        ),
         verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Top),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(

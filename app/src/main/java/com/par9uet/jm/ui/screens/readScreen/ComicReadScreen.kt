@@ -580,6 +580,7 @@ private fun ReadSideBar(
                 icon = if (comic?.isCollect == true) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
                 label = "收藏",
                 enabled = !localOnly && comic != null,
+                tint = if (comic?.isCollect == true) MaterialTheme.colorScheme.tertiary else null,
                 onClick = onToggleCollect
             )
             ReadSideBarAction(
@@ -603,12 +604,13 @@ private fun ReadSideBarAction(
     icon: ImageVector,
     label: String,
     enabled: Boolean = true,
+    tint: androidx.compose.ui.graphics.Color? = null,
     onClick: () -> Unit,
 ) {
-    val contentColor = if (enabled) {
-        MaterialTheme.colorScheme.onSurface
-    } else {
-        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    val contentColor = when {
+        !enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+        tint != null -> tint
+        else -> MaterialTheme.colorScheme.onSurface
     }
     Column(
         modifier = Modifier

@@ -3,6 +3,7 @@ package com.par9uet.jm.favorites.data
 import com.par9uet.jm.core.network.NetWorkResult
 import com.par9uet.jm.core.network.NetworkErrorKind
 import com.par9uet.jm.core.network.AuthenticatedSessionRequiredException
+import com.par9uet.jm.core.network.isFormBodyNullParameter
 import io.github.jukomu.jmcomic.api.exception.NetworkException
 import io.github.jukomu.jmcomic.api.exception.ParseResponseException
 import io.github.jukomu.jmcomic.api.exception.ResponseException
@@ -15,7 +16,9 @@ internal fun Throwable.toFavoriteSyncError(): NetWorkResult.Error {
     causes.filterIsInstance<CancellationException>().firstOrNull()?.let { throw it }
     val response = causes.filterIsInstance<ResponseException>().firstOrNull()
     val kind = when {
-        causes.any { it is AuthenticatedSessionRequiredException } || response?.errorCode == 401 ->
+        causes.any { it is AuthenticatedSessionRequiredException } ||
+            response?.errorCode == 401 ||
+            isFormBodyNullParameter() ->
             NetworkErrorKind.Authentication
         causes.any { it is ParseResponseException } -> NetworkErrorKind.Parsing
         response != null -> NetworkErrorKind.Server

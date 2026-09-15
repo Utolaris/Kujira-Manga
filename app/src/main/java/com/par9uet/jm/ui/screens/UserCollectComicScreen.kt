@@ -26,7 +26,9 @@ import androidx.paging.LoadState
 import androidx.paging.compose.collectAsLazyPagingItems
 import com.par9uet.jm.ui.components.Comic
 import com.par9uet.jm.ui.components.PullRefreshAndLoadMoreGrid
+import com.par9uet.jm.ui.components.TabletComicGridMinCellSize
 import com.par9uet.jm.ui.components.adaptiveComicGridCells
+import com.par9uet.jm.ui.models.LocalTabletLayoutEnabled
 import com.par9uet.jm.ui.interaction.pullDownToAction
 import com.par9uet.jm.ui.interaction.PullDownActionState
 import com.par9uet.jm.ui.interaction.rememberPullDownActionState
@@ -159,7 +161,10 @@ internal fun UserCollectComicScreen(
             modifier = gridModifier,
             lazyPagingItems = collectComicLazyPagingItems,
             key = { it.id },
-            columns = adaptiveComicGridCells(miscSettings.gridColumns.collect),
+            columns = adaptiveComicGridCells(
+                columns = miscSettings.gridColumns.collect,
+                minSize = if (LocalTabletLayoutEnabled.current) TabletComicGridMinCellSize else 118.dp,
+            ),
             gridState = gridState,
             verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.Top),
             horizontalArrangement = Arrangement.spacedBy(14.dp),

@@ -56,17 +56,22 @@ private fun AppSnackbarVisuals(
 ) {
     val visuals = data.visuals
     val actionLabel = visuals.actionLabel
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 14.dp)
-            .widthIn(max = 640.dp),
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        tonalElevation = 2.dp,
-        shadowElevation = 6.dp,
+    Box(
+        modifier = Modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center,
     ) {
+        Surface(
+            // 平板上宽度收口到 640dp 并水平居中，不再铺满整屏。
+            modifier = Modifier
+                .widthIn(max = 640.dp)
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp),
+            shape = RoundedCornerShape(22.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            tonalElevation = 2.dp,
+            shadowElevation = 6.dp,
+        ) {
         Row(
             modifier = Modifier.padding(start = 18.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -84,6 +89,7 @@ private fun AppSnackbarVisuals(
                     Text(text = actionLabel)
                 }
             }
+        }
         }
     }
 }

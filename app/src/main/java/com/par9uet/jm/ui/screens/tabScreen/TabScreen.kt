@@ -3,12 +3,14 @@ package com.par9uet.jm.ui.screens.tabScreen
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
@@ -405,25 +407,36 @@ fun TabScreen(
         }
 
         if (useNavigationRail) {
-            Row(modifier = Modifier.fillMaxSize()) {
-                NavigationRailComponent(
-                    selectedTab = selectedTab,
-                    onTabSelected = ::selectTab,
-                )
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxSize(),
-                ) {
-                    GlassCaptureHost(
-                        modifier = Modifier.fillMaxSize(),
-                        sourceContent = {
-                            pagerContent(Modifier.fillMaxSize())
-                        },
-                        overlayContent = glassChrome,
-                    )
-                }
-            }
+            val railWidth = TabletNavigationRailDefaults.width +
+                TabletNavigationRailDefaults.outerMargin * 2
+            GlassCaptureHost(
+                modifier = Modifier.fillMaxSize(),
+                sourceContent = {
+                    Row(modifier = Modifier.fillMaxSize()) {
+                        // 给侧栏留位；真正的玻璃侧栏画在 overlay，和内容共享同一捕获。
+                        Spacer(modifier = Modifier.width(railWidth))
+                        pagerContent(Modifier.weight(1f))
+                    }
+                },
+                overlayContent = {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        GlassNavigationRailComponent(
+                            selectedTab = selectedTab,
+                            onTabSelected = ::selectTab,
+                            modifier = Modifier
+                                .align(Alignment.CenterStart)
+                                .padding(horizontal = TabletNavigationRailDefaults.outerMargin),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .padding(start = railWidth)
+                                .fillMaxSize(),
+                        ) {
+                            glassChrome()
+                        }
+                    }
+                },
+            )
         } else {
             GlassCaptureHost(
                 modifier = Modifier.fillMaxSize(),

@@ -224,7 +224,7 @@ internal fun FavoritesModalHost(favoritesViewModel: FavoritesViewModel) {
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "点击文件夹名称可切换当前收藏夹，右侧按钮可重命名或删除。?",
+                    "点击文件夹名称可切换当前收藏夹，右侧按钮可重命名或删除。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -362,7 +362,7 @@ internal fun FavoritesModalHost(favoritesViewModel: FavoritesViewModel) {
     GlassConfirmDialog(
         visible = deleteModal != null,
         title = "删除收藏夹",
-        message = "确定删除「${deleteModal?.folderName.orEmpty()}」吗？\n注意：删除收藏夹不会删除其中的漫画，漫画会移至「全部」。?",
+        message = "确定删除「${deleteModal?.folderName.orEmpty()}」吗？\n注意：删除收藏夹不会删除其中的漫画，漫画会移至「全部」。",
         confirmText = "删除",
         destructive = true,
         surfaceId = "favorites-delete-folder-glass-confirm",
@@ -373,7 +373,7 @@ internal fun FavoritesModalHost(favoritesViewModel: FavoritesViewModel) {
     GlassConfirmDialog(
         visible = activeModal is FavoritesModal.Uncollect,
         title = "取消收藏",
-        message = "确定取消收藏 ${collectEditState.selectedComicIds.size} 部漫画吗？?",
+        message = "确定取消收藏 ${collectEditState.selectedComicIds.size} 部漫画吗？",
         confirmText = "取消收藏",
         surfaceId = "favorites-uncollect-glass-confirm",
         onConfirm = { favoritesViewModel.onIntent(FavoritesIntent.UncollectConfirmed) },
@@ -469,7 +469,7 @@ private fun FilterDialog(
                 }
             }
             Spacer(modifier = Modifier.height(12.dp))
-            // 与首页搜索页共用同一个外壳，圆角 / 边框 / 图标位置；SearchFieldSurface 统一提供。?
+            // 与首页搜索页共用同一个外壳，圆角 / 边框 / 图标位置；SearchFieldSurface 统一提供。
             SearchFieldSurface(
                 field = {
                     TextField(
@@ -516,7 +516,7 @@ private fun FilterDialog(
                     text = { Text("作者 (${authorCountMap.size})") },
                 )
             }
-            // Tab 栏与下方 chip 之间留出间距；之前是紧贴着的，视觉上糊成一片。?
+            // Tab 栏与下方 chip 之间留出间距；之前是紧贴着的，视觉上糊成一片。
             Spacer(modifier = Modifier.height(12.dp))
             Box(
                 modifier = Modifier
@@ -530,7 +530,7 @@ private fun FilterDialog(
                                 if (tagCountMap.isEmpty()) {
                                     "当前已加载收藏中没有可筛选的标签"
                                 } else {
-                                    "没有匹配「?$query」的标签"
+                                    "没有匹配「$query」的标签"
                                 },
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(vertical = 24.dp),
@@ -559,7 +559,7 @@ private fun FilterDialog(
                                 if (authorCountMap.isEmpty()) {
                                     "当前已加载收藏中没有可筛选的作者"
                                 } else {
-                                    "没有匹配「?$query」的作者"
+                                    "没有匹配「$query」的作者"
                                 },
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(vertical = 24.dp),

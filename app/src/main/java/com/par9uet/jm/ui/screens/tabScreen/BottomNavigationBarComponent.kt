@@ -16,18 +16,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationRail
-import androidx.compose.material3.NavigationRailItem
-import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -170,32 +167,92 @@ fun PrimaryGlassBottomBar(
     }
 }
 
+/** 平板左侧导航栏几何：玻璃条与占位宽度。 */
+internal object TabletNavigationRailDefaults {
+    val width = 72.dp
+    val outerMargin = 8.dp
+}
+
+/**
+ * 平板侧栏：与手机底栏同一套高斯模糊玻璃表面，条目垂直居中。
+ * 必须画在 `GlassCaptureHost` 的 overlay 内，否则会退化成纯色。
+ */
 @Composable
-fun NavigationRailComponent(
+fun GlassNavigationRailComponent(
     selectedTab: MainTab,
     onTabSelected: (MainTab) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    val itemColors = NavigationRailItemDefaults.colors(
-        selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
-        indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
-        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-
-    NavigationRail(
-        modifier = Modifier.fillMaxHeight(),
-        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+    GlassSurface(
+        surfaceId = "primary-navigation-rail",
+        modifier = modifier
+            .width(TabletNavigationRailDefaults.width)
+            .fillMaxHeight()
+            .padding(vertical = TabletNavigationRailDefaults.outerMargin),
+        style = GlassSurfaceStyle(cornerRadius = 28.dp),
     ) {
-        // NavigationRail 默认把 items 顶到上方；平板侧栏三个入口需要垂直居中。
-        Spacer(modifier = Modifier.weight(1f))
-        MainTab.ordered.forEach { tab ->
-            NavigationRailItem(
-                colors = itemColors,
-                icon = { MainTabIcon(tab) },
-                selected = selectedTab == tab,
-                onClick = { onTabSelected(tab) },
-            )
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            MainTab.ordered.forEach { tab ->
+                val isSelected = tab == selectedTab
+                val contentColor = if (isSelected) {
+                    MaterialTheme.colorScheme.onSecondaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable(
+                            role = Role.Tab,
+                            onClick = { onTabSelected(tab) },
+                        )
+                        .semantics(mergeDescendants = true) {
+                            contentDescription = tab.navigationLabel
+                            selected = isSelected
+                            role = Role.Tab
+                        }
+                        .padding(vertical = 14.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    if (isSelected) {
+                        Box(
+                            modifier = Modifier
+                                .size(width = 36.dp, height = 28.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            MainTabIcon(
+                                tab = tab,
+                                contentDescription = null,
+                                tint = contentColor,
+                            )
+                        }
+                    } else {
+                        MainTabIcon(
+                            tab = tab,
+                            contentDescription = null,
+                            tint = contentColor,
+                        )
+                    }
+                    Text(
+                        text = tab.navigationLabel,
+                        color = contentColor,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
         }
-        Spacer(modifier = Modifier.weight(1f))
     }
 }
 

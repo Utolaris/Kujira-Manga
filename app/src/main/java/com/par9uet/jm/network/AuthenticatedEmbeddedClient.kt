@@ -1,6 +1,7 @@
 package com.par9uet.jm.network
 
 import com.par9uet.jm.core.network.AuthenticatedSessionRequiredException
+import com.par9uet.jm.core.network.isFormBodyNullParameter
 import io.github.jukomu.jmcomic.api.exception.ParseResponseException
 import io.github.jukomu.jmcomic.api.exception.ResponseException
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient
@@ -32,6 +33,13 @@ class AuthenticatedEmbeddedClient(
             }
         } catch (error: ResponseException) {
             if (error.isAuthenticationFailure()) {
+                throw AuthenticatedSessionRequiredException("登录会话已失效，请重新登录", error)
+            }
+            throw error
+        } catch (error: NullPointerException) {
+            // OkHttp FormBody.Builder.add 在密码缓存缺失时会以 Kotlin 非空断言崩溃
+            // （多端互踢后库试图用 username+null 密码自动重登）。视为会话失效。
+            if (error.isFormBodyNullParameter()) {
                 throw AuthenticatedSessionRequiredException("登录会话已失效，请重新登录", error)
             }
             throw error

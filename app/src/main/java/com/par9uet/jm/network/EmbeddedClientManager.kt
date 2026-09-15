@@ -45,7 +45,6 @@ import java.util.concurrent.TimeUnit
 class EmbeddedClientManager(
     private val cookieStorage: CookieStorage,
     private val dohManager: com.par9uet.jm.network.DohManager,
-    private val userStorage: com.par9uet.jm.storage.UserStorage,
 ) {
     sealed class EmbeddedLoginResult {
         /**
@@ -240,16 +239,19 @@ class EmbeddedClientManager(
 
     /**
      * 把持久化的完整会话（含 AVS）恢复到客户端自身的 CookieJar。
+     *
+     * 故意**不**把 UserStorage 里的 username 写进客户端内存缓存：
+     * cookie 恢复没有加密密码，一旦服务端踢登录（多端互踢），库会在
+     * `executePostRequest` 里用 `login(username, null)` 自动重登，
+     * 直接在 `FormBody.Builder.add` 抛
+     * "Parameter specified as non-null is null"。
+     * 评论成功后的 username 映射已有 `AuthenticatedEmbeddedClient` 兜底。
      */
     private fun restoreSessionIntoClient(client: JmApiClient) {
         val storedCookies = cookieStorage.get()
         if (storedCookies.isEmpty()) return
         runCatching { client.setCookies(storedCookies) }
             .onFailure { log("EmbeddedClientManager: 恢复内置 API 会话失败：" + it.message) }
-        // setCookies does not populate the library's in-memory username; comment submit
-        // still needs it after a cold start with restored cookies.
-        val username = runCatching { userStorage.get().username }.getOrNull()
-        cacheEmbeddedLoggedInUserName(client, username.orEmpty())
     }
 
     private fun isCurrentSession(clientSessionGeneration: Long?): Boolean {

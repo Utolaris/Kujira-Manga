@@ -23,7 +23,7 @@ import org.koin.dsl.bind
 import org.koin.dsl.module
 
 val comicModule = module {
-    single { EmbeddedClientManager(get(), get(), get()) }
+    single { EmbeddedClientManager(get(), get()) }
     // The network client only knows the ordering port; the session gate (which funnels
     // requests through UserManager's executor during restoration) is bound here so the
     // orchestration ownership stays in the session layer.
