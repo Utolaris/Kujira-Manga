@@ -382,6 +382,26 @@ private fun MainAppContent(
             )
         }
 
+        // 冷启动静默检查有结果且非新装/锁屏时，引导去「检查更新」下载。
+        val autoUpdateChecker: com.par9uet.jm.update.AutoUpdateChecker = getKoin().get()
+        val pendingAutoUpdate by autoUpdateChecker.prompt.collectAsState()
+        val pendingRelease = pendingAutoUpdate
+        if (pendingRelease != null && !showNsfwDialog && !tabletPromptPending) {
+            com.par9uet.jm.ui.glass.GlassConfirmDialog(
+                visible = true,
+                title = "发现新版本",
+                message = "当前 ${BuildConfig.VERSION_NAME}，最新为 ${pendingRelease.version}。是否前往下载更新？",
+                confirmText = "更新",
+                dismissText = "取消",
+                onConfirm = {
+                    autoUpdateChecker.dismiss()
+                    mainNavController.navigate("checkUpdate")
+                },
+                onDismiss = { autoUpdateChecker.dismiss() },
+                surfaceId = "auto-update-prompt",
+            )
+        }
+
         clipboardDetectedComic?.let { comic ->
             ClipboardDetectedComicDialog(
                 visible = true,

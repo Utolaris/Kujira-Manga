@@ -58,6 +58,11 @@ class PostStartupCoordinator(
         launchTask("通知渠道") {
             ensureAppNotificationChannels(koin.get())
         }
+        // 进程内只跑一次（AtomicBoolean）：从后台唤起不会再次检查。
+        // 失败静默，由 AutoUpdateChecker 吞掉；有新版本才写 prompt。
+        launchTask("自动检查更新") {
+            koin.get<com.par9uet.jm.update.AutoUpdateChecker>().checkOnce()
+        }
     }
 
     private fun launchTask(name: String, block: suspend () -> Unit) {

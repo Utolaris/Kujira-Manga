@@ -40,6 +40,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -141,6 +142,15 @@ fun CheckUpdateScreen(
                     onViewRelease = viewModel::showRelease,
                 )
             }
+            item {
+                val localSettingManager: com.par9uet.jm.storage.LocalSettingManager =
+                    org.koin.compose.getKoin().get()
+                val misc by localSettingManager.misc.collectAsState()
+                AutoCheckUpdateCard(
+                    enabled = misc.autoCheckUpdateEnabled,
+                    onEnabledChange = localSettingManager::setAutoCheckUpdateEnabled,
+                )
+            }
             if (apkReady) {
                 item {
                     InstallCard(
@@ -149,6 +159,41 @@ fun CheckUpdateScreen(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun AutoCheckUpdateCard(
+    enabled: Boolean,
+    onEnabledChange: (Boolean) -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "启动时自动检查更新",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = "仅冷启动检查；失败不提示。从后台回到应用不会检查。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(checked = enabled, onCheckedChange = onEnabledChange)
         }
     }
 }

@@ -179,6 +179,7 @@ val appModule = module {
         )
     } bind com.par9uet.jm.update.ReleaseSource::class
     single { com.par9uet.jm.update.ApkInstaller(get()) } bind com.par9uet.jm.update.AppUpdateInstaller::class
+    single { com.par9uet.jm.update.AutoUpdateChecker(get(), get()) }
     viewModel { com.par9uet.jm.ui.viewModel.AppUpdateViewModel(get(), get(), get(), get()) }
     single { com.par9uet.jm.backup.BackupManager() }
     single<com.par9uet.jm.backup.BackupTaskScheduler> {

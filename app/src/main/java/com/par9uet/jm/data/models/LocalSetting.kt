@@ -62,6 +62,8 @@ data class LocalSetting(
     val clipboardAutoDetectEnabled: Boolean = false,
     // 已登录且今日未签到时在启动后自动签到
     val autoSignInEnabled: Boolean = true,
+    // 冷启动后静默检查 GitHub Release；失败不弹错。仅进程首次启动触发，从后台唤起不检查。
+    val autoCheckUpdateEnabled: Boolean = true,
     // "default" 表示主题默认配色，其余为内置预设 ID 或 custom
     val colorPalettePreset: String = COLOR_PALETTE_PRESET_DEFAULT,
     // 自定义四色（ARGB hex，如 "#FF4F5F7F"）；null 表示跟随预设

@@ -66,6 +66,8 @@ data class GridColumnsSetting(
 data class MiscSettingsState(
     val clipboardAutoDetectEnabled: Boolean = false,
     val autoSignInEnabled: Boolean = true,
+    /** 冷启动静默检查更新；失败不弹错、不弹窗。 */
+    val autoCheckUpdateEnabled: Boolean = true,
     val gridColumns: GridColumnsSetting = GridColumnsSetting(),
     /**
      * 平板（大屏）布局是否启用。null = 尚未判定：

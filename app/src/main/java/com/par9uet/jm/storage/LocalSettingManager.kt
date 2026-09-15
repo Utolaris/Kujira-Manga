@@ -92,6 +92,14 @@ class LocalSettingManager(
 
     fun updateAutoSignInEnabled(enabled: Boolean) =
         updateSetting { it.copy(autoSignInEnabled = enabled) }
+
+    /** 冷启动静默检查更新开关；检查失败由协调器静默吞掉，不弹错。 */
+    fun setAutoCheckUpdateEnabled(enabled: Boolean) =
+        updateSetting { it.copy(autoCheckUpdateEnabled = enabled) }
+
+    fun currentAutoCheckUpdateEnabled(): Boolean =
+        _localSettingState.value.autoCheckUpdateEnabled
+
     fun setPreferenceRecommendEnabled(enabled: Boolean) =
         updateSetting { it.copy(preferenceRecommendEnabled = enabled) }
     fun setApiEndpoint(url: String) = updateSetting { it.copy(api = url) }
@@ -473,6 +481,7 @@ class LocalSettingManager(
     private fun toMiscSettingsState(setting: LocalSetting) = MiscSettingsState(
         clipboardAutoDetectEnabled = setting.clipboardAutoDetectEnabled,
         autoSignInEnabled = setting.autoSignInEnabled,
+        autoCheckUpdateEnabled = setting.autoCheckUpdateEnabled,
         gridColumns = GridColumnsSetting(
             home = setting.homeGridColumns,
             collect = setting.collectGridColumns,
