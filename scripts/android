@@ -173,6 +173,8 @@ Kujira-Manga Android 调试 CLI
   screenshot [serial]    截图到 build/screenshot.png 并打开
   screenrecord [serial] [秒]  录屏到 build/screen.mp4（默认 30s）
   dumpsys [serial]       当前 Activity / 窗口摘要
+  input <serial> <tap|swipe|keyevent> <数字参数...>  操作设备界面
+  ui-dump [serial]       导出当前界面节点到 build/ui.xml
   bugreport [serial]     导出 bugreport zip
 
 分析
@@ -295,6 +297,32 @@ cmd_logcat() {
   "$ADB" -s "$serial" logcat "$@"
 }
 
+cmd_input() {
+  local serial action argument
+  serial="$(select_device "${1:-}")"
+  shift
+  action="${1:-}"
+  shift || true
+  case "$action" in
+    tap) [ "$#" -eq 2 ] || return 1 ;;
+    swipe) [ "$#" -eq 4 ] || [ "$#" -eq 5 ] || return 1 ;;
+    keyevent) [ "$#" -ge 1 ] || return 1 ;;
+    *) echo "仅支持 tap / swipe / keyevent" >&2; return 1 ;;
+  esac
+  for argument in "$@"; do
+    [[ "$argument" =~ ^[0-9]+$ ]] || return 1
+  done
+  "$ADB" -s "$serial" shell input "$action" "$@"
+}
+
+cmd_ui_dump() {
+  local serial
+  serial="$(select_device "${1:-}")"
+  mkdir -p build
+  "$ADB" -s "$serial" shell uiautomator dump /data/local/tmp/kujira-ui.xml >/dev/null
+  "$ADB" -s "$serial" pull /data/local/tmp/kujira-ui.xml build/ui.xml >/dev/null
+}
+
 cmd_screenshot() {
   local serial out
   serial="$(select_device "${1:-}")"
@@ -413,6 +441,8 @@ main() {
     screenshot) cmd_screenshot "$@" ;;
     screenrecord) cmd_screenrecord "$@" ;;
     dumpsys) cmd_dumpsys "$@" ;;
+    input) cmd_input "$@" ;;
+    ui-dump) cmd_ui_dump "$@" ;;
     bugreport) cmd_bugreport "$@" ;;
     apk-info) cmd_apk_info "$@" ;;
     apk-sign) cmd_apk_sign "$@" ;;

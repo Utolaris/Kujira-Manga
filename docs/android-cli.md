@@ -40,6 +40,8 @@ CLI 会自动探测 SDK（`ANDROID_HOME` → `ANDROID_SDK_ROOT` → 常见路径
 ./scripts/android screenshot             # → build/screenshot.png
 ./scripts/android screenrecord 15        # → build/screen.mp4
 ./scripts/android dumpsys                # 当前 Activity/窗口
+./scripts/android input <serial> tap <x> <y>  # 点击；也支持 swipe 和 keyevent 数字参数
+./scripts/android ui-dump <serial>       # 当前界面节点 → build/ui.xml
 ./scripts/android bugreport              # → build/bugreport.zip
 
 # 分析
