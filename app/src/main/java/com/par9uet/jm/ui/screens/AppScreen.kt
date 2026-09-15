@@ -155,7 +155,8 @@ fun AppScreen(
                 val excludedTagsValue = backStackEntry.arguments?.getString("excludedTags") ?: ""
                 val excludedTags = deserializeExcludedTags(excludedTagsValue)
                 LaunchedEffect(searchContent, excludedTagsValue) {
-                    searchViewModel.changeSearchComicContent(searchContent, excludedTags)
+                    // 路由参数是本次结果的权威查询；查询变化会 bump revision 换新 Pager。
+                    searchViewModel.enterSearchResult(searchContent, excludedTags)
                 }
                 ComicSearchResultScreen()
             }

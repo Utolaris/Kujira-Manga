@@ -2,10 +2,6 @@ package com.par9uet.jm.ui.screens
 
 import android.net.Uri
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,18 +9,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -42,6 +35,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.paging.LoadState
 import androidx.paging.compose.collectAsLazyPagingItems
@@ -96,37 +90,51 @@ private fun ComicSearchResultSkeleton(
     }
 }
 
-/**
- * Stated reload failure, shown above results that stay on screen. Silent staleness reads exactly
- * like a working search, which is what made the failure invisible before.
- */
+/** Paging retains old items during a failed refresh; only successful refreshes show results. */
 @Composable
-private fun SearchRefreshErrorBanner(
-    message: String,
+internal fun SearchResultRefreshContent(
+    refreshState: LoadState,
+    itemCount: Int,
+    topContentPadding: Dp,
+    bottomContentPadding: Dp,
     onRetry: () -> Unit,
+    content: @Composable () -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 10.dp, vertical = 6.dp)
-            .background(
-                color = MaterialTheme.colorScheme.errorContainer,
-                shape = RoundedCornerShape(16.dp),
-            )
-            .padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = message,
-            modifier = Modifier.weight(1f),
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onErrorContainer,
+    when {
+        refreshState is LoadState.Loading -> ComicSearchResultSkeleton(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = topContentPadding + 8.dp),
         )
-        TextButton(onClick = onRetry) {
-            Text("重试")
+        refreshState is LoadState.Error -> Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = topContentPadding, bottom = bottomContentPadding)
+                .padding(32.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = refreshState.error.message ?: "搜索失败，请重试",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            TextButton(onClick = onRetry) { Text("重试") }
         }
+        itemCount == 0 -> Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = topContentPadding, bottom = bottomContentPadding)
+                .padding(32.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "没有找到相关漫画",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        else -> content()
     }
 }
 
@@ -139,8 +147,12 @@ fun ComicSearchResultScreen(
 ) {
     val mainNavController = LocalMainNavController.current
     val miscSettings by localSettingManager.misc.collectAsState()
-    val comicSearchLazyPagingItems = searchViewModel.searchComicPager.collectAsLazyPagingItems()
     val comicSearchFilterState by searchViewModel.searchComicFilterState.collectAsState()
+    // 按 revision 重新收集：新查询立刻丢掉上一次的 PagingData 展示，
+    // 避免 cachedIn 在加载中/失败时把旧列表留在屏幕上。
+    val comicSearchLazyPagingItems = androidx.compose.runtime.key(comicSearchFilterState.revision) {
+        searchViewModel.searchComicPager.collectAsLazyPagingItems()
+    }
     val searchComicIdState by searchViewModel.searchComicIdState.collectAsState()
     val savedViewport by searchViewModel.searchViewportState.collectAsState()
     val sortMenuState = rememberGlassAnchoredMenuState()
@@ -243,9 +255,6 @@ fun ComicSearchResultScreen(
         }
     }
 
-    val isLoading = comicSearchLazyPagingItems.loadState.refresh is LoadState.Loading
-    val refreshError = comicSearchLazyPagingItems.loadState.refresh as? LoadState.Error
-
     CommonScaffold(
         title = comicSearchFilterState.searchContent.ifBlank { "搜索" },
         onNavigateBack = { navigateBackToOrigin() },
@@ -289,50 +298,15 @@ fun ComicSearchResultScreen(
             }
         },
     ) { topContentPadding, bottomContentPadding ->
-        Column(modifier = Modifier.fillMaxSize()) {
-            AnimatedVisibility(visible = isLoading, enter = fadeIn(), exit = fadeOut()) {
-                LinearProgressIndicator(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp),
-                )
-            }
-            if (isLoading && comicSearchLazyPagingItems.itemCount == 0) {
-                ComicSearchResultSkeleton(
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(top = topContentPadding + 8.dp),
-                )
-                return@Column
-            }
-            if (refreshError != null && comicSearchLazyPagingItems.itemCount == 0) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .padding(top = topContentPadding, bottom = bottomContentPadding)
-                        .padding(32.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = refreshError.error.message ?: "加载失败，请重试",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                return@Column
-            }
-            if (refreshError != null) {
-                // A failed reload keeps the previously loaded pages on screen, which is the right
-                // thing to do - but doing it silently is indistinguishable from a working search,
-                // so the failure has to be stated while the results stay visible.
-                SearchRefreshErrorBanner(
-                    message = refreshError.error.message ?: "加载失败，请重试",
-                    onRetry = { comicSearchLazyPagingItems.retry() },
-                )
-            }
+        SearchResultRefreshContent(
+            refreshState = comicSearchLazyPagingItems.loadState.refresh,
+            itemCount = comicSearchLazyPagingItems.itemCount,
+            topContentPadding = topContentPadding,
+            bottomContentPadding = bottomContentPadding,
+            onRetry = { comicSearchLazyPagingItems.retry() },
+        ) {
             PullRefreshAndLoadMoreGrid(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxSize(),
                 lazyPagingItems = comicSearchLazyPagingItems,
                 key = { it.id },
                 columns = adaptiveComicGridCells(miscSettings.gridColumns.search),

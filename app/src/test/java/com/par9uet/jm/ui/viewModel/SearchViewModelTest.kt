@@ -1,5 +1,11 @@
 package com.par9uet.jm.ui.viewModel
 
+import androidx.paging.LoadState
+import androidx.paging.PagingDataEvent
+import androidx.paging.PagingDataPresenter
+import com.par9uet.jm.core.network.NetWorkResult
+import com.par9uet.jm.data.models.Comic
+import com.par9uet.jm.data.models.ComicSearchPage
 import com.par9uet.jm.data.models.ComicSearchOrderFilter
 import com.par9uet.jm.repository.ComicRepository
 import com.par9uet.jm.storage.ContentPreferences
@@ -7,6 +13,10 @@ import java.lang.reflect.Proxy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.resetMain
@@ -33,6 +43,48 @@ class SearchViewModelTest {
     private class FakeSettings : ContentPreferences {
         override val blockedTags = MutableStateFlow(emptyList<String>())
         override val homeExcludedTags = MutableStateFlow(emptyList<String>())
+    }
+
+    @Test
+    fun repeatedSearchRequestsNetworkAndReportsFailuresThenRetries() = runTest(scheduler) {
+        val comic = Comic.create(1, "previous result", emptyList())
+        var response: NetWorkResult<ComicSearchPage> =
+            NetWorkResult.Success(ComicSearchPage(listOf(comic), 1, null))
+        var requests = 0
+        val repository = Proxy.newProxyInstance(
+            ComicRepository::class.java.classLoader, arrayOf(ComicRepository::class.java),
+        ) { _, method, _ ->
+            check(method.name == "getComicList")
+            requests++
+            response
+        } as ComicRepository
+        val vm = SearchViewModel(repository, FakeSettings())
+        val presenter = object : PagingDataPresenter<Comic>(StandardTestDispatcher(scheduler)) {
+            override suspend fun presentPagingDataEvent(event: PagingDataEvent<Comic>) = Unit
+        }
+        vm.submitSearch("same query", emptyList())
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            vm.searchComicPager.collectLatest(presenter::collectFrom)
+        }
+        runCurrent()
+        assertEquals(listOf(comic), presenter.snapshot().items)
+        assertEquals(1, requests)
+
+        for (message in listOf("网络连接失败", "登录会话已失效，请重新登录")) {
+            val before = requests
+            response = NetWorkResult.Error(message)
+            vm.submitSearch("same query", emptyList())
+            runCurrent()
+            assertEquals(before + 1, requests)
+            val error = presenter.loadStateFlow.value?.refresh as LoadState.Error
+            assertEquals(message, error.error.message)
+        }
+
+        response = NetWorkResult.Success(ComicSearchPage(emptyList(), 0, null))
+        presenter.retry()
+        runCurrent()
+        assertTrue(presenter.loadStateFlow.value?.refresh is LoadState.NotLoading)
+        assertTrue(presenter.snapshot().items.isEmpty())
     }
 
     @Test
