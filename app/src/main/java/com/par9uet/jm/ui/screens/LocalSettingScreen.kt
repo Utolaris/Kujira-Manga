@@ -34,6 +34,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.ContentPaste
 import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.TabletMac
 import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.GridView
@@ -235,6 +236,12 @@ fun LocalSettingScreen(
                         title = "\u526a\u5207\u677f\u81ea\u52a8\u68c0\u6d4b",
                         value = ui.clipboardAutoDetectEnabled,
                         onCheckedChange = settingsViewModel::setClipboardAutoDetectEnabled
+                    )
+                    SettingsSwitchRow(
+                        icon = Icons.Rounded.TabletMac,
+                        title = "\u5e73\u677f\u6a21\u5f0f",
+                        value = ui.tabletLayoutEnabled == true,
+                        onCheckedChange = settingsViewModel::setTabletLayoutEnabled
                     )
                     SettingsRow(
                         Icons.Rounded.GridView,

@@ -55,6 +55,8 @@ import com.par9uet.jm.storage.LocalSettingManager
 import com.par9uet.jm.ui.components.ComicSearchHistoryTag
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.components.SearchExclusionEditor
+import com.par9uet.jm.ui.components.SearchFieldSurface
+import com.par9uet.jm.ui.components.searchFieldColors
 import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.SearchViewModel
 import com.par9uet.jm.contentfilter.normalizeSearchExcludedTags
@@ -262,26 +264,8 @@ private fun SearchInputCard(
     LaunchedEffect(focusRequester) {
         focusRequester.requestFocus()
     }
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                Icons.Rounded.Search,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 12.dp)
-            )
+    SearchFieldSurface(
+        field = {
             androidx.compose.material3.TextField(
                 modifier = Modifier
                     .weight(1f)
@@ -294,20 +278,12 @@ private fun SearchInputCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 },
-                colors = androidx.compose.material3.TextFieldDefaults.colors(
-                    focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
-                    unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
-                    disabledContainerColor = androidx.compose.ui.graphics.Color.Transparent,
-                    errorContainerColor = androidx.compose.ui.graphics.Color.Transparent,
-                    focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                    unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                    disabledIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                    errorIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                    cursorColor = MaterialTheme.colorScheme.primary
-                ),
+                colors = searchFieldColors(),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 onKeyboardAction = { onSearch() }
             )
+        },
+        trailing = {
             if (textFieldState.text.toString().isNotEmpty()) {
                 IconButton(onClick = {
                     textFieldState.edit { replace(0, length, "") }
@@ -318,6 +294,6 @@ private fun SearchInputCard(
             IconButton(onClick = onSearch) {
                 Icon(Icons.Rounded.Search, contentDescription = "搜索")
             }
-        }
-    }
+        },
+    )
 }

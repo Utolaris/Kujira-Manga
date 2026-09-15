@@ -47,6 +47,8 @@ data class SettingsUiState(
     val appLockHasPattern: Boolean = false,
     val doh: DohSettingsState = DohSettingsState(),
     val gridColumns: GridColumnsSnapshot = GridColumnsSnapshot(),
+    /** null = 尚未判定（首个非零窗口宽度决定默认值）。 */
+    val tabletLayoutEnabled: Boolean? = null,
 ) {
     /** Human-readable one-line summary of the current app lock state. */
     fun appLockSummaryText(): String {
@@ -164,6 +166,7 @@ class SettingsViewModel(
                 history = misc.misc.gridColumns.history,
                 search = misc.misc.gridColumns.search,
             ),
+            tabletLayoutEnabled = misc.misc.tabletLayoutEnabled,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
@@ -219,6 +222,10 @@ class SettingsViewModel(
 
     fun updateHomeExcludedTags(tags: List<String>) =
         localSettingManager.updateHomeExcludedTags(tags)
+
+    /** 平板布局开关；写入后不再随窗口宽度自动变化。 */
+    fun setTabletLayoutEnabled(enabled: Boolean) =
+        localSettingManager.setTabletLayoutEnabled(enabled)
 
     companion object {
         private val AVAILABLE_API_SET = AVAILABLE_APIS.toSet()

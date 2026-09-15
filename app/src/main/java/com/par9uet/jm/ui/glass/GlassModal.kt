@@ -11,7 +11,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,7 +30,25 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.par9uet.jm.ui.models.LocalTabletLayoutEnabled
+
+/**
+ * 玻璃弹窗的默认几何。
+ *
+ * 手机：[MaxSurfaceWidth] 收口（常见手机宽屏普遍小于它，几乎不生效）。
+ * 平板：弹窗拉伸到窗口宽度的 [TabletWidthFraction]，不再固定 480dp 收成窄条。
+ * 需要更窄或更宽的弹窗自己传 `modifier` 覆盖。
+ */
+object GlassModalDefaults {
+    val MaxSurfaceWidth: Dp = 480.dp
+
+    /** 平板上弹窗相对窗口宽度的比例。 */
+    const val TabletWidthFraction: Float = 0.75f
+}
 
 /**
  * Real-glass modal rendered INSIDE the page's existing GlassCaptureHost overlay.
@@ -77,12 +95,15 @@ fun GlassModal(
     val active = transition.currentState || transition.isRunning
     val scrimInteraction = remember { MutableInteractionSource() }
     val surfaceInteraction = remember { MutableInteractionSource() }
+    val isTabletLayout = LocalTabletLayoutEnabled.current
+    val windowWidthPx = LocalWindowInfo.current.containerSize.width
+    val density = LocalDensity.current
     if (dismissOnBack) {
         BackHandler(enabled = visible && active) {
             onDismissRequest()
         }
     }
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .then(
@@ -100,6 +121,13 @@ fun GlassModal(
             ),
         contentAlignment = alignment,
     ) {
+        // 平板：按整屏宽（含侧栏）的 3/4，而不是捕获宿主内容区宽；
+        // 手机：固定收口，避免大对话框。
+        val defaultMaxWidth = if (isTabletLayout && windowWidthPx > 0) {
+            with(density) { windowWidthPx.toDp() } * GlassModalDefaults.TabletWidthFraction
+        } else {
+            GlassModalDefaults.MaxSurfaceWidth
+        }
         AnimatedVisibility(
             visibleState = visibleState,
             enter = fadeIn(tween(200)),
@@ -107,17 +135,19 @@ fun GlassModal(
         ) {
             GlassSurface(
                 surfaceId = surfaceId,
-                modifier = modifier.then(
-                    if (dismissOnOutsideClick) {
-                        Modifier.clickable(
-                            interactionSource = surfaceInteraction,
-                            indication = null,
-                            onClick = {},
-                        )
-                    } else {
-                        Modifier
-                    }
-                ),
+                modifier = modifier
+                    .widthIn(max = defaultMaxWidth)
+                    .then(
+                        if (dismissOnOutsideClick) {
+                            Modifier.clickable(
+                                interactionSource = surfaceInteraction,
+                                indication = null,
+                                onClick = {},
+                            )
+                        } else {
+                            Modifier
+                        }
+                    ),
                 style = GlassSurfaceStyle(cornerRadius = 24.dp),
                 surfaceAlpha = surfaceAlpha,
                 surfaceScale = surfaceScale,
@@ -145,7 +175,14 @@ fun GlassConfirmDialog(
     GlassModal(
         visible = visible,
         onDismissRequest = onDismiss,
-        modifier = modifier.widthIn(max = 420.dp),
+        // 手机保持原先 420dp 上限；平板交给 GlassModal 的整屏 3/4。
+        modifier = modifier.then(
+            if (LocalTabletLayoutEnabled.current) {
+                Modifier
+            } else {
+                Modifier.widthIn(max = 420.dp)
+            }
+        ),
         surfaceId = surfaceId,
     ) {
         Column(

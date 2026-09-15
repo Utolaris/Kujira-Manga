@@ -354,10 +354,12 @@ Reader 的 L3 不得依赖 UI 或 Worker，L4 不得反向依赖 L3。磁盘缓�
 
 - **跨 4 层**：`ui/viewModel/ComicDetailViewModel`（473 行）、
   `ui/screens/downloadScreen/DownloadComicDetailScreen`（465 行）
-- **跨 3 层且 >600 行**：`LocalSettingScreen`(880)、`ComicDetailScreen`(826)、
-  `BackupRestoreScreen`(777)、`FavoritesToolbar`(737)、`ComicReadScreen`(736)、
-  `FavoritesModalHost`(692)、`WelcomeScreen`(685)、`CheckUpdateScreen`(674)、
-  `ComicCommentScreen`(666)
+- **跨 3 层且 >600 行**（行数为 2026-09-14 复核）：`LocalSettingScreen`(880)、
+  `ComicDetailScreen`(830)、`BackupRestoreScreen`(777)、`FavoritesToolbar`(737)、
+  `ComicReadScreen`(721)、`FavoritesModalHost`(698)、`WelcomeScreen`(685)、
+  `CheckUpdateScreen`(674)。
+  原 `ComicCommentScreen` 已更名为 `ComicCommentContent`（666 → 687 → 删掉评论屏后
+  600 行），现低于本清单阈值，不再列入。
 - **扇出最高**：`cache/migration/DeviceCacheMigrationOperations`（22，均为 `cache` 域内文档原子）、
   `reader/molecule/ReaderSourceLoader`（22，但均为 reader 域内 internal 组件，属正常）
 

@@ -67,6 +67,12 @@ data class MiscSettingsState(
     val clipboardAutoDetectEnabled: Boolean = false,
     val autoSignInEnabled: Boolean = true,
     val gridColumns: GridColumnsSetting = GridColumnsSetting(),
+    /**
+     * 平板（大屏）布局是否启用。null = 尚未判定：
+     * 手机侧首个非零窗口宽度会直接写入 false；
+     * 平板侧由首次询问弹窗或设置开关写入（见 `ui/screens/TabletLayout.kt`）。
+     */
+    val tabletLayoutEnabled: Boolean? = null,
 )
 
 interface MiscSettingsPreferences {

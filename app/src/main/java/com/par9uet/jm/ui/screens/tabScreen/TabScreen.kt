@@ -18,8 +18,6 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.rounded.Bookmarks
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -60,6 +58,7 @@ import com.par9uet.jm.ui.screens.HomeScreen
 import com.par9uet.jm.ui.screens.HomeGlassTopBar
 import com.par9uet.jm.ui.screens.FavoritesModalHost
 import com.par9uet.jm.ui.navigation.LocalMainNavController
+import com.par9uet.jm.ui.models.LocalTabletLayoutEnabled
 import com.par9uet.jm.ui.screens.resolveHomeCategoryTitle
 import com.par9uet.jm.ui.screens.UserCollectComicScreen
 import com.par9uet.jm.ui.screens.UserScreen
@@ -185,7 +184,8 @@ fun TabScreen(
     }
 
     BoxWithConstraints {
-        val useNavigationRail = maxWidth >= 700.dp
+        // 平板模式由设置开关决定（首次安装会询问）；组合根 ProvideTabletLayout 统一注入。
+        val useNavigationRail = LocalTabletLayoutEnabled.current
         val anchoredMenuMaxHeight = maxHeight * 0.56f
         val glassStyle = GlassStyle.Default
         val navigationBarInset = with(LocalDensity.current) {
@@ -194,22 +194,14 @@ fun TabScreen(
         val statusBarInset = with(LocalDensity.current) {
             WindowInsets.statusBars.getTop(this).toDp()
         }
-        val homeTopContentPadding = if (useNavigationRail) {
-            12.dp
-        } else {
+        // 玻璃顶栏叠在内容之上，滚动区需要预留 chrome 高度（手机/平板一致）。
+        val homeTopContentPadding =
             statusBarInset + AppGlassTopBarDefaults.ContentHeight + 12.dp
-        }
-        val favoritesTopContentPadding = if (useNavigationRail) {
-            0.dp
-        } else {
+        val favoritesTopContentPadding =
             statusBarInset + FavoritesToolbarDefaults.toolbarHeight +
                 FavoritesToolbarDefaults.outerMargin * 2
-        }
-        val settingsTopContentPadding = if (useNavigationRail) {
-            0.dp
-        } else {
+        val settingsTopContentPadding =
             statusBarInset + AppGlassTopBarDefaults.ContentHeight
-        }
         val contentBottomPadding =
             if (useNavigationRail) {
                 0.dp
@@ -251,46 +243,176 @@ fun TabScreen(
             }
         }
 
-        Scaffold(
-            contentWindowInsets = if (useNavigationRail) {
-                ScaffoldDefaults.contentWindowInsets
-            } else {
-                WindowInsets()
-            },
-            topBar = {
-                if (useNavigationRail) {
-                    TopBarComponent(
-                        tab = selectedTab,
-                        homeTitle = homeTitle,
-                        homeCategories = homeState.categories,
-                        selectedHomeCategoryId = homeState.selectedCategoryId,
-                        onHomeCategorySelected = homeViewModel::selectHomeCategory,
+        // 手机/平板共用玻璃 chrome；差别只在侧栏 vs 底栏。
+        val glassChrome: @Composable () -> Unit = {
+            Box(Modifier.fillMaxSize()) {
+                if (selectedTab == MainTab.Home) {
+                    HomeGlassTopBar(
+                        title = homeTitle,
+                        statusBarInset = statusBarInset,
+                        categoryMenuState = homeCategoryMenuState,
+                        moreMenuState = homeMoreMenuState,
+                        modifier = Modifier.align(Alignment.TopCenter),
+                        onSearch = onHomeSearch,
+                        onDownload = onHomeDownload,
+                    )
+                    PullDownSearchIndicator(
+                        state = homePullDownState,
+                        surfaceId = "home-pull-search-indicator",
+                        topOffset = statusBarInset + AppGlassTopBarDefaults.ContentHeight,
+                        modifier = Modifier.align(Alignment.TopCenter),
+                    )
+                } else if (selectedTab == MainTab.Collect && canShowAuthenticatedUi) {
+                    FavoritesVariableGlassTopBar(
+                        statusBarInset = statusBarInset,
                         favoritesViewModel = favoritesViewModel,
-                        onHomeSearch = onHomeSearch,
-                        onHomeDownload = onHomeDownload,
-                        onHomeWeekly = onHomeWeekly,
-                        onHomeExtract = onHomeExtract,
-                        onHomeSign = onHomeSign,
+                        folderMenuState = favoritesFolderMenuState,
+                        modifier = Modifier.align(Alignment.TopCenter),
+                    )
+                    PullDownSearchIndicator(
+                        state = favoritesPullDownState,
+                        surfaceId = "favorites-pull-search-indicator",
+                        topOffset = statusBarInset + FavoritesToolbarDefaults.toolbarHeight,
+                        modifier = Modifier.align(Alignment.TopCenter),
+                    )
+                } else if (selectedTab == MainTab.Settings) {
+                    AppGlassTopBar(
+                        surfaceId = "primary-settings-top-bar",
+                        statusBarInset = statusBarInset,
+                        title = {
+                            Text(
+                                modifier = Modifier.padding(start = 4.dp),
+                                text = "设置",
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        },
                     )
                 }
-            },
-        ) { innerPadding ->
-            if (useNavigationRail) {
-                Row(
-                    modifier = Modifier
-                        .padding(innerPadding)
-                        .fillMaxSize(),
-                ) {
-                    NavigationRailComponent(
+                if (!useNavigationRail) {
+                    BottomNavigationBarComponent(
                         selectedTab = selectedTab,
                         onTabSelected = ::selectTab,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .align(Alignment.BottomCenter),
+                        navigationBarInset = navigationBarInset,
                     )
-                    pagerContent(Modifier.weight(1f))
                 }
-            } else {
+                if (selectedTab == MainTab.Home) {
+                    GlassAnchoredMenu(
+                        state = homeCategoryMenuState,
+                        surfaceId = "home-category-glass-menu",
+                        alignment = GlassMenuAlignment.START,
+                        width = 260.dp,
+                        menuMaxHeight = anchoredMenuMaxHeight,
+                    ) {
+                        homeState.categories.forEach { category ->
+                            GlassMenuItem(
+                                text = category.title,
+                                selected = category.id == homeState.selectedCategoryId,
+                                onClick = {
+                                    homeCategoryMenuState.dismiss()
+                                    homeViewModel.selectHomeCategory(category.id)
+                                },
+                            )
+                        }
+                    }
+                    GlassAnchoredMenu(
+                        state = homeMoreMenuState,
+                        surfaceId = "home-more-glass-menu",
+                        alignment = GlassMenuAlignment.END,
+                        width = 196.dp,
+                        menuMaxHeight = 210.dp,
+                    ) {
+                        GlassMenuItem(
+                            text = "每周",
+                            leadingIcon = Icons.Default.Star,
+                            onClick = {
+                                homeMoreMenuState.dismiss()
+                                onHomeWeekly()
+                            },
+                        )
+                        GlassMenuItem(
+                            text = "提取",
+                            leadingIcon = Icons.Default.Password,
+                            onClick = {
+                                homeMoreMenuState.dismiss()
+                                onHomeExtract()
+                            },
+                        )
+                        GlassMenuItem(
+                            text = "签到",
+                            leadingIcon = Icons.Default.CalendarMonth,
+                            onClick = {
+                                homeMoreMenuState.dismiss()
+                                onHomeSign()
+                            },
+                        )
+                    }
+                } else if (selectedTab == MainTab.Collect && canShowAuthenticatedUi) {
+                    GlassAnchoredMenu(
+                        state = favoritesFolderMenuState,
+                        surfaceId = "favorites-folder-glass-menu",
+                        alignment = GlassMenuAlignment.CENTER,
+                        width = 260.dp,
+                        menuMaxHeight = anchoredMenuMaxHeight,
+                    ) {
+                        GlassMenuItem(
+                            text = "全部收藏",
+                            leadingIcon = Icons.Rounded.Bookmarks,
+                            selected = selectedFavoriteFolderId == 0,
+                            onClick = {
+                                favoritesFolderMenuState.dismiss()
+                                favoritesViewModel.onIntent(FavoritesIntent.FolderSelected(0))
+                            },
+                        )
+                        favoriteFolderList.entries
+                            .filter { it.key != "0" }
+                            .forEach { (folderId, folderName) ->
+                                val numericFolderId = folderId.toIntOrNull()
+                                    ?: return@forEach
+                                GlassMenuItem(
+                                    text = folderName,
+                                    leadingIcon = Icons.Rounded.Folder,
+                                    selected = selectedFavoriteFolderId == numericFolderId,
+                                    onClick = {
+                                        favoritesFolderMenuState.dismiss()
+                                        favoritesViewModel.onIntent(
+                                            FavoritesIntent.FolderSelected(numericFolderId)
+                                        )
+                                    },
+                                )
+                            }
+                        GlassMenuDivider()
+                        GlassMenuItem(
+                            text = "管理收藏夹",
+                            leadingIcon = Icons.Rounded.Folder,
+                            onClick = {
+                                favoritesFolderMenuState.dismiss()
+                                favoritesViewModel.onIntent(FavoritesIntent.FolderManagementOpened)
+                            },
+                        )
+                    }
+                }
+                if (selectedTab == MainTab.Collect && canShowAuthenticatedUi) {
+                    FavoritesModalHost(favoritesViewModel)
+                }
+            }
+        }
+
+        if (useNavigationRail) {
+            Row(modifier = Modifier.fillMaxSize()) {
+                NavigationRailComponent(
+                    selectedTab = selectedTab,
+                    onTabSelected = ::selectTab,
+                )
                 Box(
                     modifier = Modifier
-                        .padding(innerPadding)
+                        .weight(1f)
                         .fillMaxSize(),
                 ) {
                     GlassCaptureHost(
@@ -298,169 +420,18 @@ fun TabScreen(
                         sourceContent = {
                             pagerContent(Modifier.fillMaxSize())
                         },
-                        overlayContent = {
-                            Box(Modifier.fillMaxSize()) {
-                                if (selectedTab == MainTab.Home) {
-                                    HomeGlassTopBar(
-                                        title = homeTitle,
-                                        statusBarInset = statusBarInset,
-                                        categoryMenuState = homeCategoryMenuState,
-                                        moreMenuState = homeMoreMenuState,
-                                        modifier = Modifier.align(Alignment.TopCenter),
-                                        onSearch = onHomeSearch,
-                                        onDownload = onHomeDownload,
-                                    )
-                                    PullDownSearchIndicator(
-                                        state = homePullDownState,
-                                        surfaceId = "home-pull-search-indicator",
-                                        topOffset = statusBarInset + AppGlassTopBarDefaults.ContentHeight,
-                                        modifier = Modifier.align(Alignment.TopCenter),
-                                    )
-                                } else if (selectedTab == MainTab.Collect && canShowAuthenticatedUi) {
-                                    FavoritesVariableGlassTopBar(
-                                        statusBarInset = statusBarInset,
-                                        favoritesViewModel = favoritesViewModel,
-                                        folderMenuState = favoritesFolderMenuState,
-                                        modifier = Modifier.align(Alignment.TopCenter),
-                                    )
-                                    PullDownSearchIndicator(
-                                        state = favoritesPullDownState,
-                                        surfaceId = "favorites-pull-search-indicator",
-                                        topOffset = statusBarInset + FavoritesToolbarDefaults.toolbarHeight,
-                                        modifier = Modifier.align(Alignment.TopCenter),
-                                    )
-                                } else if (selectedTab == MainTab.Settings) {
-                                    AppGlassTopBar(
-                                        surfaceId = "primary-settings-top-bar",
-                                        statusBarInset = statusBarInset,
-                                        title = {
-                                            Text(
-                                                modifier = Modifier.padding(start = 4.dp),
-                                                text = "设置",
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                fontSize = 18.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = MaterialTheme.colorScheme.onSurface,
-                                            )
-                                        },
-                                    )
-                                }
-                                BottomNavigationBarComponent(
-                                    selectedTab = selectedTab,
-                                    onTabSelected = ::selectTab,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .align(Alignment.BottomCenter),
-                                    navigationBarInset = navigationBarInset,
-                                )
-                                if (selectedTab == MainTab.Home) {
-                                    GlassAnchoredMenu(
-                                        state = homeCategoryMenuState,
-                                        surfaceId = "home-category-glass-menu",
-                                        alignment = GlassMenuAlignment.START,
-                                        width = 260.dp,
-                                        menuMaxHeight = anchoredMenuMaxHeight,
-                                    ) {
-                                        homeState.categories.forEach { category ->
-                                            GlassMenuItem(
-                                                text = category.title,
-                                                selected = category.id == homeState.selectedCategoryId,
-                                                onClick = {
-                                                    homeCategoryMenuState.dismiss()
-                                                    homeViewModel.selectHomeCategory(category.id)
-                                                },
-                                            )
-                                        }
-                                    }
-                                    GlassAnchoredMenu(
-                                        state = homeMoreMenuState,
-                                        surfaceId = "home-more-glass-menu",
-                                        alignment = GlassMenuAlignment.END,
-                                        width = 196.dp,
-                                        menuMaxHeight = 210.dp,
-                                    ) {
-                                        GlassMenuItem(
-                                            text = "每周",
-                                            leadingIcon = Icons.Default.Star,
-                                            onClick = {
-                                                homeMoreMenuState.dismiss()
-                                                onHomeWeekly()
-                                            },
-                                        )
-                                        GlassMenuItem(
-                                            text = "提取",
-                                            leadingIcon = Icons.Default.Password,
-                                            onClick = {
-                                                homeMoreMenuState.dismiss()
-                                                onHomeExtract()
-                                            },
-                                        )
-                                        GlassMenuItem(
-                                            text = "签到",
-                                            leadingIcon = Icons.Default.CalendarMonth,
-                                            onClick = {
-                                                homeMoreMenuState.dismiss()
-                                                onHomeSign()
-                                            },
-                                        )
-                                    }
-                                } else if (selectedTab == MainTab.Collect && canShowAuthenticatedUi) {
-                                    GlassAnchoredMenu(
-                                        state = favoritesFolderMenuState,
-                                        surfaceId = "favorites-folder-glass-menu",
-                                        alignment = GlassMenuAlignment.CENTER,
-                                        width = 260.dp,
-                                        menuMaxHeight = anchoredMenuMaxHeight,
-                                    ) {
-                                        GlassMenuItem(
-                                            text = "全部收藏",
-                                            leadingIcon = Icons.Rounded.Bookmarks,
-                                            selected = selectedFavoriteFolderId == 0,
-                                            onClick = {
-                                                favoritesFolderMenuState.dismiss()
-                                                favoritesViewModel.onIntent(FavoritesIntent.FolderSelected(0))
-                                            },
-                                        )
-                                        favoriteFolderList.entries
-                                            .filter { it.key != "0" }
-                                            .forEach { (folderId, folderName) ->
-                                                val numericFolderId = folderId.toIntOrNull()
-                                                    ?: return@forEach
-                                                GlassMenuItem(
-                                                    text = folderName,
-                                                    leadingIcon = Icons.Rounded.Folder,
-                                                    selected = selectedFavoriteFolderId == numericFolderId,
-                                                    onClick = {
-                                                        favoritesFolderMenuState.dismiss()
-                                                        favoritesViewModel.onIntent(
-                                                            FavoritesIntent.FolderSelected(numericFolderId)
-                                                        )
-                                                    },
-                                                )
-                                            }
-                                        GlassMenuDivider()
-                                        GlassMenuItem(
-                                            text = "管理收藏夹",
-                                            leadingIcon = Icons.Rounded.Folder,
-                                            onClick = {
-                                                favoritesFolderMenuState.dismiss()
-                                                favoritesViewModel.onIntent(FavoritesIntent.FolderManagementOpened)
-                                            },
-                                        )
-                                    }
-                                }
-                                if (selectedTab == MainTab.Collect && canShowAuthenticatedUi) {
-                                    FavoritesModalHost(favoritesViewModel)
-                                }
-                            }
-                        },
+                        overlayContent = glassChrome,
                     )
                 }
             }
-        }
-        if (useNavigationRail && selectedTab == MainTab.Collect && canShowAuthenticatedUi) {
-            FavoritesModalHost(favoritesViewModel)
+        } else {
+            GlassCaptureHost(
+                modifier = Modifier.fillMaxSize(),
+                sourceContent = {
+                    pagerContent(Modifier.fillMaxSize())
+                },
+                overlayContent = glassChrome,
+            )
         }
     }
 }

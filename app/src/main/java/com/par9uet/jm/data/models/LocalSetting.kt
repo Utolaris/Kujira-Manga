@@ -86,6 +86,9 @@ data class LocalSetting(
     val downloadGridColumns: Int = 0,
     val historyGridColumns: Int = 0,
     val searchGridColumns: Int = 0,
+    // 平板（大屏）布局开关。null = 尚未判定：手机侧首个非零窗口宽度写 false；
+    // 平板侧由首次询问弹窗或设置开关写入。之后只由设置开关改写。
+    val tabletLayoutEnabled: Boolean? = null,
     // 内存优化：限制并发解码并降低采样率，缓解低端设备 OOM；并发上限仅在开启时生效
     val readMemoryOptEnabled: Boolean = false,
     val readDecodeConcurrency: Int = 2,

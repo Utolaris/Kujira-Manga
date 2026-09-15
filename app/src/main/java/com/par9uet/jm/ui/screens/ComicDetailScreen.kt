@@ -100,6 +100,7 @@ import com.par9uet.jm.ui.glass.GlassCaptureHost
 import com.par9uet.jm.ui.glass.GlassModal
 import com.par9uet.jm.ui.glass.GlassSurface
 import com.par9uet.jm.ui.glass.GlassSurfaceStyle
+import com.par9uet.jm.ui.models.LocalTabletLayoutEnabled
 import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.ComicDetailViewModel
 import com.par9uet.jm.utils.formatAlbumAddTimeDisplay
@@ -420,7 +421,7 @@ fun ComicDetailScreen(
                             modifier = Modifier.fillMaxSize(),
                         ) {
                             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                                val isTabletLayout = maxWidth >= 700.dp
+                                val isTabletLayout = LocalTabletLayoutEnabled.current
                                 val viewportHeight = maxHeight
                                 if (isTabletLayout) {
                                     Row(
@@ -517,6 +518,7 @@ fun ComicDetailScreen(
             val showFolderPicker by comicDetailViewModel.showFolderPicker.collectAsState()
             val folderList by comicDetailViewModel.folderList.collectAsState()
             Box(modifier = Modifier.fillMaxSize()) {
+                val isTabletLayout = LocalTabletLayoutEnabled.current
                 AppGlassTopBar(
                     surfaceId = "comic-detail-top-bar",
                     statusBarInset = statusBarInset,
@@ -568,45 +570,85 @@ fun ComicDetailScreen(
                                 .padding(bottom = detailBarBottomPadding),
                         ) {
                             when (targetMode) {
-                                DetailBottomMode.ACTIONS -> ComicDetailBottomBar(
-                                    modifier = Modifier
-                                        .align(Alignment.BottomCenter)
-                                        .fillMaxWidth()
-                                        .widthIn(max = 600.dp)
-                                        .height(detailBarHeight),
-                                    comic = comic,
-                                    collectEnabled = !collectState.isLoading &&
-                                        authState != SessionReadiness.Restoring && authState != SessionReadiness.Unknown,
-                                    readHistoryManager = readHistoryManager,
-                                    readHistory = readHistory,
-                                    onCollect = {
-                                        requireLogin {
-                                            if (comic.isCollect) {
-                                                comicDetailViewModel.unCollect(comic.id)
-                                            } else {
-                                                comicDetailViewModel.refreshFolderList()
-                                                comicDetailViewModel.showFolderPicker()
+                                DetailBottomMode.ACTIONS -> if (isTabletLayout) {
+                                    ComicDetailTabletBottomBar(
+                                        modifier = Modifier
+                                            .fillMaxSize(),
+                                        barHeight = detailBarHeight,
+                                        comic = comic,
+                                        collectEnabled = !collectState.isLoading &&
+                                            authState != SessionReadiness.Restoring && authState != SessionReadiness.Unknown,
+                                        readHistoryManager = readHistoryManager,
+                                        readHistory = readHistory,
+                                        onCollect = {
+                                            requireLogin {
+                                                if (comic.isCollect) {
+                                                    comicDetailViewModel.unCollect(comic.id)
+                                                } else {
+                                                    comicDetailViewModel.refreshFolderList()
+                                                    comicDetailViewModel.showFolderPicker()
+                                                }
                                             }
-                                        }
-                                    },
-                                    onRelated = { mainNavController.navigate("comicRelate") },
-                                    onDownload = {
-                                        if (comic.comicChapterList.isEmpty()) {
-                                            comicDetailViewModel.downloadComic(comic)
-                                        } else {
-                                            selectedChapterIds = comic.comicChapterList.map { it.id }.toSet()
-                                            showDownloadChapterDialog = true
-                                        }
-                                    },
-                                    onRead = { targetId -> mainNavController.navigate("comicRead/$targetId") },
-                                    onChapters = {
-                                        val currentChapterId =
-                                            readHistoryManager.lastReadChapterId(comic, readHistory) ?: -1
-                                        mainNavController.navigate(
-                                            "comicChapter?currentChapterId=$currentChapterId"
-                                        )
-                                    },
-                                )
+                                        },
+                                        onRelated = { mainNavController.navigate("comicRelate") },
+                                        onDownload = {
+                                            if (comic.comicChapterList.isEmpty()) {
+                                                comicDetailViewModel.downloadComic(comic)
+                                            } else {
+                                                selectedChapterIds = comic.comicChapterList.map { it.id }.toSet()
+                                                showDownloadChapterDialog = true
+                                            }
+                                        },
+                                        onRead = { targetId -> mainNavController.navigate("comicRead/$targetId") },
+                                        onChapters = {
+                                            val currentChapterId =
+                                                readHistoryManager.lastReadChapterId(comic, readHistory) ?: -1
+                                            mainNavController.navigate(
+                                                "comicChapter?currentChapterId=$currentChapterId"
+                                            )
+                                        },
+                                    )
+                                } else {
+                                    ComicDetailBottomBar(
+                                        modifier = Modifier
+                                            .align(Alignment.BottomCenter)
+                                            .fillMaxWidth()
+                                            .widthIn(max = 600.dp)
+                                            .height(detailBarHeight),
+                                        comic = comic,
+                                        collectEnabled = !collectState.isLoading &&
+                                            authState != SessionReadiness.Restoring && authState != SessionReadiness.Unknown,
+                                        readHistoryManager = readHistoryManager,
+                                        readHistory = readHistory,
+                                        onCollect = {
+                                            requireLogin {
+                                                if (comic.isCollect) {
+                                                    comicDetailViewModel.unCollect(comic.id)
+                                                } else {
+                                                    comicDetailViewModel.refreshFolderList()
+                                                    comicDetailViewModel.showFolderPicker()
+                                                }
+                                            }
+                                        },
+                                        onRelated = { mainNavController.navigate("comicRelate") },
+                                        onDownload = {
+                                            if (comic.comicChapterList.isEmpty()) {
+                                                comicDetailViewModel.downloadComic(comic)
+                                            } else {
+                                                selectedChapterIds = comic.comicChapterList.map { it.id }.toSet()
+                                                showDownloadChapterDialog = true
+                                            }
+                                        },
+                                        onRead = { targetId -> mainNavController.navigate("comicRead/$targetId") },
+                                        onChapters = {
+                                            val currentChapterId =
+                                                readHistoryManager.lastReadChapterId(comic, readHistory) ?: -1
+                                            mainNavController.navigate(
+                                                "comicChapter?currentChapterId=$currentChapterId"
+                                            )
+                                        },
+                                    )
+                                }
 
                                 DetailBottomMode.COMMENT -> CommentComposer(
                                     comicId = comic.id,
@@ -718,6 +760,96 @@ private fun FolderPickerSheet(
                 if (index < sortedFolders.size - 1) {
                     HorizontalDivider()
                 }
+            }
+        }
+    }
+}
+
+/**
+ * 平板详情底栏：阅读按钮固定在左下，其余四个操作固定在右下；
+ * 两组玻璃表面等宽，避免整条底栏在大屏上被拉成通栏。
+ */
+@Composable
+private fun ComicDetailTabletBottomBar(
+    modifier: Modifier = Modifier,
+    barHeight: Dp,
+    comic: Comic,
+    readHistoryManager: ReadHistoryManager,
+    readHistory: Map<Int, ComicReadHistory>,
+    collectEnabled: Boolean,
+    onCollect: () -> Unit,
+    onRelated: () -> Unit,
+    onDownload: () -> Unit,
+    onRead: (Int) -> Unit,
+    onChapters: () -> Unit,
+) {
+    val lastReadChapterId = readHistoryManager.lastReadChapterId(comic, readHistory)
+    val hasChapters = comic.comicChapterList.isNotEmpty()
+    val readTargetId = lastReadChapterId
+        ?: comic.comicChapterList.firstOrNull()?.id
+        ?: comic.id
+    val iconCellSize = 48.dp
+    val groupWidth = iconCellSize * 4
+
+    Box(modifier = modifier) {
+        GlassSurface(
+            surfaceId = "comic-detail-actions-read",
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = 16.dp)
+                .width(groupWidth)
+                .height(barHeight),
+            style = GlassSurfaceStyle(cornerRadius = 32.dp),
+        ) {
+            Button(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 12.dp),
+                onClick = { onRead(readTargetId) },
+                shape = CircleShape,
+            ) {
+                Text(if (lastReadChapterId != null) "继续阅读" else "阅读")
+            }
+        }
+        GlassSurface(
+            surfaceId = "comic-detail-actions",
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 16.dp)
+                .width(groupWidth)
+                .height(barHeight),
+            style = GlassSurfaceStyle(cornerRadius = 32.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                DetailIconAction(
+                    icon = if (comic.isCollect) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                    contentDescription = if (comic.isCollect) "已收藏" else "收藏",
+                    tint = if (comic.isCollect) MaterialTheme.colorScheme.tertiary else null,
+                    size = iconCellSize,
+                    enabled = collectEnabled,
+                    onClick = onCollect,
+                )
+                DetailIconAction(
+                    icon = Icons.Default.AutoAwesome,
+                    contentDescription = "相关",
+                    size = iconCellSize,
+                    onClick = onRelated,
+                )
+                DetailIconAction(
+                    icon = Icons.Default.Download,
+                    contentDescription = "缓存",
+                    size = iconCellSize,
+                    onClick = onDownload,
+                )
+                DetailIconAction(
+                    icon = Icons.AutoMirrored.Rounded.MenuBook,
+                    contentDescription = "章节",
+                    enabled = hasChapters,
+                    size = iconCellSize,
+                    onClick = onChapters,
+                )
             }
         }
     }

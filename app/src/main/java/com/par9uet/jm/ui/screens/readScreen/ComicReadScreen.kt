@@ -28,7 +28,6 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
-import androidx.compose.material.icons.automirrored.outlined.Message
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Download
@@ -363,13 +362,6 @@ fun ComicReadScreen(
                                     }
                                 }
                             },
-                            onComment = {
-                                if (authState == SessionReadiness.Unauthenticated) {
-                                    mainNavController.navigate("login")
-                                } else {
-                                    mainNavController.navigate("comment/$comicId")
-                                }
-                            },
                             onChapterJump = {
                                 if (readableChapters.isNotEmpty()) {
                                     activeDialog = ReadPanelDialog.Chapter
@@ -410,47 +402,49 @@ fun ComicReadScreen(
                     }
                 }
             }
+            // 面板必须留在 GlassCaptureHost 的 overlayContent 内：GlassSurface 只有在宿主提供的
+            // registry 作用域里才会注册成 native 玻璃背板，放到宿主外面会静默退化成纯色面板
+            // （GlassSurface 的 registry == null 分支），看起来就和全站的高斯模糊风格不一致。
+            when (activeDialog) {
+                ReadPanelDialog.Cache -> {
+                    val currentComic = comic
+                    if (currentComic != null) {
+                        ChapterCachePickerDialog(
+                            chapters = currentComic.comicChapterList,
+                            selectedChapterIds = selectedCacheChapterIds,
+                            onSelectedChange = { selectedCacheChapterIds = it },
+                            onDismiss = { activeDialog = null },
+                            onConfirm = {
+                                val selectedChapters = currentComic.comicChapterList
+                                    .filter { it.id in selectedCacheChapterIds }
+                                comicReadViewModel.downloadChapters(currentComic, selectedChapters)
+                                activeDialog = null
+                                selectedCacheChapterIds = emptySet()
+                            }
+                        )
+                    }
+                }
+
+                ReadPanelDialog.Chapter -> {
+                    if (readableChapters.isNotEmpty()) {
+                        ChapterPickerDialog(
+                            title = "跳转章节",
+                            chapters = readableChapters,
+                            currentChapterId = comicId,
+                            readChapterIds = readChapterIds,
+                            onDismiss = { activeDialog = null },
+                            onSelect = { chapter ->
+                                activeDialog = null
+                                navigateToChapter(chapter)
+                            }
+                        )
+                    }
+                }
+
+                null -> Unit
+            }
         },
     )
-
-    when (activeDialog) {
-        ReadPanelDialog.Cache -> {
-            val currentComic = comic
-            if (currentComic != null) {
-                ChapterCachePickerDialog(
-                    chapters = currentComic.comicChapterList,
-                    selectedChapterIds = selectedCacheChapterIds,
-                    onSelectedChange = { selectedCacheChapterIds = it },
-                    onDismiss = { activeDialog = null },
-                    onConfirm = {
-                        val selectedChapters = currentComic.comicChapterList
-                            .filter { it.id in selectedCacheChapterIds }
-                        comicReadViewModel.downloadChapters(currentComic, selectedChapters)
-                        activeDialog = null
-                        selectedCacheChapterIds = emptySet()
-                    }
-                )
-            }
-        }
-
-        ReadPanelDialog.Chapter -> {
-            if (readableChapters.isNotEmpty()) {
-                ChapterPickerDialog(
-                    title = "跳转章节",
-                    chapters = readableChapters,
-                    currentChapterId = comicId,
-                    readChapterIds = readChapterIds,
-                    onDismiss = { activeDialog = null },
-                    onSelect = { chapter ->
-                        activeDialog = null
-                        navigateToChapter(chapter)
-                    }
-                )
-            }
-        }
-
-        null -> Unit
-    }
 }
 
 private enum class ReadPanelDialog {
@@ -567,7 +561,6 @@ private fun ReadSideBar(
     surfaceAlpha: Float = 1f,
     onToggleCollect: () -> Unit,
     onCache: () -> Unit,
-    onComment: () -> Unit,
     onChapterJump: () -> Unit,
 ) {
     GlassSurface(
@@ -595,14 +588,6 @@ private fun ReadSideBar(
                 enabled = !localOnly && comic != null,
                 onClick = onCache
             )
-            if (!localOnly) {
-                ReadSideBarAction(
-                    icon = Icons.AutoMirrored.Outlined.Message,
-                    label = "评论",
-                    enabled = comic != null,
-                    onClick = onComment
-                )
-            }
             ReadSideBarAction(
                 icon = Icons.AutoMirrored.Filled.MenuBook,
                 label = "章节",

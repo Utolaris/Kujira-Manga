@@ -23,11 +23,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Bookmarks
-import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Cancel
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Folder
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -37,13 +36,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -64,6 +63,8 @@ import com.par9uet.jm.favorites.model.FavoritesIntent
 import com.par9uet.jm.favorites.model.FavoritesModal
 import com.par9uet.jm.favorites.presentation.FavoritesViewModel
 import com.par9uet.jm.core.network.NetworkErrorKind
+import com.par9uet.jm.ui.components.SearchFieldSurface
+import com.par9uet.jm.ui.components.searchFieldColors
 import com.par9uet.jm.ui.glass.GlassConfirmDialog
 import com.par9uet.jm.ui.glass.GlassModal
 import com.par9uet.jm.ui.navigation.LocalMainNavController
@@ -223,7 +224,7 @@ internal fun FavoritesModalHost(favoritesViewModel: FavoritesViewModel) {
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "点击文件夹名称可切换当前收藏夹，右侧按钮可重命名或删除。",
+                    "点击文件夹名称可切换当前收藏夹，右侧按钮可重命名或删除。?",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -361,7 +362,7 @@ internal fun FavoritesModalHost(favoritesViewModel: FavoritesViewModel) {
     GlassConfirmDialog(
         visible = deleteModal != null,
         title = "删除收藏夹",
-        message = "确定删除「${deleteModal?.folderName.orEmpty()}」吗？\n注意：删除收藏夹不会删除其中的漫画，漫画会移至「全部」。",
+        message = "确定删除「${deleteModal?.folderName.orEmpty()}」吗？\n注意：删除收藏夹不会删除其中的漫画，漫画会移至「全部」。?",
         confirmText = "删除",
         destructive = true,
         surfaceId = "favorites-delete-folder-glass-confirm",
@@ -372,7 +373,7 @@ internal fun FavoritesModalHost(favoritesViewModel: FavoritesViewModel) {
     GlassConfirmDialog(
         visible = activeModal is FavoritesModal.Uncollect,
         title = "取消收藏",
-        message = "确定取消收藏 ${collectEditState.selectedComicIds.size} 部漫画吗？",
+        message = "确定取消收藏 ${collectEditState.selectedComicIds.size} 部漫画吗？?",
         confirmText = "取消收藏",
         surfaceId = "favorites-uncollect-glass-confirm",
         onConfirm = { favoritesViewModel.onIntent(FavoritesIntent.UncollectConfirmed) },
@@ -468,27 +469,30 @@ private fun FilterDialog(
                 }
             }
             Spacer(modifier = Modifier.height(12.dp))
-            OutlinedTextField(
-                modifier = Modifier.fillMaxWidth(),
-                value = filterQuery,
-                onValueChange = { filterQuery = it },
-                singleLine = true,
-                placeholder = { Text(if (selectedTabIndex == 0) "搜索标签" else "搜索作者") },
-                leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
-                trailingIcon = {
+            // 与首页搜索页共用同一个外壳，圆角 / 边框 / 图标位置；SearchFieldSurface 统一提供。?
+            SearchFieldSurface(
+                field = {
+                    TextField(
+                        modifier = Modifier.weight(1f),
+                        value = filterQuery,
+                        onValueChange = { filterQuery = it },
+                        singleLine = true,
+                        placeholder = {
+                            Text(
+                                text = if (selectedTabIndex == 0) "搜索标签" else "搜索作者",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        },
+                        colors = searchFieldColors(),
+                    )
+                },
+                trailing = {
                     if (filterQuery.isNotEmpty()) {
                         IconButton(onClick = { filterQuery = "" }) {
-                            Icon(Icons.Rounded.Close, contentDescription = "清除")
+                            Icon(Icons.Rounded.Cancel, contentDescription = "清除")
                         }
                     }
                 },
-                shape = MaterialTheme.shapes.large,
-                colors = OutlinedTextFieldDefaults.colors(
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    unfocusedBorderColor = Color.Transparent,
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                ),
             )
             Spacer(modifier = Modifier.height(12.dp))
             PrimaryTabRow(
@@ -512,6 +516,8 @@ private fun FilterDialog(
                     text = { Text("作者 (${authorCountMap.size})") },
                 )
             }
+            // Tab 栏与下方 chip 之间留出间距；之前是紧贴着的，视觉上糊成一片。?
+            Spacer(modifier = Modifier.height(12.dp))
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -524,7 +530,7 @@ private fun FilterDialog(
                                 if (tagCountMap.isEmpty()) {
                                     "当前已加载收藏中没有可筛选的标签"
                                 } else {
-                                    "没有匹配「$query」的标签"
+                                    "没有匹配「?$query」的标签"
                                 },
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(vertical = 24.dp),
@@ -553,7 +559,7 @@ private fun FilterDialog(
                                 if (authorCountMap.isEmpty()) {
                                     "当前已加载收藏中没有可筛选的作者"
                                 } else {
-                                    "没有匹配「$query」的作者"
+                                    "没有匹配「?$query」的作者"
                                 },
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(vertical = 24.dp),

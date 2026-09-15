@@ -57,12 +57,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -77,22 +75,14 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
-import androidx.paging.compose.collectAsLazyPagingItems
 import com.par9uet.jm.data.models.Comment
 import com.par9uet.jm.session.SessionReadiness
-import com.par9uet.jm.session.UserManager
 import com.par9uet.jm.ui.components.Comment
 import com.par9uet.jm.ui.components.CommentSkeleton
-import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.components.PullRefreshAndLoadMoreGrid
-import com.par9uet.jm.ui.glass.GlassMaterialStyle
 import com.par9uet.jm.ui.glass.GlassSurface
-import com.par9uet.jm.utils.formatAlbumAddTimeDisplay
 import com.par9uet.jm.ui.glass.GlassSurfaceStyle
-import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.ComicDetailViewModel
-import org.koin.compose.getKoin
-import org.koin.compose.viewmodel.koinActivityViewModel
 
 @Composable
 private fun CommentListSkeleton(modifier: Modifier = Modifier) {
@@ -605,83 +595,6 @@ private fun CommentActionCircle(
             shape = CircleShape,
             color = MaterialTheme.colorScheme.surfaceContainer,
             content = circleContent,
-        )
-    }
-}
-
-@Composable
-fun ComicCommentScreen(
-    comicId: Int,
-    comicDetailViewModel: ComicDetailViewModel = koinActivityViewModel(),
-    userManager: UserManager = getKoin().get(),
-) {
-    val focusManager = LocalFocusManager.current
-    val keyboardController = LocalSoftwareKeyboardController.current
-    val mainNavController = LocalMainNavController.current
-    val authState by userManager.authState.collectAsState()
-    val commentInputFocusRequester = remember { FocusRequester() }
-    val commentLazyPagingItems = remember(comicId, comicDetailViewModel) {
-        comicDetailViewModel.commentPager(comicId)
-    }.collectAsLazyPagingItems()
-    var replyComment by remember(comicId) { mutableStateOf<Comment?>(null) }
-    val comicDetailState by comicDetailViewModel.comicDetailState.collectAsState()
-
-    LaunchedEffect(comicId) {
-        if (comicDetailState.data?.id != comicId) {
-            comicDetailViewModel.getComicDetail(comicId)
-        }
-    }
-    LaunchedEffect(authState) {
-        if (authState == SessionReadiness.Unauthenticated) {
-            mainNavController.navigate("login")
-        }
-    }
-
-    val comicTitle = comicDetailState.data?.takeIf { it.id == comicId }
-        ?.let { "${it.name} · JM${it.id}" } ?: "评论"
-    CommonScaffold(
-        title = comicTitle,
-        titleTopPadding = 8.dp,
-        bottomBar = {
-            CommentComposer(
-                comicId = comicId,
-                authState = authState,
-                replyComment = replyComment,
-                onCancel = {
-                    replyComment = null
-                    focusManager.clearFocus()
-                    keyboardController?.hide()
-                },
-                commentLazyPagingItems = commentLazyPagingItems,
-                commentInputFocusRequester = commentInputFocusRequester,
-                comicDetailViewModel = comicDetailViewModel,
-                onLogin = { mainNavController.navigate("login") },
-                onSuccess = {
-                    replyComment = null
-                    focusManager.clearFocus()
-                    keyboardController?.hide()
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = ComicDetailHorizontalPadding, vertical = 8.dp),
-            )
-        },
-    ) { topContentPadding, bottomContentPadding ->
-        ComicCommentContent(
-            commentLazyPagingItems = commentLazyPagingItems,
-            authState = authState,
-            onLogin = { mainNavController.navigate("login") },
-            onReply = {
-                replyComment = it
-            },
-            topContentPadding = topContentPadding,
-            bottomContentPadding = bottomContentPadding,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = ComicDetailHorizontalPadding),
-            publishDateText = formatAlbumAddTimeDisplay(
-                comicDetailState.data?.takeIf { it.id == comicId }?.addTime.orEmpty()
-            ),
         )
     }
 }

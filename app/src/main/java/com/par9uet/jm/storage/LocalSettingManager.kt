@@ -96,6 +96,21 @@ class LocalSettingManager(
         updateSetting { it.copy(preferenceRecommendEnabled = enabled) }
     fun setApiEndpoint(url: String) = updateSetting { it.copy(api = url) }
 
+    /** 用户在设置里显式切换平板布局；切换后不再随窗口宽度变化。 */
+    fun setTabletLayoutEnabled(enabled: Boolean) =
+        updateSetting { it.copy(tabletLayoutEnabled = enabled) }
+
+    /**
+     * 首次判定平板布局：只在还没有值的时候落盘，之后由设置开关独占。
+     * 手机侧由 `rememberTabletLayout` 直接写 false；平板侧留给询问弹窗/设置开关
+     * 写入 true/false。调用方必须在窗口宽度已知时才调用。
+     * @return true 表示已经有值，或本次写入已确认。
+     */
+    fun seedTabletLayoutEnabled(detected: Boolean): Boolean {
+        if (_localSettingState.value.tabletLayoutEnabled != null) return true
+        return updateSetting { it.copy(tabletLayoutEnabled = detected) }
+    }
+
     fun updateLauncherDisguise(launcherDisguise: String) {
         val disguise = LauncherDisguise.fromId(launcherDisguise)
         val previous = _localSettingState.value.launcherDisguise
@@ -465,6 +480,7 @@ class LocalSettingManager(
             history = setting.historyGridColumns,
             search = setting.searchGridColumns,
         ),
+        tabletLayoutEnabled = setting.tabletLayoutEnabled,
     )
 
     private fun toAppLockState(setting: LocalSetting) = AppLockState(

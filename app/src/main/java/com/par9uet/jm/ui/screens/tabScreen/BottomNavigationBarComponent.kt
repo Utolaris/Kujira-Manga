@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
@@ -181,8 +182,11 @@ fun NavigationRailComponent(
     )
 
     NavigationRail(
+        modifier = Modifier.fillMaxHeight(),
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
     ) {
+        // NavigationRail 默认把 items 顶到上方；平板侧栏三个入口需要垂直居中。
+        Spacer(modifier = Modifier.weight(1f))
         MainTab.ordered.forEach { tab ->
             NavigationRailItem(
                 colors = itemColors,
@@ -191,6 +195,7 @@ fun NavigationRailComponent(
                 onClick = { onTabSelected(tab) },
             )
         }
+        Spacer(modifier = Modifier.weight(1f))
     }
 }
 

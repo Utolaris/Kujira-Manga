@@ -70,8 +70,11 @@ import com.par9uet.jm.ui.glass.GlassModal
 import com.par9uet.jm.ui.screens.AppLockScreen
 import com.par9uet.jm.ui.screens.AppScreen
 import com.par9uet.jm.ui.screens.NsfwWarningDialog
+import com.par9uet.jm.ui.screens.ProvideTabletLayout
 import com.par9uet.jm.ui.screens.SettingsUnavailableScreen
+import com.par9uet.jm.ui.screens.TabletLayoutPromptDialog
 import com.par9uet.jm.ui.screens.WelcomeScreen
+import com.par9uet.jm.ui.models.LocalTabletLayoutPromptPending
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -163,7 +166,8 @@ fun App(
 
     // Main content first, lock/onboarding/security overlay after: lock must win z-order
     // if a frame ever composes both (recents restore, HyperOS resume animation).
-    Box(modifier = Modifier.fillMaxSize()) {
+    ProvideTabletLayout {
+        Box(modifier = Modifier.fillMaxSize()) {
         // 远端图片主机是 App 级环境值：在这里读一次，组件与页面只消费环境值，
         // 避免每个看图的地方各自依赖 storage 端口。
         val remoteImageHost by remoteConfigPreferences.remoteImageHost.collectAsState()
@@ -228,6 +232,7 @@ fun App(
                 passwordLength = appLock.passwordLength,
                 onUnlock = { isLocked = false }
             )
+        }
         }
     }
 }
@@ -358,6 +363,16 @@ private fun MainAppContent(
                     onNsfwDismissed()
                 },
                 onDismiss = onNsfwDismissed,
+            )
+        }
+
+        // 新装平板：等 NSFW 提示处理完后再问，避免两层弹窗叠在一起。
+        val tabletPromptPending = LocalTabletLayoutPromptPending.current
+        if (tabletPromptPending && !showNsfwDialog) {
+            TabletLayoutPromptDialog(
+                visible = true,
+                onEnable = { localSettingManager.setTabletLayoutEnabled(true) },
+                onDisable = { localSettingManager.setTabletLayoutEnabled(false) },
             )
         }
 
