@@ -39,11 +39,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -149,15 +151,28 @@ internal fun GlassAnchoredMenu(
 
     BackHandler(onBack = state::dismiss)
 
-    BoxWithConstraints(modifier.fillMaxSize()) {
+    var containerOriginInRoot by remember { mutableStateOf(Offset.Zero) }
+    BoxWithConstraints(
+        modifier
+            .fillMaxSize()
+            .onGloballyPositioned { containerBounds ->
+                containerOriginInRoot = containerBounds.positionInRoot()
+            },
+    ) {
         val rootSize = with(density) { IntSize(maxWidth.roundToPx(), maxHeight.roundToPx()) }
         val widthPx = with(density) { width.roundToPx() }
         val maxHeightPx = with(density) { menuMaxHeight.roundToPx() }
         val marginPx = with(density) { 8.dp.roundToPx() }
         val gapPx = with(density) { 6.dp.roundToPx() }
+        // Anchor 用 boundsInRoot（整窗坐标）；菜单容器可能只占窗口一部分
+        // （例如被其它 chrome 包在内容区）。先转成容器本地坐标再定位。
+        val localAnchor = anchorBounds.translate(
+            -containerOriginInRoot.x,
+            -containerOriginInRoot.y,
+        )
         var measuredMenuSize by remember { mutableStateOf(IntSize.Zero) }
         val position = calculateGlassMenuPosition(
-            anchorBounds = anchorBounds,
+            anchorBounds = localAnchor,
             rootSize = rootSize,
             menuSize = measuredMenuSize.takeIf { it.width > 0 && it.height > 0 }
                 ?: IntSize(widthPx, maxHeightPx),

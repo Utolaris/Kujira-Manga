@@ -55,6 +55,8 @@ import coil.compose.AsyncImage
 import com.par9uet.jm.R
 import com.par9uet.jm.core.model.User
 import com.par9uet.jm.ui.models.LocalRemoteImageHost
+import com.par9uet.jm.ui.screens.tabScreen.TabletFloatingNavDefaults
+import com.par9uet.jm.ui.models.LocalTabletLayoutEnabled
 import com.par9uet.jm.session.UserManager
 import com.par9uet.jm.session.SessionReadiness
 import com.par9uet.jm.ui.navigation.LocalMainNavController
@@ -357,9 +359,17 @@ fun UserScreen(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(
-                    start = 16.dp,
+                    start = if (LocalTabletLayoutEnabled.current) {
+                        TabletFloatingNavDefaults.settingsHorizontalInset
+                    } else {
+                        16.dp
+                    },
                     top = 16.dp + topContentPadding,
-                    end = 16.dp,
+                    end = if (LocalTabletLayoutEnabled.current) {
+                        TabletFloatingNavDefaults.settingsHorizontalInset
+                    } else {
+                        16.dp
+                    },
                     bottom = 16.dp + bottomContentPadding,
                 ),
             verticalArrangement = Arrangement.spacedBy(16.dp)

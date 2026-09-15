@@ -1,16 +1,17 @@
 package com.par9uet.jm.ui.screens.tabScreen
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
@@ -32,6 +33,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
@@ -49,6 +51,7 @@ import com.par9uet.jm.ui.glass.GlassStyle
 import com.par9uet.jm.ui.glass.rememberGlassAnchoredMenuState
 import com.par9uet.jm.favorites.model.FavoritesIntent
 import com.par9uet.jm.favorites.presentation.FavoritesViewModel
+import com.par9uet.jm.ui.interaction.ScrollAwareNavigationState
 import com.par9uet.jm.ui.interaction.PullDownSearchIndicator
 import com.par9uet.jm.ui.interaction.rememberPullDownActionState
 import com.par9uet.jm.session.UserManager
@@ -188,6 +191,9 @@ fun TabScreen(
     BoxWithConstraints {
         // 平板模式由设置开关决定（首次安装会询问）；组合根 ProvideTabletLayout 统一注入。
         val useNavigationRail = LocalTabletLayoutEnabled.current
+        val navigationVisibility = remember(useNavigationRail, selectedTab) {
+            ScrollAwareNavigationState(coroutineScope)
+        }
         val anchoredMenuMaxHeight = maxHeight * 0.56f
         val glassStyle = GlassStyle.Default
         val navigationBarInset = with(LocalDensity.current) {
@@ -407,33 +413,27 @@ fun TabScreen(
         }
 
         if (useNavigationRail) {
-            val railWidth = TabletNavigationRailDefaults.width +
-                TabletNavigationRailDefaults.outerMargin * 2
+            // 内容占满整宽；导航按钮悬浮在左侧 overlay，不再占布局位。
             GlassCaptureHost(
                 modifier = Modifier.fillMaxSize(),
                 sourceContent = {
-                    Row(modifier = Modifier.fillMaxSize()) {
-                        // 给侧栏留位；真正的玻璃侧栏画在 overlay，和内容共享同一捕获。
-                        Spacer(modifier = Modifier.width(railWidth))
-                        pagerContent(Modifier.weight(1f))
-                    }
+                    pagerContent(Modifier.fillMaxSize().nestedScroll(navigationVisibility))
                 },
                 overlayContent = {
                     Box(modifier = Modifier.fillMaxSize()) {
-                        GlassNavigationRailComponent(
-                            selectedTab = selectedTab,
-                            onTabSelected = ::selectTab,
-                            modifier = Modifier
-                                .align(Alignment.CenterStart)
-                                .padding(horizontal = TabletNavigationRailDefaults.outerMargin),
-                        )
-                        Box(
-                            modifier = Modifier
-                                .padding(start = railWidth)
-                                .fillMaxSize(),
+                        AnimatedVisibility(
+                            visible = navigationVisibility.visible,
+                            modifier = Modifier.align(Alignment.CenterStart),
+                            enter = slideInHorizontally(tween(180)) { -it },
+                            exit = slideOutHorizontally(tween(180)) { -it },
                         ) {
-                            glassChrome()
+                            TabletFloatingNavigationButtons(
+                                selectedTab = selectedTab,
+                                onTabSelected = ::selectTab,
+                                modifier = Modifier.padding(start = TabletFloatingNavDefaults.outerMargin),
+                            )
                         }
+                        glassChrome()
                     }
                 },
             )

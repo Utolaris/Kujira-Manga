@@ -39,6 +39,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.par9uet.jm.R
@@ -167,35 +168,33 @@ fun PrimaryGlassBottomBar(
     }
 }
 
-/** 平板左侧导航栏几何：玻璃条与占位宽度。 */
-internal object TabletNavigationRailDefaults {
+/** 平板左侧悬浮导航按钮几何。 */
+internal object TabletFloatingNavDefaults {
     val width = 72.dp
-    val outerMargin = 8.dp
+    val outerMargin = 12.dp
+    val itemHeight = 64.dp
+
+    /** 设置一级页双侧留白，超出悬浮按钮外缘 12dp。 */
+    val settingsHorizontalInset: Dp = width + outerMargin + 12.dp
 }
 
 /**
- * 平板侧栏：与手机底栏同一套高斯模糊玻璃表面，条目垂直居中。
+ * 平板左侧悬浮玻璃导航：与手机底栏同一套高斯模糊表面，三入口垂直居中。
  * 必须画在 `GlassCaptureHost` 的 overlay 内，否则会退化成纯色。
  */
 @Composable
-fun GlassNavigationRailComponent(
+fun TabletFloatingNavigationButtons(
     selectedTab: MainTab,
     onTabSelected: (MainTab) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     GlassSurface(
-        surfaceId = "primary-navigation-rail",
+        surfaceId = "tablet-floating-navigation",
         modifier = modifier
-            .width(TabletNavigationRailDefaults.width)
-            .fillMaxHeight()
-            .padding(vertical = TabletNavigationRailDefaults.outerMargin),
+            .width(TabletFloatingNavDefaults.width),
         style = GlassSurfaceStyle(cornerRadius = 28.dp),
     ) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
+        Column(modifier = Modifier.padding(vertical = 8.dp)) {
             MainTab.ordered.forEach { tab ->
                 val isSelected = tab == selectedTab
                 val contentColor = if (isSelected) {
@@ -203,10 +202,19 @@ fun GlassNavigationRailComponent(
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 }
-                Column(
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
+                        .height(TabletFloatingNavDefaults.itemHeight)
+                        .padding(6.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(
+                            if (isSelected) {
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                            } else {
+                                Color.Transparent
+                            },
+                        )
                         .clickable(
                             role = Role.Tab,
                             onClick = { onTabSelected(tab) },
@@ -215,41 +223,26 @@ fun GlassNavigationRailComponent(
                             contentDescription = tab.navigationLabel
                             selected = isSelected
                             role = Role.Tab
-                        }
-                        .padding(vertical = 14.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                        },
+                    contentAlignment = Alignment.Center,
                 ) {
-                    if (isSelected) {
-                        Box(
-                            modifier = Modifier
-                                .size(width = 36.dp, height = 28.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                                ),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            MainTabIcon(
-                                tab = tab,
-                                contentDescription = null,
-                                tint = contentColor,
-                            )
-                        }
-                    } else {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
                         MainTabIcon(
                             tab = tab,
                             contentDescription = null,
                             tint = contentColor,
                         )
+                        Text(
+                            text = tab.navigationLabel,
+                            color = contentColor,
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
-                    Text(
-                        text = tab.navigationLabel,
-                        color = contentColor,
-                        style = MaterialTheme.typography.labelSmall,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
                 }
             }
         }
