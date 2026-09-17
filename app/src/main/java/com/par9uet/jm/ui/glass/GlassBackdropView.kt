@@ -8,11 +8,14 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
 import android.os.Build
+import android.os.SystemClock
 import android.view.View
 import androidx.annotation.RequiresApi
 import androidx.core.graphics.withClip
 import androidx.core.graphics.withSave
 import androidx.core.graphics.withTranslation
+import com.par9uet.jm.utils.log
+import com.par9uet.jm.utils.logError
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
@@ -32,6 +35,7 @@ internal data class GlassSurfaceColors(
 internal class GlassBackdropView(
     context: Context,
     private var style: GlassSurfaceStyle = GlassSurfaceStyle.Default,
+    private val surfaceId: String = "glass-surface",
 ) : View(context) {
     private val density = resources.displayMetrics.density
     private val surfaceRect = RectF()
@@ -57,7 +61,9 @@ internal class GlassBackdropView(
     private var sourceRegionDirty = true
     private var geometryDirty = true
     private var nativeRenderState: NativeGlassRenderState? = createNativeRenderState(style)
-    private var nativeRenderFailed = false
+    private var nativeFailureStreak = 0
+    private var nativeRetryNotBeforeUptimeMs = 0L
+    private var reportedDegraded = false
 
     init {
         setWillNotDraw(false)
@@ -120,8 +126,7 @@ internal class GlassBackdropView(
 
         val sharedSource = source
         if (
-            !nativeRenderFailed &&
-            nativeRenderState != null &&
+            canAttemptNativeRender() &&
             sharedSource != null &&
             sharedSource.nativeCaptureAvailable &&
             canvas.isHardwareAccelerated &&
@@ -131,10 +136,8 @@ internal class GlassBackdropView(
         }
 
         if (
-            !nativeRenderFailed &&
-            nativeRenderState != null &&
+            canAttemptNativeRender() &&
             sharedSource?.nativeCaptureAvailable == true &&
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
             canvas.isHardwareAccelerated &&
             !sourceRegionDirty &&
             lastSourceGeneration == sharedSource.generation
@@ -148,6 +151,12 @@ internal class GlassBackdropView(
         drawDirectionalStroke(canvas, topStrokePaint, clipTop = true)
         drawDirectionalStroke(canvas, bottomStrokePaint, clipTop = false)
     }
+
+    /** 原生模糊当前是否可尝试：退避窗口内直接跳过，避免每帧都撞同一个 GPU 失败。 */
+    private fun canAttemptNativeRender(): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            nativeRenderState != null &&
+            SystemClock.uptimeMillis() >= nativeRetryNotBeforeUptimeMs
 
     private fun updateGeometryIfNeeded() {
         if (!geometryDirty) return
@@ -193,10 +202,31 @@ internal class GlassBackdropView(
             )
             lastSourceGeneration = sharedSource.generation
             sourceRegionDirty = false
+            if (nativeFailureStreak > 0) {
+                nativeFailureStreak = 0
+                if (reportedDegraded) {
+                    reportedDegraded = false
+                    log("GlassBackdropView", "[$surfaceId] 原生模糊恢复")
+                }
+            }
         } catch (_: RuntimeException) {
-            // A device-specific hardware renderer failure degrades to the same translucent
-            // material as pre-31 instead of taking down the screen.
-            nativeRenderFailed = true
+            // A transient GPU failure (heavy reader bitmaps under RenderEffect) must not degrade
+            // this surface to translucent tint until it is destroyed — that is the "面板偶尔变
+            // 成纯色、过一会儿又好了" symptom. Back off, rebuild the RenderNode and keep retrying;
+            // a successful record (or a recreated view when the bar is shown again) clears it.
+            nativeFailureStreak++
+            val backoffMs = (RetryBackoffStepMs * nativeFailureStreak).coerceAtMost(RetryBackoffMaxMs)
+            nativeRetryNotBeforeUptimeMs = SystemClock.uptimeMillis() + backoffMs
+            nativeRenderState = createNativeRenderState(style)
+            sourceRegionDirty = true
+            if (!reportedDegraded) {
+                reportedDegraded = true
+                logError(
+                    "GlassBackdropView",
+                    "[$surfaceId] 原生模糊失败（第 ${nativeFailureStreak} 次）：${backoffMs}ms 后重试，" +
+                        "退避窗口内退化为纯色（不再永久降级）",
+                )
+            }
         }
     }
 
@@ -292,5 +322,10 @@ internal class GlassBackdropView(
         } else {
             null
         }
+    }
+
+    private companion object {
+        const val RetryBackoffStepMs = 250L
+        const val RetryBackoffMaxMs = 2_000L
     }
 }

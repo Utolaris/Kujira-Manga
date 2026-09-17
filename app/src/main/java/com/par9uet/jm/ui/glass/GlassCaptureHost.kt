@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.navigation.NavHostController
+import com.par9uet.jm.ui.models.LocalTabletLayoutEnabled
 import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.ui.theme.ExtendedColorScheme
 import com.par9uet.jm.ui.theme.ExtendedTheme
@@ -49,6 +50,7 @@ fun GlassCaptureHost(
     val extendedColors = ExtendedTheme.colors
     val mainNavController = LocalMainNavController.current
     val minimumInteractiveComponentSize = LocalMinimumInteractiveComponentSize.current
+    val tabletLayoutEnabled = LocalTabletLayoutEnabled.current
     val context = LocalContext.current
 
     AndroidView(
@@ -66,6 +68,7 @@ fun GlassCaptureHost(
                     extendedColors = extendedColors,
                     mainNavController = mainNavController,
                     minimumInteractiveComponentSize = minimumInteractiveComponentSize,
+                    tabletLayoutEnabled = tabletLayoutEnabled,
                 )
             }
         },
@@ -77,6 +80,7 @@ fun GlassCaptureHost(
                 extendedColors = extendedColors,
                 mainNavController = mainNavController,
                 minimumInteractiveComponentSize = minimumInteractiveComponentSize,
+                tabletLayoutEnabled = tabletLayoutEnabled,
             )
         },
         onRelease = GlassCaptureHostView::dispose,
@@ -94,6 +98,7 @@ internal class GlassCaptureHostView(context: Context) :
         val extendedColors: ExtendedColorScheme,
         val mainNavController: NavHostController,
         val minimumInteractiveComponentSize: androidx.compose.ui.unit.Dp,
+        val tabletLayoutEnabled: Boolean,
     )
 
     private data class RegisteredSurface(
@@ -204,6 +209,7 @@ internal class GlassCaptureHostView(context: Context) :
         extendedColors: ExtendedColorScheme,
         mainNavController: NavHostController,
         minimumInteractiveComponentSize: androidx.compose.ui.unit.Dp,
+        tabletLayoutEnabled: Boolean,
     ) {
         val newTheme = ThemeState(
             colorScheme = colorScheme,
@@ -212,6 +218,7 @@ internal class GlassCaptureHostView(context: Context) :
             extendedColors = extendedColors,
             mainNavController = mainNavController,
             minimumInteractiveComponentSize = minimumInteractiveComponentSize,
+            tabletLayoutEnabled = tabletLayoutEnabled,
         )
         val themeChanged = themeState.value != newTheme
         themeState.value = newTheme
@@ -242,7 +249,13 @@ internal class GlassCaptureHostView(context: Context) :
             bounds = bounds,
         )
         if (registeredSurfaces[surfaceId] == next) return
+        val firstSurface = registeredSurfaces.isEmpty()
         registeredSurfaces[surfaceId] = next
+        if (firstSurface) {
+            // Capture is skipped while no surface is registered; the first glass panel must
+            // force a fresh source record or it would sample an empty/stale display list.
+            sourceCapture.markDirty()
+        }
         backdropViews[surfaceId]?.let { applySurfaceVisuals(it, next) }
         scheduleSurfaceSync()
     }
@@ -303,7 +316,8 @@ internal class GlassCaptureHostView(context: Context) :
     override fun dispatchDraw(canvas: Canvas) {
         val time = drawingTime
         drawChild(canvas, sourceComposeView, time)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && registeredSurfaces.isNotEmpty()) {
+            // Idle hosts (no glass surfaces) must not re-record the full-screen source.
             val generationBefore = sourceCapture.generation
             sourceCapture.recordIfNeeded()
             if (sourceCapture.generation != generationBefore) {
@@ -355,7 +369,7 @@ internal class GlassCaptureHostView(context: Context) :
 
             val view = backdropViews.getOrPut(surfaceId) {
                 layoutChanged = true
-                GlassBackdropView(context, registration.style).also {
+                GlassBackdropView(context, registration.style, surfaceId).also {
                     it.setSource(sourceCapture, sourceComposeView)
                     it.setColors(colorsFor(registration.style.material))
                     addView(it, childCount - 1)
@@ -415,6 +429,7 @@ internal class GlassCaptureHostView(context: Context) :
             LocalExtendedColors provides theme.extendedColors,
             LocalMainNavController provides theme.mainNavController,
             LocalMinimumInteractiveComponentSize provides theme.minimumInteractiveComponentSize,
+            LocalTabletLayoutEnabled provides theme.tabletLayoutEnabled,
         ) {
             MaterialTheme(
                 colorScheme = theme.colorScheme,

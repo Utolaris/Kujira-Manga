@@ -1,7 +1,6 @@
 package com.par9uet.jm
 
 import android.content.Context
-import android.os.Build
 import android.view.WindowManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,7 +34,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ClipEntry
@@ -48,6 +46,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.NavHostController
+import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.ui.navigation.RetainedMainNavigation
 import com.par9uet.jm.ui.models.ComicDetailLoader
 import com.par9uet.jm.ui.models.ComicDetailOpener
@@ -66,6 +65,7 @@ import com.par9uet.jm.storage.RemoteConfigPreferences
 import com.par9uet.jm.core.ToastManager
 import com.par9uet.jm.ui.components.JmCoverImage
 import com.par9uet.jm.ui.components.AppSnackbarHost
+import com.par9uet.jm.ui.glass.GlassCaptureHost
 import com.par9uet.jm.ui.glass.GlassModal
 import com.par9uet.jm.ui.screens.AppLockScreen
 import com.par9uet.jm.ui.screens.AppScreen
@@ -343,80 +343,89 @@ private fun MainAppContent(
         }
     }
 
-    val canBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    Box(modifier = Modifier.fillMaxSize()) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .then(if (showNsfwDialog && canBlur) Modifier.blur(32.dp) else Modifier)
-        ) {
-            AppScreen(externalNavController = mainNavController)
-            AppSnackbarHost(
-                hostState = snackbarHostState,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-                    .padding(bottom = 80.dp)
-                    .imePadding()
-            )
-        }
+    // 冷启动静默检查有结果且非新装/锁屏时，引导去「检查更新」下载。
+    val autoUpdateChecker: com.par9uet.jm.update.AutoUpdateChecker = getKoin().get()
+    val pendingAutoUpdate by autoUpdateChecker.prompt.collectAsState()
+    val pendingRelease = pendingAutoUpdate
+    // 新装平板：等 NSFW 提示处理完后再问，避免两层弹窗叠在一起。
+    val tabletPromptPending = LocalTabletLayoutPromptPending.current
 
-        if (showNsfwDialog) {
-            NsfwWarningDialog(
-                visible = showNsfwDialog,
-                onAccept = { dontShowAgain ->
-                    if (dontShowAgain) localSettingManager.dismissNsfwWarning()
-                    onNsfwDismissed()
-                },
-                onDismiss = onNsfwDismissed,
-            )
-        }
+    // App 级弹窗必须落在 GlassCaptureHost 的 overlay 内：GlassSurface 只有在 registry
+    // 作用域里才会注册成 native 玻璃背板，放在宿主外面会静默退化成纯色面板。
+    // source 是当前页面，弹窗才能采样到真实内容做高斯模糊。
+    // GlassCaptureHost 从 LocalMainNavController 取导航并转发进独立 overlay 组合，
+    // 这里必须先提供（AppScreen 内部的提供对宿主不可见）。
+    CompositionLocalProvider(LocalMainNavController provides mainNavController) {
+        GlassCaptureHost(
+            modifier = Modifier.fillMaxSize(),
+            sourceContent = {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    AppScreen(externalNavController = mainNavController)
+                    AppSnackbarHost(
+                        hostState = snackbarHostState,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .navigationBarsPadding()
+                            .padding(bottom = 80.dp)
+                            .imePadding()
+                    )
+                }
+            },
+            overlayContent = {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    if (showNsfwDialog) {
+                        NsfwWarningDialog(
+                            visible = showNsfwDialog,
+                            onAccept = { dontShowAgain ->
+                                if (dontShowAgain) localSettingManager.dismissNsfwWarning()
+                                onNsfwDismissed()
+                            },
+                            onDismiss = onNsfwDismissed,
+                        )
+                    }
 
-        // 新装平板：等 NSFW 提示处理完后再问，避免两层弹窗叠在一起。
-        val tabletPromptPending = LocalTabletLayoutPromptPending.current
-        if (tabletPromptPending && !showNsfwDialog) {
-            TabletLayoutPromptDialog(
-                visible = true,
-                onEnable = { localSettingManager.setTabletLayoutEnabled(true) },
-                onDisable = { localSettingManager.setTabletLayoutEnabled(false) },
-            )
-        }
+                    if (tabletPromptPending && !showNsfwDialog) {
+                        TabletLayoutPromptDialog(
+                            visible = true,
+                            onEnable = { localSettingManager.setTabletLayoutEnabled(true) },
+                            onDisable = { localSettingManager.setTabletLayoutEnabled(false) },
+                        )
+                    }
 
-        // 冷启动静默检查有结果且非新装/锁屏时，引导去「检查更新」下载。
-        val autoUpdateChecker: com.par9uet.jm.update.AutoUpdateChecker = getKoin().get()
-        val pendingAutoUpdate by autoUpdateChecker.prompt.collectAsState()
-        val pendingRelease = pendingAutoUpdate
-        if (pendingRelease != null && !showNsfwDialog && !tabletPromptPending) {
-            com.par9uet.jm.ui.glass.GlassConfirmDialog(
-                visible = true,
-                title = "发现新版本",
-                message = "当前 ${BuildConfig.VERSION_NAME}，最新为 ${pendingRelease.version}。是否前往下载更新？",
-                confirmText = "更新",
-                dismissText = "取消",
-                onConfirm = {
-                    autoUpdateChecker.dismiss()
-                    mainNavController.navigate("checkUpdate")
-                },
-                onDismiss = { autoUpdateChecker.dismiss() },
-                surfaceId = "auto-update-prompt",
-            )
-        }
+                    if (pendingRelease != null && !showNsfwDialog && !tabletPromptPending) {
+                        com.par9uet.jm.ui.glass.GlassConfirmDialog(
+                            visible = true,
+                            title = "发现新版本",
+                            message = "当前 ${BuildConfig.VERSION_NAME}，最新为 ${pendingRelease.version}。是否前往下载更新？",
+                            confirmText = "更新",
+                            dismissText = "取消",
+                            onConfirm = {
+                                autoUpdateChecker.dismiss()
+                                mainNavController.navigate("checkUpdate")
+                            },
+                            onDismiss = { autoUpdateChecker.dismiss() },
+                            surfaceId = "auto-update-prompt",
+                        )
+                    }
 
-        clipboardDetectedComic?.let { comic ->
-            ClipboardDetectedComicDialog(
-                visible = true,
-                comic = comic,
-                onDismiss = {
-                    clipboardDetectedComic = null
-                    clipboardDetectedComicId = null
-                },
-                onNavigate = { id ->
-                    clipboardDetectedComic = null
-                    clipboardDetectedComicId = null
-                    pendingNavComicId = id
-                },
-            )
-        }
+                    clipboardDetectedComic?.let { comic ->
+                        ClipboardDetectedComicDialog(
+                            visible = true,
+                            comic = comic,
+                            onDismiss = {
+                                clipboardDetectedComic = null
+                                clipboardDetectedComicId = null
+                            },
+                            onNavigate = { id ->
+                                clipboardDetectedComic = null
+                                clipboardDetectedComicId = null
+                                pendingNavComicId = id
+                            },
+                        )
+                    }
+                }
+            },
+        )
     }
 }
 

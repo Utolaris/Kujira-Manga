@@ -101,43 +101,6 @@ fun DownloadComicDetailScreen(
         exportViewModel.inspect(detailState.completeItems, detailState.cachePath)
     }
 
-    when (activeDialog) {
-        DownloadDetailDialog.ReadChapter -> {
-            ChapterSingleSelectDialog(
-                title = "选择缓存章节",
-                chapters = detailState.readableChapters,
-                currentChapterId = null,
-                onDismiss = { activeDialog = null },
-                onSelect = { chapter ->
-                    activeDialog = null
-                    mainNavController.navigate("localComicRead/${chapter.id}")
-                }
-            )
-        }
-
-        DownloadDetailDialog.ExportChapter -> {
-            ChapterMultiSelectDialog(
-                title = "选择导出章节",
-                chapters = detailState.readableChapters,
-                selectedChapterIds = selectedExportChapterIds,
-                onSelectedChange = exportViewModel::selectChapters,
-                onDismiss = { activeDialog = null },
-                confirmText = "合并导出",
-                onConfirm = {
-                    activeDialog = null
-                    if (exportViewModel.prepareExport(detailState.completeItems, PdfExportMode.Merge)) exportLauncher.launch(null)
-                },
-                secondaryConfirmText = "分章导出",
-                onSecondaryConfirm = {
-                    activeDialog = null
-                    if (exportViewModel.prepareExport(detailState.completeItems, PdfExportMode.SplitByChapter)) exportLauncher.launch(null)
-                }
-            )
-        }
-
-        null -> Unit
-    }
-
     CommonScaffold(
         title = detailState.title.ifBlank { "缓存详情" },
         bottomBar = {
@@ -167,6 +130,46 @@ fun DownloadComicDetailScreen(
                         }
                     )
                 }
+            }
+        },
+        overlayContent = {
+            when (activeDialog) {
+                DownloadDetailDialog.ReadChapter -> {
+                    ChapterSingleSelectDialog(
+                        title = "选择缓存章节",
+                        chapters = detailState.readableChapters,
+                        currentChapterId = null,
+                        onDismiss = { activeDialog = null },
+                        onSelect = { chapter ->
+                            activeDialog = null
+                            mainNavController.navigate("localComicRead/${chapter.id}")
+                        },
+                        surfaceId = "download-detail-read-chapter-glass",
+                    )
+                }
+
+                DownloadDetailDialog.ExportChapter -> {
+                    ChapterMultiSelectDialog(
+                        title = "选择导出章节",
+                        chapters = detailState.readableChapters,
+                        selectedChapterIds = selectedExportChapterIds,
+                        onSelectedChange = exportViewModel::selectChapters,
+                        onDismiss = { activeDialog = null },
+                        confirmText = "合并导出",
+                        onConfirm = {
+                            activeDialog = null
+                            if (exportViewModel.prepareExport(detailState.completeItems, PdfExportMode.Merge)) exportLauncher.launch(null)
+                        },
+                        secondaryConfirmText = "分章导出",
+                        onSecondaryConfirm = {
+                            activeDialog = null
+                            if (exportViewModel.prepareExport(detailState.completeItems, PdfExportMode.SplitByChapter)) exportLauncher.launch(null)
+                        },
+                        surfaceId = "download-detail-export-chapter-glass",
+                    )
+                }
+
+                null -> Unit
             }
         }
     ) { topContentPadding, bottomContentPadding ->

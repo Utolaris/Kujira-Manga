@@ -8,6 +8,7 @@ import androidx.room.Query
 import androidx.room.RawQuery
 import androidx.sqlite.db.SupportSQLiteQuery
 import com.par9uet.jm.database.model.FavoriteComicEntity
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface FavoriteComicDao {
@@ -26,6 +27,10 @@ interface FavoriteComicDao {
 
     @Query("SELECT * FROM favorite_comics WHERE accountId = :accountId AND albumId IN (:albumIds)")
     suspend fun getByIds(accountId: Int, albumIds: List<Int>): List<FavoriteComicEntity>
+
+    /** 供「是否已收藏」的本地判定订阅；命中主键 (accountId, albumId)，代价与 getByIds 同级。 */
+    @Query("SELECT COUNT(*) FROM favorite_comics WHERE accountId = :accountId AND albumId = :albumId")
+    fun observeFavoriteCount(accountId: Int, albumId: Int): Flow<Int>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: FavoriteComicEntity)

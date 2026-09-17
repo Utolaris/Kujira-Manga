@@ -1,7 +1,9 @@
 package com.par9uet.jm.core
 
 import com.par9uet.jm.core.network.AuthFailure
+import com.par9uet.jm.core.network.AuthenticatedSessionRequiredException
 import com.par9uet.jm.core.network.NetWorkResult
+import com.par9uet.jm.core.network.NetworkErrorKind
 import com.par9uet.jm.core.network.ResponseWrapper
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
@@ -102,6 +104,19 @@ class BaseRepositoryErrorMappingTest {
         val result = repository.embedded("内置操作") { throw SessionRecoveryException(structured) }
         // The whole point of SessionRecoveryException: no re-wrap, no lost classification.
         assertSame(structured, result)
+    }
+
+    @Test
+    fun unauthenticatedEmbeddedCallIsClassifiedAsAuthenticationNotAsGenericFailure() = runTest {
+        // 门控在没有可用会话时抛这个异常。它必须在 kind 上标成 Authentication，
+        // 否则收藏弹窗（按 errorKind == Authentication 判断需要登录）只会显示普通错误，
+        // 用户看不到登录引导。
+        val result = repository.embedded<String>("内置 API 收藏失败") {
+            throw AuthenticatedSessionRequiredException()
+        }
+        result as NetWorkResult.Error
+        assertEquals(NetworkErrorKind.Authentication, result.kind)
+        assertEquals("请先登录", result.message)
     }
 
     @Test

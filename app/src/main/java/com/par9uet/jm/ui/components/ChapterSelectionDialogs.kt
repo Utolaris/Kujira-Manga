@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,9 +25,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import com.par9uet.jm.data.models.ComicChapter
+import com.par9uet.jm.ui.glass.GlassModal
 
+/**
+ * 章节选择玻璃弹窗。必须从 CommonScaffold / GlassCaptureHost 的 overlayContent 调用，
+ * 否则 GlassSurface 会退化成纯色面板（与阅读器章节面板同一约束）。
+ */
 @Composable
 fun ChapterMultiSelectDialog(
     title: String,
@@ -38,12 +43,14 @@ fun ChapterMultiSelectDialog(
     onConfirm: () -> Unit,
     secondaryConfirmText: String? = null,
     onSecondaryConfirm: (() -> Unit)? = null,
+    surfaceId: String = "chapter-multi-select-glass",
 ) {
     val allChapterIds = remember(chapters) { chapters.map { it.id }.toSet() }
     val allSelected = chapters.isNotEmpty() && selectedChapterIds.containsAll(allChapterIds)
 
     ChapterDialogLayout(
         title = title,
+        surfaceId = surfaceId,
         topActionText = if (chapters.isNotEmpty()) {
             if (allSelected) "取消全选" else "全选"
         } else {
@@ -126,9 +133,11 @@ fun ChapterSingleSelectDialog(
     currentChapterId: Int?,
     onDismiss: () -> Unit,
     onSelect: (ComicChapter) -> Unit,
+    surfaceId: String = "chapter-single-select-glass",
 ) {
     ChapterDialogLayout(
         title = title,
+        surfaceId = surfaceId,
         onDismiss = onDismiss,
         footer = {
             TextButton(onClick = onDismiss) {
@@ -162,45 +171,45 @@ fun ChapterSingleSelectDialog(
 @Composable
 private fun ChapterDialogLayout(
     title: String,
+    surfaceId: String,
     onDismiss: () -> Unit,
     footer: @Composable RowScope.() -> Unit,
     topActionText: String? = null,
     onTopActionClick: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            tonalElevation = 8.dp
+    GlassModal(
+        visible = true,
+        onDismissRequest = onDismiss,
+        surfaceId = surfaceId,
+        modifier = Modifier.widthIn(max = 420.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Column(
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        modifier = Modifier.weight(1f),
-                        text = title,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    if (topActionText != null && onTopActionClick != null) {
-                        TextButton(onClick = onTopActionClick) {
-                            Text(topActionText)
-                        }
+                Text(
+                    modifier = Modifier.weight(1f),
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+                if (topActionText != null && onTopActionClick != null) {
+                    TextButton(onClick = onTopActionClick) {
+                        Text(topActionText)
                     }
                 }
-                content()
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
-                ) {
-                    footer()
-                }
+            }
+            content()
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
+            ) {
+                footer()
             }
         }
     }

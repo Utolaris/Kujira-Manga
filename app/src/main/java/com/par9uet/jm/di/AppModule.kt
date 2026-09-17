@@ -9,8 +9,10 @@ import com.par9uet.jm.image.JmImageHostHealthManager
 import com.par9uet.jm.repository.impl.RemoteSettingRepositoryImpl
 import com.par9uet.jm.storage.CookieStorage
 import com.par9uet.jm.storage.HistorySearchStorage
+import com.par9uet.jm.storage.HistorySearchStore
 import com.par9uet.jm.storage.LocalSettingStorage
 import com.par9uet.jm.storage.ReadHistoryStorage
+import com.par9uet.jm.storage.ReadHistoryStore
 import com.par9uet.jm.storage.SecureCookieStorage
 import com.par9uet.jm.storage.SecureStorage
 import com.par9uet.jm.storage.SecureUserStorage
@@ -122,8 +124,8 @@ val appModule = module {
     single { SecureUserStorage(get()) } bind UserStorage::class
     single { SecureCookieStorage(get()) } bind CookieStorage::class
     single { LocalSettingStorage(get()) }
-    single { HistorySearchStorage(get()) }
-    single { ReadHistoryStorage(get()) }
+    single { HistorySearchStorage(get()) } bind HistorySearchStore::class
+    single { ReadHistoryStorage(get()) } bind ReadHistoryStore::class
     single { LauncherDisguiseApplier(get()) } bind LauncherIdentityApplier::class
     single {
         JmImageHostHealthManager(

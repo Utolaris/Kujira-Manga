@@ -32,6 +32,10 @@ class CatalogViewModelWiringTest {
                     typeList = listOf("hot" to "热门"),
                 ))
                 "getEmbeddedHomeCategory" -> NetWorkResult.Success(emptyList<Comic>())
+                // Search/Week Pager 经 stateIn(Eagerly) 在 VM 存活期就会取第一页。
+                "getComicList" -> NetWorkResult.Success(
+                    com.par9uet.jm.data.models.ComicSearchPage(emptyList(), 0, null),
+                )
                 else -> error("Unexpected request ${method.name}")
             }
         } as ComicRepository
@@ -58,7 +62,8 @@ class CatalogViewModelWiringTest {
             home.refreshHome()
             week.getWeekData()
             advanceUntilIdle()
-            assertEquals(setOf("getEmbeddedHomeCategory", "getWeekData"), calls.toSet())
+            assertTrue(calls.containsAll(listOf("getEmbeddedHomeCategory", "getWeekData")))
+            assertTrue(calls.none { it !in setOf("getEmbeddedHomeCategory", "getWeekData", "getComicList") })
             assertEquals("saved query", search.searchComicFilterState.value.searchContent)
             assertEquals(42, search.searchViewportState.value.firstVisibleItemIndex)
             assertEquals("week", week.weekFilterState.value.categoryId)
@@ -67,7 +72,9 @@ class CatalogViewModelWiringTest {
             assertEquals("builtin_week_hot", home.homeState.value.selectedCategoryId)
             assertEquals(generation, search.searchViewportState.value.resetGeneration)
         } finally {
+            // Eagerly 的 stateIn 在 close 时取消；必须先排空 Main 上的收尾再 resetMain。
             app.close()
+            advanceUntilIdle()
             Dispatchers.resetMain()
         }
     }

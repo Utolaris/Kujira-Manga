@@ -14,6 +14,7 @@ import com.par9uet.jm.data.models.WeekData
 import com.par9uet.jm.repository.ComicRepository
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class SearchComicPagingSourceTest {
@@ -39,6 +40,37 @@ class SearchComicPagingSourceTest {
         val page = result as PagingSource.LoadResult.Page<Int, Comic>
         assertEquals("artist -a -b", repository.lastSearchContent)
         assertEquals(listOf(2), page.data.map { it.id })
+    }
+
+    @Test
+    fun blankKeywordFailsInsteadOfAskingTheServerForAnEmptySearch() = runBlocking {
+        val repository = FakeComicRepository()
+        val source = SearchComicPagingSource(
+            comicRepository = repository,
+            filter = SearchComicFilter(searchContent = "   ", excludedTags = emptyList())
+        )
+
+        val result = source.load(PagingSource.LoadParams.Refresh(null, 20, false))
+
+        // 上游把空 keyword 当「没有搜索条件」，返回的是推荐列表；那批数据会被当成搜索结果
+        // 展示且没有任何报错。空查询必须在本地就失败。
+        val error = result as PagingSource.LoadResult.Error<Int, Comic>
+        assertEquals("没有可搜索的关键词，请重新输入", error.throwable.message)
+        assertNull(repository.lastSearchContent)
+    }
+
+    @Test
+    fun exclusionsOnlyQueryStillSearches() = runBlocking {
+        val repository = FakeComicRepository()
+        val source = SearchComicPagingSource(
+            comicRepository = repository,
+            filter = SearchComicFilter(searchContent = "", excludedTags = listOf("a"))
+        )
+
+        source.load(PagingSource.LoadParams.Refresh(null, 20, false))
+
+        // 只有排除项也是合法查询，不能因为关键词为空就拦掉。
+        assertEquals("-a", repository.lastSearchContent)
     }
 
     private class FakeComicRepository : ComicRepository {

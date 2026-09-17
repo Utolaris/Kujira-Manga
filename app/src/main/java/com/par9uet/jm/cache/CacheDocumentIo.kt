@@ -14,7 +14,9 @@ import java.nio.file.StandardCopyOption
 
 fun openCacheOutputStream(context: Context, path: String): OutputStream =
     if (isDocumentCachePath(path)) {
-        requireNotNull(context.contentResolver.openOutputStream(path.toUri(), "wt"))
+        requireNotNull(context.contentResolver.openOutputStream(path.toUri(), "wt")) {
+            "无法打开缓存输出流：$path"
+        }
     } else {
         File(path).also { it.parentFile?.mkdirs() }.outputStream()
     }
@@ -243,7 +245,9 @@ fun writeCacheConfigText(context: Context, configPath: String, json: String) {
         writeTextAtomically(File(configPath), json)
         return
     }
-    val parentPath = requireNotNull(getCacheParentPath(configPath)) { "缓存配置缺少父目录" }
+    val parentPath = requireNotNull(getCacheParentPath(configPath)) {
+        "缓存配置缺少父目录：$configPath"
+    }
     val stagingPath = getOrCreateCacheFile(context, parentPath, "config.json.tmp", "application/json")
     val buffer = File.createTempFile("cache-config-", ".json", context.cacheDir)
     try {
@@ -323,7 +327,9 @@ fun getOrCreateCacheFile(
     mimeType: String,
 ): String {
     if (!isDocumentCachePath(directoryPath)) return File(directoryPath, name).absolutePath
-    return requireNotNull(findOrCreateCacheDocument(context, directoryPath.toUri(), name, mimeType)).toString()
+    return requireNotNull(findOrCreateCacheDocument(context, directoryPath.toUri(), name, mimeType)) {
+        "无法创建缓存文档：$directoryPath/$name"
+    }.toString()
 }
 
 private fun documentPathSize(context: Context, uri: Uri): Long {

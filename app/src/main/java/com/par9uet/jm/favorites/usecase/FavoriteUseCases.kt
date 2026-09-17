@@ -8,6 +8,11 @@ import com.par9uet.jm.favorites.model.FavoriteLocalQuery
 import com.par9uet.jm.favorites.model.FavoriteSession
 import com.par9uet.jm.favorites.model.FavoriteSessionSnapshot
 import com.par9uet.jm.core.network.NetWorkResult
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 
 data class FavoritesBatchResult(
     val succeeded: Int,
@@ -201,6 +206,31 @@ class DownloadSelectedFavorites(
     suspend operator fun invoke(accountId: Int, comicIds: Collection<Int>) {
         downloader.downloadComics(localQuery.getComics(accountId, comicIds))
     }
+}
+
+/**
+ * 「这本收藏了吗」的唯一判据：只看本地收藏快照，不看云端 `is_favorite`。
+ *
+ * 云端标志在多端互踢、换设备、同步落后时都会与本地不一致，照它显示就会出现
+ * 「明明已收藏，进详情页却显示未收藏」。未登录（accountId <= 0）视为未收藏，
+ * 账号切换时会重绑到新账号的查询，不会把 A 的状态漏给 B。
+ */
+class ObserveLocalFavorite(
+    private val localQuery: FavoriteLocalQuery,
+    private val session: FavoriteSession,
+) {
+    @OptIn(ExperimentalCoroutinesApi::class)
+    operator fun invoke(albumId: Int): Flow<Boolean> =
+        session.accountIdFlow
+            .distinctUntilChanged()
+            .flatMapLatest { accountId ->
+                if (accountId <= 0) {
+                    flowOf(false)
+                } else {
+                    localQuery.observeIsFavorite(accountId, albumId)
+                }
+            }
+            .distinctUntilChanged()
 }
 
 private fun staleSessionError(): NetWorkResult.Error =

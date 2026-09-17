@@ -55,11 +55,13 @@ class FavoritesViewModelTest {
     @Test
     fun `sync progress and completion preserve the paging generation and viewport`() = runTest(scheduler) {
         val environment = environment()
-        var generations = 0
+        var emissions = 0
         backgroundScope.launch {
-            environment.viewModel.collectComicPager.collect { generations++ }
+            environment.viewModel.collectComicPager.collect { emissions++ }
         }
         runCurrent()
+        // StateFlow 会先吐 initialValue；以订阅稳定后的次数为基线。
+        val baselineEmissions = emissions
         val viewport = environment.viewModel.uiState.value.viewport
         environment.sync.publish(FavoriteSyncUiState(isSyncing = true))
         runCurrent()
@@ -68,7 +70,7 @@ class FavoritesViewModelTest {
         environment.sync.publish(FavoriteSyncUiState())
         runCurrent()
 
-        assertEquals(1, generations)
+        assertEquals(baselineEmissions, emissions)
         assertEquals(viewport, environment.viewModel.uiState.value.viewport)
     }
 
@@ -624,6 +626,9 @@ class FavoritesViewModelTest {
 
         override fun observeFolders(accountId: Int): Flow<Map<String, String>> =
             flowOf(emptyMap())
+
+        override fun observeIsFavorite(accountId: Int, albumId: Int): Flow<Boolean> =
+            flowOf(false)
 
         override fun observeTagCounts(accountId: Int, folderId: Int): Flow<Map<String, Int>> =
             flowOf(emptyMap())

@@ -54,6 +54,10 @@ class UserManager(
     private val _sessionState = MutableStateFlow(UserSessionSnapshot(0, 0L))
     val sessionState = _sessionState.asStateFlow()
 
+    /** Serializes automatic session recovery so a burst of expired requests performs ONE login. */
+    private val sessionRecoveryLock = Mutex()
+    private var lastRecovery: SessionRecoveryOutcome? = null
+
     /** Serializes session transitions with session-bound remote work (see [withBoundRemoteSession]). */
     private val boundRemoteGate = Mutex()
 
@@ -119,7 +123,8 @@ class UserManager(
     init {
         // Restoring the local identity is cheap and keeps the first frame consistent with the
         // last session. Network verification is deliberately started after the UI is ready.
-        _userState.value = _userState.value.copy(data = runCatching { userStorage.get() }.getOrNull())
+        // null = Keystore 暂不可读：保留未登录占位，不把空身份当成已恢复。
+        _userState.value = _userState.value.copy(data = runCatching { userStorage.getOrNull() }.getOrNull())
         publishSession()
         sessionReadinessHolder.set(readinessForCachedUser(_userState.value.data))
         sessionReadinessHolder.requestExecutor = this
@@ -169,8 +174,48 @@ class UserManager(
         }
     }
 
-    /** Refresh cookies for a rejected session without changing identity or invalidating Favorites. */
+    /**
+     * Refresh cookies for a rejected session without changing identity or invalidating Favorites.
+     *
+     * **单飞 + 冷却。** 会话失效通常会让多个在途请求同时失败（被踢后收藏同步、历史、签到一起报错），
+     * 若每个请求各自登录，同一份凭据会被连发多次，而且后一次登录会把前一次刚恢复的会话再踢掉。
+     * 这里只让排头发一次 [UserRepository.verifyLogin]，同时在锁外等待的调用者复用它的结果：
+     * - 成功后在 [SESSION_RECOVERY_FRESHNESS_MS] 内复用成功结果（并发的兄弟请求直接重放自己的请求）；
+     * - 失败后在 [SESSION_RECOVERY_FAILURE_COOLDOWN_MS] 内复用失败结果，不再重试 —— 服务端已经拒绝
+     *   或网络不通时，反复把密码发出去只会更糟。`null`（身份已变、无凭据、正在验证中）不缓存。
+     *
+     * 结果按 (accountId, generation) 归档：手动登录会推进 generation，登出会清空身份，
+     * 因此换账号 / 重新登录后绝不会复用上一个会话的结论。
+     */
     suspend fun recoverExpiredSession(accountId: Int, generation: Long): NetWorkResult<Unit>? {
+        cachedRecovery(accountId, generation)?.let { return it.result }
+        return sessionRecoveryLock.withLock {
+            cachedRecovery(accountId, generation)?.let { return@withLock it.result }
+            val result = refreshRejectedSession(accountId, generation)
+            lastRecovery = SessionRecoveryOutcome(
+                accountId = accountId,
+                generation = generation,
+                atMillis = System.currentTimeMillis(),
+                result = result,
+            )
+            result
+        }
+    }
+
+    private fun cachedRecovery(accountId: Int, generation: Long): SessionRecoveryOutcome? {
+        val cached = lastRecovery ?: return null
+        if (cached.accountId != accountId || cached.generation != generation) return null
+        // 「条件不满足」不是服务端的结论，缓存住会把恢复能力一起冻掉。
+        val result = cached.result ?: return null
+        val window = if (result is NetWorkResult.Success) {
+            SESSION_RECOVERY_FRESHNESS_MS
+        } else {
+            SESSION_RECOVERY_FAILURE_COOLDOWN_MS
+        }
+        return cached.takeIf { System.currentTimeMillis() - it.atMillis < window }
+    }
+
+    private suspend fun refreshRejectedSession(accountId: Int, generation: Long): NetWorkResult<Unit>? {
         val snapshot = loginMutex.withLock {
             if (!isCurrentSession(accountId, generation) || _userState.value.isLoading) {
                 return@withLock null
@@ -457,9 +502,9 @@ class UserManager(
             user.username.isNotEmpty() &&
             user.password.isNotEmpty()
         if (!hasIdentity) return SessionReadiness.Unauthenticated
-        val hasEmbeddedAuthCookie = cookieStorage.get().any {
+        val hasEmbeddedAuthCookie = cookieStorage.getOrNull()?.any {
             it.name.equals("AVS", ignoreCase = true)
-        }
+        } ?: true // Keystore 暂不可读时按「可能已有会话」处理，避免误判为未认证
         return if (hasEmbeddedAuthCookie) {
             SessionReadiness.Authenticated
         } else {
@@ -478,7 +523,24 @@ class UserManager(
         val generation: Long,
         val user: User,
     )
+
+    /** One automatic recovery attempt and the window during which its result may be reused. */
+    private data class SessionRecoveryOutcome(
+        val accountId: Int,
+        val generation: Long,
+        val atMillis: Long,
+        val result: NetWorkResult<Unit>?,
+    )
 }
+
+/**
+ * 并发失效请求复用同一次恢复成功的窗口。取得比一次登录往返更大的时间，才能让同一批
+ * 一起失败的请求都只跟着重放、不再各自登录。
+ */
+private const val SESSION_RECOVERY_FRESHNESS_MS = 1_500L
+
+/** 恢复失败后的冷却窗口：期间不再尝试登录，避免请求风暴把凭据反复发给后端。 */
+private const val SESSION_RECOVERY_FAILURE_COOLDOWN_MS = 5_000L
 
 data class UserSessionSnapshot(
     val accountId: Int,

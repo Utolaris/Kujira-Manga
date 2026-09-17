@@ -20,6 +20,7 @@ import com.par9uet.jm.favorites.usecase.CreateFavoriteFolder
 import com.par9uet.jm.favorites.usecase.DeleteFavoriteFolder
 import com.par9uet.jm.favorites.usecase.DownloadSelectedFavorites
 import com.par9uet.jm.favorites.usecase.MoveFavorites
+import com.par9uet.jm.favorites.usecase.ObserveLocalFavorite
 import com.par9uet.jm.favorites.usecase.RenameFavoriteFolder
 import com.par9uet.jm.favorites.usecase.SyncFavorites
 import com.par9uet.jm.favorites.usecase.UncollectFavorites
@@ -46,6 +47,7 @@ val favoriteModule = module {
     single { DeleteFavoriteFolder(get(), get(), get()) }
     single { RenameFavoriteFolder(get(), get(), get()) }
     single { DownloadSelectedFavorites(get(), get()) }
+    single { ObserveLocalFavorite(get(), get()) }
     single { SyncFavorites(get(), get(), get()) }
     single { FavoriteSyncController(get(), get<SyncFavorites>()::synchronize, get()) }
     single<FavoriteSyncRequester> { get<FavoriteSyncController>() }

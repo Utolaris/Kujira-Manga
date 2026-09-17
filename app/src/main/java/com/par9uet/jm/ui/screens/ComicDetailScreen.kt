@@ -1,5 +1,6 @@
 package com.par9uet.jm.ui.screens
 
+import android.content.ClipData
 import androidx.activity.compose.BackHandler
 import android.net.Uri
 import androidx.compose.animation.AnimatedContent
@@ -18,7 +19,6 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -52,11 +52,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.VerticalDivider
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -65,6 +62,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -72,6 +70,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -92,18 +92,21 @@ import com.par9uet.jm.ui.components.ComicContentTag
 import com.par9uet.jm.ui.components.ComicCoverImage
 import com.par9uet.jm.ui.components.ComicRoleTag
 import com.par9uet.jm.ui.components.ComicWorkTag
+import com.par9uet.jm.ui.components.buildComicDetailText
 import com.par9uet.jm.ui.glass.AppGlassTopBar
 import com.par9uet.jm.ui.glass.AppGlassTopBarDefaults
 import com.par9uet.jm.ui.glass.GlassCaptureHost
 import com.par9uet.jm.ui.glass.GlassModal
 import com.par9uet.jm.ui.glass.GlassSurface
 import com.par9uet.jm.ui.glass.GlassSurfaceStyle
+import com.par9uet.jm.ui.models.LocalComicDetailLoader
 import com.par9uet.jm.ui.models.LocalTabletLayoutEnabled
 import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.ComicDetailViewModel
 import com.par9uet.jm.utils.formatAlbumAddTimeDisplay
 import com.par9uet.jm.utils.shimmer
 import androidx.paging.compose.collectAsLazyPagingItems
+import kotlinx.coroutines.launch
 import org.koin.compose.getKoin
 import org.koin.compose.viewmodel.koinActivityViewModel
 
@@ -295,11 +298,13 @@ fun ComicDetailScreen(
     id: Int,
     comicDetailViewModel: ComicDetailViewModel = koinActivityViewModel(),
     readHistoryManager: ReadHistoryManager = getKoin().get(),
-    userManager: UserManager = getKoin().get()
+    userManager: UserManager = getKoin().get(),
+    toastManager: com.par9uet.jm.core.ToastManager = getKoin().get(),
 ) {
     val mainNavController = LocalMainNavController.current
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
+    val clipboard = LocalClipboard.current
     val scrollState = rememberScrollState()
     val comicDetailState by comicDetailViewModel.comicDetailState.collectAsState()
     val collectState by comicDetailViewModel.collectComicState.collectAsState()
@@ -317,6 +322,11 @@ fun ComicDetailScreen(
     var replyComment by remember(id) { mutableStateOf<Comment?>(null) }
     var detailBottomState by remember(id) { mutableStateOf(DetailBottomModeState()) }
     var commentFocusRequestTick by remember(id) { mutableIntStateOf(0) }
+    var showCoverDetailDialog by remember { mutableStateOf(false) }
+    var coverDetailInfoText by remember { mutableStateOf("") }
+    var coverDetailLoading by remember { mutableStateOf(false) }
+    val coverDetailScope = rememberCoroutineScope()
+    val comicDetailLoader = LocalComicDetailLoader.current
 
     fun enterCommentMode() {
         replyComment = null
@@ -401,24 +411,6 @@ fun ComicDetailScreen(
                 }
                 else -> {
                     val comic = requestedComic
-                        if (showDownloadChapterDialog) {
-                            ChapterMultiSelectDialog(
-                                title = "\u9009\u62e9\u7f13\u5b58\u7ae0\u8282",
-                                chapters = comic.comicChapterList,
-                                selectedChapterIds = selectedChapterIds,
-                                onSelectedChange = { selectedChapterIds = it },
-                                onDismiss = { showDownloadChapterDialog = false },
-                                confirmText = "\u5f00\u59cb\u7f13\u5b58",
-                                onConfirm = {
-                                    val selectedChapters = comic.comicChapterList.filter {
-                                        it.id in selectedChapterIds
-                                    }
-                                    comicDetailViewModel.downloadChapters(comic, selectedChapters)
-                                    showDownloadChapterDialog = false
-                                },
-                            )
-                        }
-
                         // 详情页不需要整页下拉刷新：平板上与内嵌评论 LazyGrid 嵌套滚动会立刻崩溃，
                         // 手机上也只是重复 getComicDetail，已删除 PullToRefreshBox。
                         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -442,6 +434,17 @@ fun ComicDetailScreen(
                                             .widthIn(max = 320.dp)
                                             .weight(0.42f),
                                         showIdChip = true,
+                                        onShowDetail = {
+                                            coverDetailLoading = true
+                                            showCoverDetailDialog = true
+                                            coverDetailScope.launch {
+                                                coverDetailInfoText = buildComicDetailText(
+                                                    comicDetailLoader,
+                                                    comic.id,
+                                                )
+                                                coverDetailLoading = false
+                                            }
+                                        },
                                     )
                                     Column(
                                         modifier = Modifier
@@ -503,25 +506,11 @@ fun ComicDetailScreen(
                             }
                         }
 
-                        val showFolderPicker by comicDetailViewModel.showFolderPicker.collectAsState()
-                        val folderList by comicDetailViewModel.folderList.collectAsState()
-                        if (showFolderPicker) {
-                            FolderPickerSheet(
-                                comicId = comic.id,
-                                folderList = folderList,
-                                onSelect = { folderId ->
-                                    comicDetailViewModel.collectWithFolder(comic.id, folderId)
-                                },
-                                onDismiss = comicDetailViewModel::hideFolderPicker,
-                            )
-                        }
                 }
             }
         },
         overlayContent = {
             val comic = requestedComic
-            val showFolderPicker by comicDetailViewModel.showFolderPicker.collectAsState()
-            val folderList by comicDetailViewModel.folderList.collectAsState()
             Box(modifier = Modifier.fillMaxSize()) {
                 val isTabletLayout = LocalTabletLayoutEnabled.current
                 AppGlassTopBar(
@@ -590,8 +579,8 @@ fun ComicDetailScreen(
                                                 if (comic.isCollect) {
                                                     comicDetailViewModel.unCollect(comic.id)
                                                 } else {
-                                                    comicDetailViewModel.refreshFolderList()
-                                                    comicDetailViewModel.showFolderPicker()
+                                                    // 直接进默认收藏夹（「全部」），不再弹选择框。
+                                                    comicDetailViewModel.collect(comic.id)
                                                 }
                                             }
                                         },
@@ -630,8 +619,8 @@ fun ComicDetailScreen(
                                                 if (comic.isCollect) {
                                                     comicDetailViewModel.unCollect(comic.id)
                                                 } else {
-                                                    comicDetailViewModel.refreshFolderList()
-                                                    comicDetailViewModel.showFolderPicker()
+                                                    // 直接进默认收藏夹（「全部」），不再弹选择框。
+                                                    comicDetailViewModel.collect(comic.id)
                                                 }
                                             }
                                         },
@@ -676,98 +665,69 @@ fun ComicDetailScreen(
                     }
                 }
             }
-            GlassModal(
-                visible = showFolderPicker,
-                onDismissRequest = comicDetailViewModel::hideFolderPicker,
-                    surfaceId = "comic-detail-folder-picker-glass-modal",
-                    modifier = Modifier.widthIn(max = 480.dp),
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Text(
-                            text = "选择收藏夹",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
-                        )
-                        HorizontalDivider()
-                        LazyColumn(
-                            modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
-                        ) {
-                            val sortedFolders = linkedMapOf<String, String>().apply {
-                                folderList["0"]?.let { put("0", it) }
-                                folderList.filterKeys { it != "0" }.forEach { (fid, fname) -> put(fid, fname) }
-                                if (containsKey("0").not() && folderList.isNotEmpty()) {
-                                    put("0", "全部")
-                                }
-                            }
-                            items(sortedFolders.size) { index ->
-                                val entry = sortedFolders.entries.elementAt(index)
-                                ListItem(
-                                    headlineContent = { Text(entry.value) },
-                                    modifier = Modifier.clickable {
-                                        val currentComicId = comic?.id ?: -1
-                                        if (currentComicId > 0) {
-                                            comicDetailViewModel.collectWithFolder(currentComicId, entry.key)
-                                            comicDetailViewModel.hideFolderPicker()
-                                        }
-                                        comicDetailViewModel.hideFolderPicker()
-                                    },
-                                )
-                                if (index < sortedFolders.size - 1) {
-                                    HorizontalDivider()
-                                }
-                            }
+            if (showDownloadChapterDialog && comic != null) {
+                ChapterMultiSelectDialog(
+                    title = "选择缓存章节",
+                    chapters = comic.comicChapterList,
+                    selectedChapterIds = selectedChapterIds,
+                    onSelectedChange = { selectedChapterIds = it },
+                    onDismiss = { showDownloadChapterDialog = false },
+                    confirmText = "开始缓存",
+                    onConfirm = {
+                        val selectedChapters = comic.comicChapterList.filter {
+                            it.id in selectedChapterIds
                         }
+                        comicDetailViewModel.downloadChapters(comic, selectedChapters)
+                        showDownloadChapterDialog = false
+                    },
+                    surfaceId = "comic-detail-chapter-cache-glass",
+                )
+            }
+            GlassModal(
+                visible = showCoverDetailDialog,
+                onDismissRequest = { showCoverDetailDialog = false },
+                surfaceId = "comic-detail-cover-detail-glass",
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        text = "漫画详情 (JM${comic?.id ?: ""})",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    if (coverDetailLoading) {
+                        Text("加载中...")
+                    } else {
+                        Text(
+                            text = coverDetailInfoText,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 400.dp)
+                                .verticalScroll(rememberScrollState()),
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                    ) {
+                        TextButton(onClick = { showCoverDetailDialog = false }) { Text("关闭") }
+                        TextButton(onClick = {
+                            coverDetailScope.launch {
+                                clipboard.setClipEntry(
+                                    ClipEntry(ClipData.newPlainText("text", coverDetailInfoText))
+                                )
+                                toastManager.showAsync("已复制详情信息")
+                            }
+                        }) { Text("复制") }
                     }
                 }
             }
+            }
         },
     )
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun FolderPickerSheet(
-    comicId: Int,
-    folderList: Map<String, String>,
-    onSelect: (String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val sheetState = rememberModalBottomSheetState()
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-    ) {
-        Text(
-            text = "\u9009\u62e9\u6536\u85cf\u5939",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
-        )
-        HorizontalDivider()
-        LazyColumn(
-            modifier = Modifier.fillMaxWidth().fillMaxHeight(0.6f)
-        ) {
-            // "0"（全部）排第一，其余按原序
-            val sortedFolders = linkedMapOf<String, String>().apply {
-                folderList["0"]?.let { put("0", it) }
-                folderList.filterKeys { it != "0" }.forEach { (id, name) -> put(id, name) }
-                if (containsKey("0").not() && folderList.isNotEmpty()) {
-                    put("0", "\u5168\u90e8")
-                }
-            }
-            items(sortedFolders.size) { index ->
-                val entry = sortedFolders.entries.elementAt(index)
-                ListItem(
-                    headlineContent = { Text(entry.value) },
-                    modifier = Modifier.clickable { onSelect(entry.key) }
-                )
-                if (index < sortedFolders.size - 1) {
-                    HorizontalDivider()
-                }
-            }
-        }
-    }
 }
 
 /**

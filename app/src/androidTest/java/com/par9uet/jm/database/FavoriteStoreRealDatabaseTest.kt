@@ -5,6 +5,7 @@ import androidx.paging.PagingSource
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.data.models.TagFilterLogic
 import com.par9uet.jm.database.model.FavoriteComicEntity
 import com.par9uet.jm.favorites.data.FavoriteMetadataPayload
@@ -99,7 +100,7 @@ class FavoriteStoreRealDatabaseTest {
         selectedTags: Set<String> = emptySet(),
         folderId: Int = 0,
         tagLogic: TagFilterLogic = TagFilterLogic.AND,
-    ): List<FavoriteComicEntity> {
+    ): List<Comic> {
         val result = store.pagingSource(
             accountId = accountId,
             blockedTagList = blockedTagList,
@@ -119,7 +120,7 @@ class FavoriteStoreRealDatabaseTest {
         database.close()
         open()
 
-        assertEquals(listOf(11), load(accountA).map { it.albumId })
+        assertEquals(listOf(11), load(accountA).map { it.id })
     }
 
     @Test
@@ -133,8 +134,8 @@ class FavoriteStoreRealDatabaseTest {
             ),
         )
 
-        assertEquals(listOf(21), load(accountA, searchText = "巨人").map { it.albumId })
-        assertEquals(listOf(22), load(accountA, searchText = "測試").map { it.albumId })
+        assertEquals(listOf(21), load(accountA, searchText = "巨人").map { it.id })
+        assertEquals(listOf(22), load(accountA, searchText = "測試").map { it.id })
         assertEquals(3, load(accountA).size)
         assertTrue("不存在的关键词必须返回空", load(accountA, searchText = "不存在的关键词").isEmpty())
     }
@@ -149,8 +150,8 @@ class FavoriteStoreRealDatabaseTest {
             ),
         )
 
-        assertEquals(setOf(31, 32), load(accountA).map { it.albumId }.toSet())
-        assertEquals(listOf(32), load(accountA, blockedTagList = listOf("NTR")).map { it.albumId })
+        assertEquals(setOf(31, 32), load(accountA).map { it.id }.toSet())
+        assertEquals(listOf(32), load(accountA, blockedTagList = listOf("NTR")).map { it.id })
     }
 
     @Test
@@ -158,8 +159,8 @@ class FavoriteStoreRealDatabaseTest {
         seed(accountA, listOf(FavoriteRemoteItem(41, "账号 A 的收藏")))
         seed(accountB, listOf(FavoriteRemoteItem(42, "账号 B 的收藏")))
 
-        assertEquals(listOf(41), load(accountA).map { it.albumId })
-        assertEquals(listOf(42), load(accountB).map { it.albumId })
+        assertEquals(listOf(41), load(accountA).map { it.id })
+        assertEquals(listOf(42), load(accountB).map { it.id })
     }
 
     @Test
@@ -174,8 +175,8 @@ class FavoriteStoreRealDatabaseTest {
             memberships = mapOf(2 to listOf(51)),
         )
 
-        assertEquals(setOf(51, 52), load(accountA, folderId = 0).map { it.albumId }.toSet())
-        assertEquals(listOf(51), load(accountA, folderId = 2).map { it.albumId })
+        assertEquals(setOf(51, 52), load(accountA, folderId = 0).map { it.id }.toSet())
+        assertEquals(listOf(51), load(accountA, folderId = 2).map { it.id })
         assertTrue("没有成员的文件夹必须返回空", load(accountA, folderId = 3).isEmpty())
     }
 
@@ -192,11 +193,11 @@ class FavoriteStoreRealDatabaseTest {
             memberships = mapOf(2 to listOf(63, 61, 62)),
         )
 
-        assertEquals(listOf(61, 62, 63), load(accountA, folderId = 0).map { it.albumId })
+        assertEquals(listOf(61, 62, 63), load(accountA, folderId = 0).map { it.id })
         assertEquals(
             "每个文件夹各自维护同步下来的成员顺序",
             listOf(63, 61, 62),
-            load(accountA, folderId = 2).map { it.albumId },
+            load(accountA, folderId = 2).map { it.id },
         )
     }
 
@@ -208,7 +209,7 @@ class FavoriteStoreRealDatabaseTest {
             memberships = mapOf(0 to listOf(71), 2 to listOf(71)),
         )
 
-        assertEquals(listOf(71), load(accountA, folderId = 0).map { it.albumId })
-        assertEquals(listOf(71), load(accountA, folderId = 2).map { it.albumId })
+        assertEquals(listOf(71), load(accountA, folderId = 0).map { it.id })
+        assertEquals(listOf(71), load(accountA, folderId = 2).map { it.id })
     }
 }

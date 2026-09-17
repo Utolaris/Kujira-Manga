@@ -12,6 +12,13 @@ interface CookieStorage {
     val state: StateFlow<List<Cookie>?>
     fun set(cookieStore: List<Cookie>)
     fun get(): List<Cookie>
+
+    /**
+     * `null` 表示 Keystore 暂时不可读。merge 写回等路径必须跳过，避免用空列表覆盖完整会话快照。
+     * 默认实现委托给 [get]，供内存测试替身使用。
+     */
+    fun getOrNull(): List<Cookie>? = get()
+
     fun remove()
 }
 
@@ -33,7 +40,9 @@ class SecureCookieStorage(
         }
     }
 
-    override fun get(): List<Cookie> {
+    override fun get(): List<Cookie> = getOrNull() ?: emptyList()
+
+    override fun getOrNull(): List<Cookie>? {
         _state.value?.let { return it }
         return when (
             val result = secureStorage.get<List<Cookie>>(
@@ -46,7 +55,7 @@ class SecureCookieStorage(
             is StorageReadResult.Missing,
             is StorageReadResult.Corrupted,
             -> emptyList<Cookie>().also { _state.value = it }
-            is StorageReadResult.TemporaryUnavailable -> emptyList()
+            is StorageReadResult.TemporaryUnavailable -> null
         }
     }
 

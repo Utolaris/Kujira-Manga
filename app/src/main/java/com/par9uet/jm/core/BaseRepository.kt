@@ -1,7 +1,9 @@
 package com.par9uet.jm.core
 import retrofit2.HttpException
 import com.par9uet.jm.core.network.AuthFailure
+import com.par9uet.jm.core.network.AuthenticatedSessionRequiredException
 import com.par9uet.jm.core.network.NetWorkResult
+import com.par9uet.jm.core.network.NetworkErrorKind
 import com.par9uet.jm.core.network.ResponseWrapper
 import com.par9uet.jm.utils.logError
 import com.par9uet.jm.core.SessionRecoveryException
@@ -44,6 +46,15 @@ open class BaseRepository {
             throw error
         } catch (error: SessionRecoveryException) {
             error.error
+        } catch (error: AuthenticatedSessionRequiredException) {
+            // 没有可用会话：这是「需要登录」，不是网络故障。必须带上 Authentication，
+            // 否则上层（如收藏弹窗按 errorKind == Authentication 判断）只会显示成普通错误，
+            // 用户拿不到登录引导。
+            NetWorkResult.Error(
+                message = error.message ?: "请先登录",
+                kind = NetworkErrorKind.Authentication,
+                cause = error,
+            )
         } catch (error: Exception) {
             logError(this@BaseRepository::class.java.simpleName, "$operation: ${error.message}")
             NetWorkResult.Error("$operation：${error.message ?: "未知错误"}")

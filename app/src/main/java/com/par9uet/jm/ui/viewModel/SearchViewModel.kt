@@ -4,17 +4,22 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
+import androidx.paging.PagingData
 import androidx.paging.cachedIn
+import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.data.models.ComicSearchOrderFilter
 import com.par9uet.jm.repository.ComicRepository
 import com.par9uet.jm.storage.ContentPreferences
 import com.par9uet.jm.ui.pagingSource.SearchComicFilter
 import com.par9uet.jm.ui.pagingSource.SearchComicPagingSource
+import com.par9uet.jm.utils.log
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 
 data class SearchViewportState(
@@ -39,14 +44,15 @@ class SearchViewModel(
     val searchViewportState = _searchViewportState.asStateFlow()
 
     /**
-     * 每个查询一份 Pager。
+     * 每个查询一份 Pager；`cachedIn` 留在 `flatMapLatest` **内**，避免换关键字时
+     * 上一代 PagingData 和新结果混在同一份展示里。
      *
-     * `cachedIn` 必须写在 `flatMapLatest` **里面**：挂在外层会把「切换查询」的流整体缓存，
-     * 换关键字时上一代 PagingData 会和新结果混在同一份展示里（手机端尤其容易复现）。
-     * 内层 cachedIn 则缓存的是单个查询的 PagingData，切换查询即换代，列表干净。
+     * 外层再 `stateIn(Eagerly)` 把整条链挂在 viewModelScope：结果页进详情后 UI 会
+     * 取消收集，若不共享，`flatMapLatest` 上游会随收集一起取消、缓存销毁，返回时
+     * 只能重新请求。Eagerly 共享后返回直接拿到当前查询的缓存 PagingData。
      */
     @OptIn(ExperimentalCoroutinesApi::class)
-    val searchComicPager = combine(
+    val searchComicPager: kotlinx.coroutines.flow.StateFlow<PagingData<Comic>> = combine(
         _searchComicFilterState,
         contentPreferences.blockedTags
     ) { filter, blockedTagList -> filter to blockedTagList }
@@ -69,6 +75,11 @@ class SearchViewModel(
                 }
             ).flow.cachedIn(viewModelScope)
         }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = PagingData.empty(),
+        )
 
     fun changeSearchComicOrderFilter(order: ComicSearchOrderFilter) {
         _searchComicIdState.update { null }
@@ -109,6 +120,13 @@ class SearchViewModel(
             searchContent = searchContent,
             excludedTags = excludedTags,
         )
+        // 路由参数是搜索结果页的唯一查询来源，先把「收到的原始查询」落日志，
+        // 否则空结果时无法区分「入口就没传关键词」与「上游返回空/推荐」。
+        log(
+            "SearchViewModel",
+            "enterSearchResult content=[$searchContent] excluded=${excludedTags.size} " +
+                "same=${next.matchesQuery(current)} revision=${current.revision}",
+        )
         if (next.matchesQuery(current) && current.revision > 0L) {
             return
         }
@@ -125,6 +143,10 @@ class SearchViewModel(
     fun submitSearch(searchContent: String, excludedTags: List<String>) {
         _searchComicIdState.update { null }
         val current = _searchComicFilterState.value
+        log(
+            "SearchViewModel",
+            "submitSearch content=[$searchContent] excluded=${excludedTags.size} $excludedTags",
+        )
         _searchComicFilterState.value = current
             .copy(searchContent = searchContent, excludedTags = excludedTags)
             .copy(revision = current.revision + 1L)

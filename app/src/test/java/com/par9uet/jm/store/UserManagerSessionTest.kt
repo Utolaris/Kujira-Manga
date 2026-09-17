@@ -288,6 +288,53 @@ class UserManagerSessionTest {
 
 
     @Test
+    fun concurrentExpiredRequestsShareOneRecoveryLogin() = runBlocking {
+        val cookies = FakeCookieStorage(listOf(avsCookie("expired")))
+        val repository = GateUserRepository(cookies)
+        val manager = manager(FakeUserStorage(user(1, "accountA")), cookies, repository)
+        val snapshot = manager.currentSessionSnapshot()
+
+        val recoveries = (1..5).map {
+            async(Dispatchers.Default) {
+                manager.recoverExpiredSession(snapshot.accountId, snapshot.generation)
+            }
+        }
+        repository.verifyStarted.await()
+        repository.completeVerify(
+            NetWorkResult.Success(
+                CandidateSession(loginResponse(1, "accountA"), listOf(avsCookie("renewed"))),
+            ),
+        )
+
+        val results = recoveries.map { it.await() }
+        assertEquals("并发失效只应发一次登录，否则同一份凭据会被连发多次", 1, repository.verifyCalls)
+        assertTrue(results.all { it is NetWorkResult.Success })
+        assertEquals("renewed", cookies.get().single().value)
+        assertEquals(1, manager.currentSessionSnapshot().accountId)
+        assertEquals(SessionReadiness.Authenticated, manager.authState.value)
+    }
+
+    @Test
+    fun failedSessionRecoveryIsNotRetriedWithinCooldown() = runBlocking {
+        val cookies = FakeCookieStorage(listOf(avsCookie("expired")))
+        val repository = GateUserRepository(cookies)
+        val manager = manager(FakeUserStorage(user(1, "accountA")), cookies, repository)
+        val snapshot = manager.currentSessionSnapshot()
+
+        val first = async(Dispatchers.Default) {
+            manager.recoverExpiredSession(snapshot.accountId, snapshot.generation)
+        }
+        repository.verifyStarted.await()
+        repository.completeVerify(NetWorkResult.Error("offline", authFailure = AuthFailure.TemporaryFailure))
+        assertTrue(first.await() is NetWorkResult.Error)
+
+        val second = manager.recoverExpiredSession(snapshot.accountId, snapshot.generation)
+        assertTrue(second is NetWorkResult.Error)
+        assertEquals("冷却期内不应再发一次登录", 1, repository.verifyCalls)
+        assertEquals("expired", cookies.get().single().value)
+    }
+
+    @Test
     fun expiredFavoritesSessionRecoversWithoutRestartOrIdentityChange() = runBlocking {
         val cookies = FakeCookieStorage(listOf(avsCookie("expired")))
         val repository = GateUserRepository(cookies)
@@ -435,6 +482,10 @@ class UserManagerSessionTest {
         val activated = mutableListOf<CandidateSession>()
         var loginHandler: (suspend (String, String) -> NetWorkResult<CandidateSession>)? = null
 
+        /** 真正发出的登录次数：并发失效是否被合并成一次，靠它断言。 */
+        var verifyCalls = 0
+            private set
+
         fun completeVerify(result: NetWorkResult<CandidateSession>) {
             verifyGate.complete(result)
         }
@@ -443,6 +494,7 @@ class UserManagerSessionTest {
             username: String,
             password: String
         ): NetWorkResult<CandidateSession> {
+            verifyCalls++
             verifyStarted.complete(Unit)
             return withContext(Dispatchers.Default + NonCancellable) {
                 verifyGate.await()

@@ -29,7 +29,6 @@ import coil.request.SuccessResult
 import com.par9uet.jm.coil.CoverImageHostResolver
 import com.par9uet.jm.data.models.TagFilterLogic
 import com.par9uet.jm.database.AppDatabase
-import com.par9uet.jm.favorites.presentation.CollectComicPagingSource
 import com.par9uet.jm.favorites.data.FavoriteMetadataPayload
 import com.par9uet.jm.favorites.data.FavoriteRemoteItem
 import com.par9uet.jm.favorites.data.FavoriteStore
@@ -82,7 +81,8 @@ class FavoriteSyncGridTest {
         val progress = mutableIntStateOf(0)
         val pager = Pager(PagingConfig(pageSize = 20, initialLoadSize = 20)) {
             sourcesCreated.incrementAndGet()
-            CollectComicPagingSource(store.pagingSource(7, emptyList(), "", emptySet(), emptySet(), 0, TagFilterLogic.AND))
+            // 本地收藏分页已收口到 FavoriteLocalQuery.pagingSource，不再有中间包装类。
+            store.pagingSource(7, emptyList(), "", emptySet(), emptySet(), 0, TagFilterLogic.AND)
         }.flow
         val loader = ImageLoader.Builder(compose.activity).components {
             add { chain ->

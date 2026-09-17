@@ -23,9 +23,11 @@ import com.par9uet.jm.utils.logError
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -101,6 +103,8 @@ class UserViewModel(
      * History comics and history comments share the same account+generation paging lifecycle:
      * [UserManager.sessionState] rebuilds the pager so account B never reuses A's cached pages.
      * blockedTags still participates because tag filtering is applied inside the paging source.
+     *
+     * `cachedIn` 在 flatMapLatest 内（单代缓存），外层 `stateIn(Eagerly)` 保证离开页面后缓存仍在。
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     val historyComicPager = combine(
@@ -118,8 +122,12 @@ class UserViewModel(
             pagingSourceFactory = {
                 HistoryComicPagingSource(userRepository, blockedTagList)
             }
-        ).flow
-    }.cachedIn(viewModelScope)
+        ).flow.cachedIn(viewModelScope)
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = androidx.paging.PagingData.empty(),
+    )
 
     private val _historyEditState = MutableStateFlow(HistoryEditState())
     val historyEditState = _historyEditState.asStateFlow()
@@ -265,7 +273,8 @@ class UserViewModel(
 
     /**
      * Recreated whenever the session identity changes so account B never reuses A's
-     * cached pages or userId. flatMapLatest + cachedIn keeps one active pager per session.
+     * cached pages or userId. flatMapLatest + inner cachedIn keeps one active pager per session;
+     * outer stateIn(Eagerly) retains that generation's cache across UI re-subscribe.
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     val historyCommentPager = userManager.sessionState
@@ -275,8 +284,12 @@ class UserViewModel(
                 pagingSourceFactory = {
                     HistoryCommentPagingSource(userRepository, snapshot.accountId)
                 }
-            ).flow
-        }.cachedIn(viewModelScope)
+            ).flow.cachedIn(viewModelScope)
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = androidx.paging.PagingData.empty(),
+        )
 
     private val _signInDataState = MutableStateFlow(
         CommonUIState<SignInData>(

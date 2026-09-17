@@ -14,6 +14,7 @@ import com.par9uet.jm.download.coordinator.DownloadManager
 import com.par9uet.jm.repository.ComicRepository
 import com.par9uet.jm.favorites.model.FavoriteSession
 import com.par9uet.jm.favorites.usecase.CollectFavorite
+import com.par9uet.jm.favorites.usecase.ObserveLocalFavorite
 import com.par9uet.jm.favorites.usecase.UncollectFavorites
 import com.par9uet.jm.core.network.NetWorkResult
 import com.par9uet.jm.reader.molecule.LoadLocalChapter
@@ -43,6 +44,7 @@ class ComicReadViewModel(
     private val toastManager: ToastManager,
     private val readHistoryManager: ReadHistoryManager,
     private val favoriteSession: FavoriteSession,
+    private val observeLocalFavorite: ObserveLocalFavorite,
     private val collectFavorite: CollectFavorite,
     private val uncollectFavorites: UncollectFavorites,
     private val downloadManager: DownloadManager,
@@ -77,6 +79,7 @@ class ComicReadViewModel(
     private var pageVelocity = 0f
 
     fun getComicDetail(comicId: Int) {
+        observeLocalFavoriteFlag(comicId)
         viewModelScope.launch {
             _comicDetailState.update {
                 it.copy(
@@ -113,6 +116,7 @@ class ComicReadViewModel(
     }
 
     fun clearComicDetail() {
+        localFavoriteJob?.cancel()
         _comicDetailState.update { CommonUIState() }
     }
 
@@ -127,6 +131,27 @@ class ComicReadViewModel(
     private var imageLoadJob: Job? = null
     private var imageLoadGeneration = 0L
     private var favoriteActionRunning = false
+    private var localFavoriteJob: Job? = null
+
+    /**
+     * 阅读器的「已收藏」也只认本地收藏快照，理由同详情页：云端 `is_favorite` 在多端互踢、
+     * 换设备或同步落后时会与本地不一致。阅读器会自己拉一次详情，所以在这里同样订阅一次。
+     */
+    private fun observeLocalFavoriteFlag(albumId: Int) {
+        localFavoriteJob?.cancel()
+        localFavoriteJob = viewModelScope.launch {
+            observeLocalFavorite(albumId).collect { isFavorite ->
+                _comicDetailState.update { state ->
+                    val data = state.data?.takeIf { it.id == albumId } ?: return@update state
+                    if (data.isCollect == isFavorite) {
+                        state
+                    } else {
+                        state.copy(data = data.copy(isCollect = isFavorite))
+                    }
+                }
+            }
+        }
+    }
 
     private fun updateCollectState(comicId: Int, targetCollect: Boolean) {
         if (favoriteActionRunning) return

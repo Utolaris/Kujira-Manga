@@ -9,6 +9,11 @@ import kotlinx.coroutines.flow.update
 /** 已登录身份的持久化读写。[SecureUserStorage] 提供加密实现，测试可用内存替身。 */
 interface UserStorage {
     fun get(): User
+    /**
+     * `null` 表示 Keystore 暂时不可读。调用方不得把 `null` 当成未登录并写回空身份。
+     * 默认实现委托给 [get]，供内存测试替身使用。
+     */
+    fun getOrNull(): User? = get()
     fun set(user: User)
     fun remove()
 }
@@ -30,12 +35,14 @@ class SecureUserStorage(
         }
     }
 
-    override fun get(): User {
+    override fun get(): User = getOrNull() ?: User.create()
+
+    override fun getOrNull(): User? {
         _state.value?.let { return it }
         val startup = secureStorage.getStartup<User>(STORAGE_KEY, object : TypeToken<User>() {}.type)
         when (startup) {
             is StorageReadResult.Success -> return startup.value.also { _state.value = it }
-            is StorageReadResult.TemporaryUnavailable -> return User.create()
+            is StorageReadResult.TemporaryUnavailable -> return null
             is StorageReadResult.Missing,
             is StorageReadResult.Corrupted,
             -> Unit
@@ -46,7 +53,8 @@ class SecureUserStorage(
                 _state.value = it
                 secureStorage.setStartup(STORAGE_KEY, it)
             }
-            is StorageReadResult.TemporaryUnavailable -> User.create()
+            // Permanent failure may cache empty identity; temporary Keystore outage must retry.
+            is StorageReadResult.TemporaryUnavailable -> null
             is StorageReadResult.Missing,
             is StorageReadResult.Corrupted,
             -> User.create().also { _state.value = it }

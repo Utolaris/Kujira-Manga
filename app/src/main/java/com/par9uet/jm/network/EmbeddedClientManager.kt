@@ -205,8 +205,14 @@ class EmbeddedClientManager(
                 // snapshot is authoritative, including on a fresh SDK client with no loginHost.
                 val original = chain.request()
                 val request = if (persistCookies) {
+                    // getOrNull()==null（Keystore 暂不可读）时不注入也不 merge 写回，
+                    // 避免空列表覆盖完整认证快照。
                     val allowed = if (isCurrentSession(clientSessionGeneration)) {
-                        embeddedCookiesForRequest(cookieStorage.get(), original.url, domainManager.domains)
+                        embeddedCookiesForRequest(
+                            cookieStorage.getOrNull().orEmpty(),
+                            original.url,
+                            domainManager.domains,
+                        )
                     } else emptyList()
                     original.newBuilder().removeHeader("Cookie").apply {
                         if (allowed.isNotEmpty()) header("Cookie", allowed.joinToString("; ") { "${it.name}=${it.value}" })
@@ -216,11 +222,13 @@ class EmbeddedClientManager(
                 if (persistCookies && clientSessionGeneration != null &&
                     request.url.isHttps && request.url.host in domainManager.domains
                 ) {
-                    synchronized(this) {
-                        if (isCurrentSession(clientSessionGeneration)) {
-                            val stored = cookieStorage.get()
-                            val merged = mergeEmbeddedCookies(stored, Cookie.parseAll(request.url, response.headers))
-                            if (stored.toSet() != merged.toSet()) cookieStorage.set(merged)
+                    val stored = cookieStorage.getOrNull()
+                    if (stored != null) {
+                        synchronized(this) {
+                            if (isCurrentSession(clientSessionGeneration)) {
+                                val merged = mergeEmbeddedCookies(stored, Cookie.parseAll(request.url, response.headers))
+                                if (stored.toSet() != merged.toSet()) cookieStorage.set(merged)
+                            }
                         }
                     }
                 }
@@ -248,7 +256,8 @@ class EmbeddedClientManager(
      * 评论成功后的 username 映射已有 `AuthenticatedEmbeddedClient` 兜底。
      */
     private fun restoreSessionIntoClient(client: JmApiClient) {
-        val storedCookies = cookieStorage.get()
+        // null = Keystore 暂不可读，跳过恢复；不可当成空会话写入。
+        val storedCookies = cookieStorage.getOrNull() ?: return
         if (storedCookies.isEmpty()) return
         runCatching { client.setCookies(storedCookies) }
             .onFailure { log("EmbeddedClientManager: 恢复内置 API 会话失败：" + it.message) }

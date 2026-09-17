@@ -20,11 +20,8 @@ import com.par9uet.jm.favorites.data.FavoriteRemoteMutation
 import com.par9uet.jm.favorites.model.FavoriteLocalQuery
 import com.par9uet.jm.favorites.model.FavoriteSession
 import com.par9uet.jm.favorites.model.FavoriteSessionSnapshot
-import com.par9uet.jm.favorites.model.FavoriteSyncUiState
-import com.par9uet.jm.favorites.sync.FavoriteSyncRequestKind
-import com.par9uet.jm.favorites.sync.FavoriteSyncRequester
 import com.par9uet.jm.favorites.usecase.CollectFavorite
-import com.par9uet.jm.favorites.usecase.MoveFavorites
+import com.par9uet.jm.favorites.usecase.ObserveLocalFavorite
 import com.par9uet.jm.favorites.usecase.UncollectFavorites
 import com.par9uet.jm.repository.ComicRepository
 import com.par9uet.jm.data.models.ActionResult
@@ -48,6 +45,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -180,6 +178,8 @@ class ComicDetailViewModelTest {
     fun `uncollect stale action removes only A local data and does not report B success`() = runTest(scheduler) {
         val environment = environment()
         val messages = collectToasts(environment.toastManager)
+        // 已收藏的判据是本地快照，所以「已收藏」的夹具必须同时把本地记录摆上。
+        environment.local.setLocalFavorites(42, setOf(COMIC_ID))
         environment.prepare(comic(isCollected = true))
         environment.session.afterNextBound = { environment.session.switchAccount(43) }
 
@@ -188,50 +188,9 @@ class ComicDetailViewModelTest {
 
         assertEquals(listOf(42 to COMIC_ID), environment.local.removed)
         assertTrue(environment.local.removed.none { it.first == 43 })
-        assertTrue(environment.viewModel.comicDetailState.value.data!!.isCollect)
-        assertFalse("取消收藏成功" in messages)
-        assertEquals("登录状态已变化，请重试", environment.viewModel.collectComicState.value.errorMsg)
-    }
-
-    @Test
-    fun `collectWithFolder captures one snapshot and reuses it for collect and move`() = runTest(scheduler) {
-        val environment = environment()
-        environment.prepare(comic(isCollected = false))
-        environment.local.updateFolders(42, mapOf("7" to "Later"))
-        environment.viewModel.refreshFolderList()
-        runCurrent()
-
-        environment.viewModel.collectWithFolder(COMIC_ID, "7")
-        advanceUntilIdle()
-
-        assertEquals(1, environment.session.snapshotCalls)
-        assertEquals(2, environment.session.boundAttempts.size)
-        assertEquals(environment.session.boundAttempts[0], environment.session.boundAttempts[1])
-        assertEquals(listOf(COMIC_ID), environment.remote.collectedIds)
-        assertEquals(listOf(COMIC_ID to 7), environment.remote.movedIds)
-        assertEquals(listOf(Triple(42, COMIC_ID, 0)), environment.local.added)
-        assertEquals(listOf(Triple(42, COMIC_ID, 7)), environment.local.moved)
-        assertTrue(environment.viewModel.comicDetailState.value.data!!.isCollect)
-    }
-
-    @Test
-    fun `account switch between collect and move prevents move and stale UI success`() = runTest(scheduler) {
-        val environment = environment()
-        val messages = collectToasts(environment.toastManager)
-        environment.prepare(comic(isCollected = false))
-        environment.session.afterNextBound = { environment.session.switchAccount(43) }
-
-        environment.viewModel.collectWithFolder(COMIC_ID, "7")
-        advanceUntilIdle()
-
-        assertEquals(1, environment.session.snapshotCalls)
-        assertEquals(2, environment.session.boundAttempts.size)
-        assertEquals(environment.session.boundAttempts[0], environment.session.boundAttempts[1])
-        assertEquals(listOf(COMIC_ID), environment.remote.collectedIds)
-        assertTrue(environment.remote.movedIds.isEmpty())
-        assertTrue(environment.local.moved.isEmpty())
+        // 账号已切到 43：已收藏改由 43 的本地快照决定（里面没有这本）→ 显示未收藏。
         assertFalse(environment.viewModel.comicDetailState.value.data!!.isCollect)
-        assertTrue(messages.none { it.startsWith("已收藏") || it == "收藏成功" })
+        assertFalse("取消收藏成功" in messages)
         assertEquals("登录状态已变化，请重试", environment.viewModel.collectComicState.value.errorMsg)
     }
 
@@ -252,33 +211,38 @@ class ComicDetailViewModelTest {
     }
 
     @Test
-    fun `folder picker is local first syncs and flatMapLatest switches account source`() = runTest(scheduler) {
+    fun `collected flag follows the local snapshot instead of the cloud detail`() = runTest(scheduler) {
         val environment = environment()
-        environment.local.updateFolders(42, mapOf("1" to "A cached"))
-        environment.local.updateFolders(43, mapOf("2" to "B cached"))
+        // 云端详情说已收藏，但本地快照里没有这条 → 必须显示未收藏。
+        environment.prepare(comic(isCollected = true))
+        assertFalse(environment.viewModel.comicDetailState.value.data!!.isCollect)
 
-        environment.viewModel.refreshFolderList()
-        runCurrent()
+        // 本地快照出现这条（例如收藏页刚写入）→ 立刻变成已收藏。
+        environment.local.setLocalFavorites(42, setOf(COMIC_ID))
+        advanceUntilIdle()
+        assertTrue(environment.viewModel.comicDetailState.value.data!!.isCollect)
+    }
 
-        assertEquals(mapOf("1" to "A cached"), environment.viewModel.folderList.value)
-        assertEquals(
-            listOf(SyncRequest(FavoriteSyncRequestKind.AUTO, 0)),
-            environment.sync.requests,
-        )
+    @Test
+    fun `collected flag drops when the local snapshot no longer has the comic`() = runTest(scheduler) {
+        val environment = environment()
+        environment.local.setLocalFavorites(42, setOf(COMIC_ID))
+        environment.prepare(comic(isCollected = false))
+        assertTrue(environment.viewModel.comicDetailState.value.data!!.isCollect)
 
-        environment.local.updateFolders(42, mapOf("1" to "A refreshed"))
-        runCurrent()
-        assertEquals(mapOf("1" to "A refreshed"), environment.viewModel.folderList.value)
+        environment.local.setLocalFavorites(42, emptySet())
+        advanceUntilIdle()
+        assertFalse(environment.viewModel.comicDetailState.value.data!!.isCollect)
+    }
 
-        environment.session.switchAccount(43)
-        runCurrent()
-        assertEquals(mapOf("2" to "B cached"), environment.viewModel.folderList.value)
-        assertEquals(listOf(42, 43), environment.local.observedAccounts)
+    @Test
+    fun `collected flag ignores another account's local snapshot`() = runTest(scheduler) {
+        val environment = environment()
+        environment.local.setLocalFavorites(43, setOf(COMIC_ID))
+        environment.prepare(comic(isCollected = true))
 
-        // A emits after the switch; flatMapLatest cancelled that source, so B stays visible.
-        environment.local.updateFolders(42, mapOf("9" to "late A"))
-        runCurrent()
-        assertEquals(mapOf("2" to "B cached"), environment.viewModel.folderList.value)
+        // 当前账号是 42，43 的本地收藏不算数。
+        assertFalse(environment.viewModel.comicDetailState.value.data!!.isCollect)
     }
 
     private fun TestEnvironment.prepare(comic: Comic) {
@@ -302,7 +266,6 @@ class ComicDetailViewModelTest {
         val local = FakeFavoriteLocalData()
         val session = FakeFavoriteSession()
         val remote = FakeFavoriteRemoteMutation()
-        val sync = RecordingSyncRequester()
         val downloadDao = RecordingDownloadDao()
         val downloadJob = SupervisorJob()
         val enqueuedBatches = mutableListOf<List<Int>>()
@@ -323,19 +286,16 @@ class ComicDetailViewModelTest {
             viewModel = ComicDetailViewModel(
                 comicRepository = repository,
                 toastManager = toastManager,
-                favoriteLocalQuery = local,
                 favoriteSession = session,
                 collectFavorite = CollectFavorite(remote, local, session),
                 uncollectFavorites = UncollectFavorites(remote, local, session),
-                moveFavorites = MoveFavorites(remote, local, session),
-                syncRequester = sync,
+                observeLocalFavorite = ObserveLocalFavorite(local, session),
                 downloadManager = downloadManager,
             ),
             toastManager = toastManager,
             local = local,
             session = session,
             remote = remote,
-            sync = sync,
             downloadDao = downloadDao,
             downloadJob = downloadJob,
             enqueuedBatches = enqueuedBatches,
@@ -350,23 +310,10 @@ class ComicDetailViewModelTest {
         val local: FakeFavoriteLocalData,
         val session: FakeFavoriteSession,
         val remote: FakeFavoriteRemoteMutation,
-        val sync: RecordingSyncRequester,
         val downloadDao: RecordingDownloadDao,
         val downloadJob: kotlinx.coroutines.CompletableJob,
         val enqueuedBatches: MutableList<List<Int>>,
     )
-
-    private data class SyncRequest(val kind: FavoriteSyncRequestKind, val folderId: Int)
-
-    private class RecordingSyncRequester : FavoriteSyncRequester {
-        private val mutableState = MutableStateFlow(FavoriteSyncUiState())
-        override val state: StateFlow<FavoriteSyncUiState> = mutableState.asStateFlow()
-        val requests = mutableListOf<SyncRequest>()
-
-        override fun request(kind: FavoriteSyncRequestKind, folderId: Int) {
-            requests += SyncRequest(kind, folderId)
-        }
-    }
 
     private class FakeFavoriteSession : FavoriteSession {
         private val account = MutableStateFlow(42)
@@ -444,6 +391,16 @@ class ComicDetailViewModelTest {
         val added = mutableListOf<Triple<Int, Int, Int>>()
         val removed = mutableListOf<Pair<Int, Int>>()
         val moved = mutableListOf<Triple<Int, Int, Int>>()
+
+        /** accountId → 本地已收藏的 albumId。「已收藏」判据就是它。 */
+        private val localFavorites = MutableStateFlow<Map<Int, Set<Int>>>(emptyMap())
+
+        fun setLocalFavorites(accountId: Int, albumIds: Set<Int>) {
+            localFavorites.value = localFavorites.value + (accountId to albumIds)
+        }
+
+        override fun observeIsFavorite(accountId: Int, albumId: Int): Flow<Boolean> =
+            localFavorites.map { ids -> ids[accountId]?.contains(albumId) == true }
 
         fun updateFolders(accountId: Int, folders: Map<String, String>) {
             folderFlows.getOrPut(accountId) { MutableStateFlow(emptyMap()) }.value = folders

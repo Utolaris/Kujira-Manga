@@ -103,7 +103,8 @@ internal fun SearchResultRefreshContent(
     content: @Composable () -> Unit,
 ) {
     when {
-        refreshState is LoadState.Loading -> ComicSearchResultSkeleton(
+        // 已有缓存页时 Loading 只发生在下拉刷新/重连：继续展示内容，避免从详情返回闪骨架。
+        refreshState is LoadState.Loading && itemCount == 0 -> ComicSearchResultSkeleton(
             gridColumns = searchGridColumns,
             modifier = Modifier
                 .fillMaxSize()

@@ -27,6 +27,8 @@ class SearchResultRefreshContentTest {
             MaterialTheme {
                 SearchResultRefreshContent(
                     refreshState = refresh.value,
+                    // 0 项 + Loading 才走骨架：这条用例末尾依赖「刷新时不再展示上次的结果」。
+                    itemCount = 0,
                     topContentPadding = 64.dp,
                     bottomContentPadding = 16.dp,
                     onRetry = { retries++ },
@@ -46,6 +48,24 @@ class SearchResultRefreshContentTest {
         }
         compose.onNodeWithText("上次搜索的缓存结果").assertDoesNotExist()
         compose.runOnIdle { refresh.value = LoadState.NotLoading(false) }
+        compose.onNodeWithText("上次搜索的缓存结果").assertIsDisplayed()
+    }
+
+    @Test
+    fun loadingWithCachedItemsKeepsResultsVisible() {
+        val refresh = mutableStateOf<LoadState>(LoadState.Loading)
+        compose.setContent {
+            MaterialTheme {
+                SearchResultRefreshContent(
+                    refreshState = refresh.value,
+                    itemCount = 2,
+                    topContentPadding = 64.dp,
+                    bottomContentPadding = 16.dp,
+                    onRetry = {},
+                ) { Text("上次搜索的缓存结果") }
+            }
+        }
+        // 已有缓存项时 Loading（下拉刷新/返回重连）不得闪骨架。
         compose.onNodeWithText("上次搜索的缓存结果").assertIsDisplayed()
     }
 }

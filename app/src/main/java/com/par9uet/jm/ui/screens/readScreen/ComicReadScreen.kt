@@ -356,6 +356,9 @@ fun ComicReadScreen(
                                     if (currentComic.comicChapterList.isEmpty()) {
                                         comicReadViewModel.downloadComic(currentComic)
                                     } else {
+                                        // 面板起来时收起两个工具栏（系统栏跟着一起收）：
+                                        // 玻璃弹窗是半透明的，工具栏留在后面会把面板文字压在图标花纹上。
+                                        comicReadViewModel.hideToolBar()
                                         selectedCacheChapterIds =
                                             currentComic.comicChapterList.map { it.id }.toSet()
                                         activeDialog = ReadPanelDialog.Cache
@@ -364,6 +367,7 @@ fun ComicReadScreen(
                             },
                             onChapterJump = {
                                 if (readableChapters.isNotEmpty()) {
+                                    comicReadViewModel.hideToolBar()
                                     activeDialog = ReadPanelDialog.Chapter
                                 }
                             }
@@ -413,13 +417,18 @@ fun ComicReadScreen(
                             chapters = currentComic.comicChapterList,
                             selectedChapterIds = selectedCacheChapterIds,
                             onSelectedChange = { selectedCacheChapterIds = it },
-                            onDismiss = { activeDialog = null },
+                            // 面板收起后把工具栏放回来：用户是从工具栏进来的，退出时回到同一个状态。
+                            onDismiss = {
+                                activeDialog = null
+                                comicReadViewModel.showToolBar()
+                            },
                             onConfirm = {
                                 val selectedChapters = currentComic.comicChapterList
                                     .filter { it.id in selectedCacheChapterIds }
                                 comicReadViewModel.downloadChapters(currentComic, selectedChapters)
                                 activeDialog = null
                                 selectedCacheChapterIds = emptySet()
+                                comicReadViewModel.showToolBar()
                             }
                         )
                     }
@@ -432,7 +441,10 @@ fun ComicReadScreen(
                             chapters = readableChapters,
                             currentChapterId = comicId,
                             readChapterIds = readChapterIds,
-                            onDismiss = { activeDialog = null },
+                            onDismiss = {
+                                activeDialog = null
+                                comicReadViewModel.showToolBar()
+                            },
                             onSelect = { chapter ->
                                 activeDialog = null
                                 navigateToChapter(chapter)

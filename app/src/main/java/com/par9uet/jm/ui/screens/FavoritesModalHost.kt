@@ -1,7 +1,6 @@
 package com.par9uet.jm.ui.screens
 
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -57,6 +56,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.par9uet.jm.data.models.TagFilterLogic
 import com.par9uet.jm.favorites.model.FavoritesIntent
@@ -69,8 +69,11 @@ import com.par9uet.jm.ui.glass.GlassConfirmDialog
 import com.par9uet.jm.ui.glass.GlassModal
 import com.par9uet.jm.ui.navigation.LocalMainNavController
 
-/** Renders every Favorites modal from the single ViewModel-owned modal state. */
-@OptIn(ExperimentalMaterial3Api::class)
+/** 移动收藏夹列表：固定行高，最多可见 5 行，其余靠滑动。 */
+private val MoveFolderRowHeight = 52.dp
+private const val MoveFolderVisibleRows = 5
+
+/** Renders every Favorites modal from the single ViewModel-owned modal state. */@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun FavoritesModalHost(favoritesViewModel: FavoritesViewModel) {
     val navController = LocalMainNavController.current
@@ -203,114 +206,114 @@ internal fun FavoritesModalHost(favoritesViewModel: FavoritesViewModel) {
         }
     }
 
-    if (activeModal is FavoritesModal.FolderManagement) {
-        val manageSheetState = rememberModalBottomSheetState()
-        ModalBottomSheet(
-            onDismissRequest = {
-                favoritesViewModel.onIntent(FavoritesIntent.FolderManagementDismissed)
-            },
-            sheetState = manageSheetState,
+    GlassModal(
+        visible = activeModal is FavoritesModal.FolderManagement,
+        onDismissRequest = {
+            favoritesViewModel.onIntent(FavoritesIntent.FolderManagementDismissed)
+        },
+        surfaceId = "favorites-manage-folder-glass-modal",
+        alignment = Alignment.BottomCenter,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 12.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 24.dp),
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
-                    .padding(bottom = 24.dp),
+            Text(
+                "管理收藏夹",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                "点击文件夹名称可切换当前收藏夹，右侧按钮可重命名或删除。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Text(
-                    "管理收藏夹",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    "点击文件夹名称可切换当前收藏夹，右侧按钮可重命名或删除。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                LazyColumn(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    items(folders.entries.toList(), key = { it.key }) { (folderId, folderName) ->
-                        Surface(
-                            shape = MaterialTheme.shapes.medium,
-                            color = if (selectedFolderId == folderId.toIntOrNull()) {
-                                MaterialTheme.colorScheme.secondaryContainer
-                            } else {
-                                Color.Transparent
-                            },
-                            onClick = {
-                                favoritesViewModel.onIntent(
-                                    FavoritesIntent.FolderSelected(folderId.toIntOrNull() ?: 0)
-                                )
-                            },
+                items(folders.entries.toList(), key = { it.key }) { (folderId, folderName) ->
+                    Surface(
+                        shape = MaterialTheme.shapes.medium,
+                        color = if (selectedFolderId == folderId.toIntOrNull()) {
+                            MaterialTheme.colorScheme.secondaryContainer
+                        } else {
+                            Color.Transparent
+                        },
+                        onClick = {
+                            favoritesViewModel.onIntent(
+                                FavoritesIntent.FolderSelected(folderId.toIntOrNull() ?: 0)
+                            )
+                        },
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Icon(
-                                    imageVector = if (folderId == "0") {
-                                        Icons.Rounded.Bookmarks
-                                    } else {
-                                        Icons.Rounded.Folder
-                                    },
-                                    contentDescription = null,
-                                    modifier = Modifier.size(20.dp),
-                                    tint = MaterialTheme.colorScheme.primary,
-                                )
-                                Text(
-                                    folderName,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                if (folderId != "0") {
-                                    IconButton(onClick = {
-                                        favoritesViewModel.onIntent(
-                                            FavoritesIntent.RenameFolderOpened(
-                                                folderId = folderId.toIntOrNull() ?: 0,
-                                                folderName = folderName,
-                                            )
+                            Icon(
+                                imageVector = if (folderId == "0") {
+                                    Icons.Rounded.Bookmarks
+                                } else {
+                                    Icons.Rounded.Folder
+                                },
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                            Text(
+                                folderName,
+                                style = MaterialTheme.typography.bodyLarge,
+                                modifier = Modifier.weight(1f),
+                            )
+                            if (folderId != "0") {
+                                IconButton(onClick = {
+                                    favoritesViewModel.onIntent(
+                                        FavoritesIntent.RenameFolderOpened(
+                                            folderId = folderId.toIntOrNull() ?: 0,
+                                            folderName = folderName,
                                         )
-                                    }) {
-                                        Icon(Icons.Rounded.Edit, contentDescription = "重命名")
-                                    }
-                                    IconButton(onClick = {
-                                        favoritesViewModel.onIntent(
-                                            FavoritesIntent.DeleteFolderOpened(
-                                                folderId = folderId.toIntOrNull() ?: 0,
-                                                folderName = folderName,
-                                            )
+                                    )
+                                }) {
+                                    Icon(Icons.Rounded.Edit, contentDescription = "重命名")
+                                }
+                                IconButton(onClick = {
+                                    favoritesViewModel.onIntent(
+                                        FavoritesIntent.DeleteFolderOpened(
+                                            folderId = folderId.toIntOrNull() ?: 0,
+                                            folderName = folderName,
                                         )
-                                    }) {
-                                        Icon(
-                                            Icons.Rounded.Delete,
-                                            contentDescription = "删除",
-                                            tint = MaterialTheme.colorScheme.error,
-                                        )
-                                    }
+                                    )
+                                }) {
+                                    Icon(
+                                        Icons.Rounded.Delete,
+                                        contentDescription = "删除",
+                                        tint = MaterialTheme.colorScheme.error,
+                                    )
                                 }
                             }
                         }
                     }
                 }
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedButton(
-                    onClick = {
-                        newFolderName = ""
-                        favoritesViewModel.onIntent(FavoritesIntent.CreateFolderOpened)
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("新建收藏夹")
-                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedButton(
+                onClick = {
+                    newFolderName = ""
+                    favoritesViewModel.onIntent(FavoritesIntent.CreateFolderOpened)
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("新建收藏夹")
             }
         }
     }
@@ -381,7 +384,7 @@ internal fun FavoritesModalHost(favoritesViewModel: FavoritesViewModel) {
     )
 
     if (activeModal is FavoritesModal.Move) {
-        MoveFolderSheet(
+        MoveFolderDialog(
             folders = folders,
             currentFolderId = selectedFolderId,
             onMove = { folderId ->
@@ -394,7 +397,10 @@ internal fun FavoritesModalHost(favoritesViewModel: FavoritesViewModel) {
     }
 }
 
-// 筛选弹窗：ModalBottomSheet 支持上划全屏 + 逻辑门选择 + Tab（标签/作者）
+/**
+ * 筛选收藏。刻意用 Material ModalBottomSheet，不用 GlassModal：这里密排大量
+ * 标签/作者 chip 与计数，高斯模糊背景会让文字对比度下降，影响扫读与勾选。
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FilterDialog(
@@ -608,38 +614,37 @@ private fun FilterDialog(
     }
 }
 
-// 移动到收藏夹：ModalBottomSheet + LazyColumn + Radio 选择
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+/**
+ * 移动到收藏夹。
+ *
+ * 与新建/重命名等同级弹窗同一套版面：居中、宽度交给 [GlassModal] 默认值
+ * （手机 480dp 收口，平板自动放宽到窗口的 3/4），取消/移动放右下角两个小按钮。
+ *
+ * 列表固定行高、最多可见 5 行：收藏夹再多也靠手指滑动查看，不会把弹窗撑高。
+ */
 @Composable
-private fun MoveFolderSheet(
+private fun MoveFolderDialog(
     folders: Map<String, String>,
     currentFolderId: Int?,
     onMove: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var selectedFolderId by remember { mutableStateOf<String?>(null) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val availableFolders = remember(folders, currentFolderId) {
         folders.filterKeys { it != "0" && it.toIntOrNull() != currentFolderId }
     }
 
-    ModalBottomSheet(
+    GlassModal(
+        visible = true,
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        surfaceId = "favorites-move-folder-glass-modal",
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .navigationBarsPadding(),
-        ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(24.dp)) {
             Text(
                 text = "移动到收藏夹",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 12.dp),
+                style = MaterialTheme.typography.titleLarge,
             )
+            Spacer(modifier = Modifier.height(12.dp))
             if (availableFolders.isEmpty()) {
                 Text(
                     text = "暂无其他收藏夹，请先创建",
@@ -647,20 +652,24 @@ private fun MoveFolderSheet(
                     modifier = Modifier.padding(vertical = 24.dp),
                 )
             } else {
-                LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = MoveFolderRowHeight * MoveFolderVisibleRows),
+                ) {
                     items(availableFolders.entries.toList(), key = { it.key }) { (folderId, folderName) ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .combinedClickable(onClick = { selectedFolderId = folderId })
-                                .padding(vertical = 6.dp),
+                                .height(MoveFolderRowHeight)
+                                .clickable { selectedFolderId = folderId },
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             RadioButton(
                                 selected = selectedFolderId == folderId,
                                 onClick = { selectedFolderId = folderId },
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
                             Icon(
                                 imageVector = Icons.Rounded.Folder,
                                 contentDescription = null,
@@ -671,26 +680,20 @@ private fun MoveFolderSheet(
                             Text(
                                 text = folderName,
                                 style = MaterialTheme.typography.bodyLarge,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(16.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                OutlinedButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.weight(1f),
-                ) { Text("取消") }
-                Button(
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(modifier = Modifier.fillMaxWidth()) {
+                Spacer(modifier = Modifier.weight(1f))
+                TextButton(onClick = onDismiss) { Text("取消") }
+                TextButton(
                     onClick = { selectedFolderId?.let(onMove) },
                     enabled = selectedFolderId != null,
-                    modifier = Modifier.weight(1f),
                 ) { Text("移动") }
             }
         }

@@ -49,6 +49,9 @@ internal class FavoriteLocalQueryStore(
             }
         }
 
+    override fun observeIsFavorite(accountId: Int, albumId: Int): Flow<Boolean> =
+        comicDao.observeFavoriteCount(accountId, albumId).map { it > 0 }
+
     override fun observeTagCounts(accountId: Int, folderId: Int): Flow<Map<String, Int>> =
         termDao.observeCounts(accountId, folderId, FAVORITE_TERM_TAG).map { counts ->
             counts.associate { it.value to it.count }

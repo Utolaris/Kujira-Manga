@@ -234,7 +234,9 @@ class DeviceCacheMigrationOperations(
         if (treeUri.isBlank()) return File(getDownloadDir(appContext), comicName).also(File::mkdirs).absolutePath
         val tree = treeUri.toUri()
         val root = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
-        return requireNotNull(findOrCreateCacheDocument(appContext, root, comicName, DocumentsContract.Document.MIME_TYPE_DIR)).toString()
+        return requireNotNull(findOrCreateCacheDocument(appContext, root, comicName, DocumentsContract.Document.MIME_TYPE_DIR)) {
+            "无法创建迁移目标漫画目录：$comicName"
+        }.toString()
     }
 
     /** Recreate only the chapter that is about to be copied, so unrelated target content survives. */
@@ -252,12 +254,16 @@ class DeviceCacheMigrationOperations(
 
     private fun destinationDirectory(parentPath: String, name: String): String {
         if (!isDocumentCachePath(parentPath)) return File(parentPath, name).also(File::mkdirs).absolutePath
-        return requireNotNull(findOrCreateCacheDocument(appContext, parentPath.toUri(), name, DocumentsContract.Document.MIME_TYPE_DIR)).toString()
+        return requireNotNull(findOrCreateCacheDocument(appContext, parentPath.toUri(), name, DocumentsContract.Document.MIME_TYPE_DIR)) {
+            "无法创建迁移目标目录：$name"
+        }.toString()
     }
 
     private fun destinationFile(parentPath: String, name: String, mimeType: String): String {
         if (!isDocumentCachePath(parentPath)) return File(parentPath, name).absolutePath
-        return requireNotNull(findOrCreateCacheDocument(appContext, parentPath.toUri(), name, mimeType)).toString()
+        return requireNotNull(findOrCreateCacheDocument(appContext, parentPath.toUri(), name, mimeType)) {
+            "无法创建迁移目标文件：$name"
+        }.toString()
     }
 
     private suspend fun copyDirectory(sourcePath: String, destinationPath: String, onBytes: suspend (Long) -> Unit) {
@@ -290,8 +296,13 @@ class DeviceCacheMigrationOperations(
 
     private suspend fun copyFile(sourcePath: String, destinationPath: String, onBytes: suspend (Long) -> Unit) {
         check(sourcePath != destinationPath) { "目标文件与原文件相同" }
-        val input = if (isDocumentCachePath(sourcePath)) requireNotNull(appContext.contentResolver.openInputStream(sourcePath.toUri()))
-        else File(sourcePath).inputStream()
+        val input = if (isDocumentCachePath(sourcePath)) {
+            requireNotNull(appContext.contentResolver.openInputStream(sourcePath.toUri())) {
+                "无法打开迁移源文件：$sourcePath"
+            }
+        } else {
+            File(sourcePath).inputStream()
+        }
         input.use { source ->
             openCacheOutputStream(appContext, destinationPath).use { destination -> copyWithProgress(source, destination, onBytes) }
         }

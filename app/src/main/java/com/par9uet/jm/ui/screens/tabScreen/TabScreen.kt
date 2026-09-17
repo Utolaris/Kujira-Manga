@@ -236,7 +236,6 @@ fun TabScreen(
                     )
                     MainTab.Collect -> if (canShowAuthenticatedUi) {
                         UserCollectComicScreen(
-                            useScaffold = false,
                             favoritesViewModel = favoritesViewModel,
                             pullDownState = favoritesPullDownState,
                             topContentPadding = favoritesTopContentPadding,

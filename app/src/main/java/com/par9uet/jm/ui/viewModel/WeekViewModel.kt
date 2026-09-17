@@ -14,9 +14,11 @@ import com.par9uet.jm.ui.pagingSource.WeekComicPagingSource
 import com.par9uet.jm.ui.pagingSource.WeekFilter
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -68,6 +70,10 @@ class WeekViewModel(
     private val _weekFilterState = MutableStateFlow(WeekFilter())
     val weekFilterState = _weekFilterState.asStateFlow()
 
+    /**
+     * `cachedIn` 在 flatMapLatest 内：换筛选只缓存单 key 的 PagingData。
+     * 外层 `stateIn(Eagerly)`：进详情离开列表后缓存仍挂在 viewModelScope。
+     */
     @OptIn(ExperimentalCoroutinesApi::class)
     val weekComicPager = combine(
         _weekFilterState,
@@ -90,8 +96,12 @@ class WeekViewModel(
                     blockedTagList
                 )
             }
-        ).flow
-    }.cachedIn(viewModelScope)
+        ).flow.cachedIn(viewModelScope)
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = androidx.paging.PagingData.empty(),
+    )
 
     fun changeWeekCategoryFilter(categoryId: String?) {
         _weekFilterState.update {

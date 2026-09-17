@@ -2,24 +2,27 @@ package com.par9uet.jm.ui.screens
 
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.HelpOutline
 import androidx.compose.material.icons.rounded.Cancel
 import androidx.compose.material.icons.rounded.DeleteSweep
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -57,6 +60,8 @@ import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.components.SearchExclusionEditor
 import com.par9uet.jm.ui.components.SearchFieldSurface
 import com.par9uet.jm.ui.components.searchFieldColors
+import com.par9uet.jm.ui.glass.GlassModal
+import com.par9uet.jm.ui.models.LocalTabletLayoutEnabled
 import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.SearchViewModel
 import com.par9uet.jm.contentfilter.normalizeSearchExcludedTags
@@ -95,6 +100,7 @@ fun ComicSearchScreen(
     }
     val historySearchState by historySearchManager.historySearchState.collectAsState()
     val blockedTagTemplates by localSettingManager.blockedTagTemplates.collectAsState()
+    var showSyntaxHelp by remember { mutableStateOf(false) }
 
     fun addExcludedTag(tag: String) {
         excludedTags = normalizeSearchExcludedTags(excludedTags + tag)
@@ -127,7 +133,23 @@ fun ComicSearchScreen(
         }
     }
 
-    CommonScaffold(title = "搜索") { topContentPadding, bottomContentPadding ->
+    CommonScaffold(
+        title = "搜索",
+        actions = {
+            IconButton(onClick = { showSyntaxHelp = true }) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.HelpOutline,
+                    contentDescription = "搜索语法说明",
+                )
+            }
+        },
+        overlayContent = {
+            SearchSyntaxHelpDialog(
+                visible = showSyntaxHelp,
+                onDismiss = { showSyntaxHelp = false },
+            )
+        },
+    ) { topContentPadding, bottomContentPadding ->
         SearchPageFocusEffect(pageLifecycleOwner)
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -229,6 +251,63 @@ fun ComicSearchScreen(
     }
 }
 
+/**
+ * 搜索语法说明。二级玻璃弹窗：
+ * 手机按 420dp 收口（与其它说明/确认弹窗一致），平板交给 [GlassModal] 的整屏 3/4，
+ * 不做成窄条也不铺满整屏。必须留在 [CommonScaffold] 的 `overlayContent` 里，
+ * 否则拿不到 `LocalGlassSurfaceRegistry`，会静默退化成纯色面板。
+ */
+@Composable
+private fun SearchSyntaxHelpDialog(
+    visible: Boolean,
+    onDismiss: () -> Unit,
+) {
+    GlassModal(
+        visible = visible,
+        onDismissRequest = onDismiss,
+        surfaceId = "search-syntax-help-glass",
+        modifier = if (LocalTabletLayoutEnabled.current) {
+            Modifier
+        } else {
+            Modifier.widthIn(max = 420.dp)
+        },
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = "搜索的最佳姿势！",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = "原神 全彩=原神或全彩；\n原神+全彩=原神且全彩。",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = "排除标签使用本页的排除功能，或者自定义添加排除模板。",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.heightIn(min = 44.dp),
+                ) {
+                    Text("知道了")
+                }
+            }
+        }
+    }
+}
+
 @Composable
 internal fun SearchPageFocusEffect(pageLifecycleOwner: LifecycleOwner) {
     // Read the owners inside GlassCaptureHost's source composition, where the input lives.
@@ -284,15 +363,14 @@ private fun SearchInputCard(
             )
         },
         trailing = {
+            // 只保留清空：右侧独立的搜索按钮已去掉，提交走键盘的 IME Search 动作
+            // （onKeyboardAction），输入框左侧的放大镜已经表达了「这是搜索」。
             if (textFieldState.text.toString().isNotEmpty()) {
                 IconButton(onClick = {
                     textFieldState.edit { replace(0, length, "") }
                 }) {
                     Icon(Icons.Rounded.Cancel, contentDescription = "清空")
                 }
-            }
-            IconButton(onClick = onSearch) {
-                Icon(Icons.Rounded.Search, contentDescription = "搜索")
             }
         },
     )

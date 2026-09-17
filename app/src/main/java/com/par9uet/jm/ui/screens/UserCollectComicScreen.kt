@@ -7,11 +7,9 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
-import com.par9uet.jm.ui.navigation.LocalMainNavController
 import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -32,7 +30,6 @@ import com.par9uet.jm.ui.models.LocalTabletLayoutEnabled
 import com.par9uet.jm.ui.interaction.pullDownToAction
 import com.par9uet.jm.ui.interaction.PullDownActionState
 import com.par9uet.jm.ui.interaction.rememberPullDownActionState
-import com.par9uet.jm.ui.screens.tabScreen.FavoritesMaterialTopBar
 import com.par9uet.jm.favorites.model.FavoritesIntent
 import com.par9uet.jm.favorites.presentation.FavoritesViewModel
 import com.par9uet.jm.storage.LocalSettingManager
@@ -43,13 +40,11 @@ import org.koin.compose.viewmodel.koinActivityViewModel
 @Composable
 internal fun UserCollectComicScreen(
     favoritesViewModel: FavoritesViewModel = koinActivityViewModel(),
-    useScaffold: Boolean = true,
     localSettingManager: LocalSettingManager = getKoin().get(),
     pullDownState: PullDownActionState = rememberPullDownActionState(),
     topContentPadding: Dp = 0.dp,
     bottomContentPadding: Dp = 0.dp,
 ) {
-    val navController = LocalMainNavController.current
     val favoritesState by favoritesViewModel.uiState.collectAsState()
     val collectComicLazyPagingItems = favoritesViewModel.collectComicPager.collectAsLazyPagingItems()
     val selectedFolderId = favoritesState.selectedFolderId
@@ -191,25 +186,5 @@ internal fun UserCollectComicScreen(
         }
     }
 
-    if (useScaffold) {
-        Scaffold(
-            topBar = {
-                FavoritesMaterialTopBar(
-                    favoritesViewModel = favoritesViewModel,
-                    onNavigateBack = navController::popBackStack,
-                )
-            },
-        ) { innerPadding ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-            ) {
-                mainContent()
-            }
-        }
-    } else {
-        Box(modifier = Modifier.fillMaxSize()) { mainContent() }
-    }
-
+    Box(modifier = Modifier.fillMaxSize()) { mainContent() }
 }

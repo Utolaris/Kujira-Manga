@@ -4,20 +4,20 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -47,6 +47,7 @@ import coil.ImageLoader
 import com.par9uet.jm.core.ToastManager
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.components.JmCoverImage
+import com.par9uet.jm.ui.glass.GlassModal
 import com.par9uet.jm.ui.models.LocalRemoteImageHost
 import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.ExtractCodeViewModel
@@ -81,7 +82,98 @@ fun ExtractCodeScreen(
 
     var inputText by remember { mutableStateOf("") }
 
-    CommonScaffold(title = "提取编码") { topContentPadding, bottomContentPadding ->
+    CommonScaffold(
+        title = "提取编码",
+        overlayContent = {
+            val comic = previewComic
+            if (comic != null) {
+                GlassModal(
+                    visible = true,
+                    onDismissRequest = { viewModel.dismissPreview() },
+                    surfaceId = "extract-preview-glass-modal",
+                    modifier = Modifier.widthIn(max = 480.dp),
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text(
+                            text = "找到漫画",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            JmCoverImage(
+                                comicId = comic.id,
+                                remoteHost = remoteImageHost,
+                                imageLoader = imageLoader,
+                                contentDescription = "${comic.name}的封面",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .width(96.dp)
+                                    .height(128.dp)
+                                    .clip(RoundedCornerShape(8.dp)),
+                            )
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                AssistChip(
+                                    onClick = {},
+                                    label = { Text("JM${comic.id}") },
+                                )
+                                Text(
+                                    text = comic.name,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 2,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                )
+                                if (comic.authorList.isNotEmpty()) {
+                                    Text(
+                                        text = "作者：${comic.authorList.joinToString("、")}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 2,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                    )
+                                }
+                                if (comic.tagList.isNotEmpty()) {
+                                    Text(
+                                        text = "标签：${comic.tagList.take(10).joinToString("、")}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 3,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                        ) {
+                            TextButton(onClick = { viewModel.dismissPreview() }) {
+                                Text("取消")
+                            }
+                            TextButton(onClick = {
+                                viewModel.dismissPreview()
+                                inputText = ""
+                                mainNavController.navigate("comicDetail/${comic.id}")
+                            }) {
+                                Text("跳转详情")
+                            }
+                        }
+                    }
+                }
+            }
+        },
+    ) { topContentPadding, bottomContentPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -167,86 +259,5 @@ fun ExtractCodeScreen(
                 }
             }
         }
-    }
-
-    // 详情预览弹窗（左侧封面小窗口 + 右侧信息，适配平板）
-    val comic = previewComic
-    if (comic != null) {
-        AlertDialog(
-            onDismissRequest = {
-                viewModel.dismissPreview()
-            },
-            title = { Text("找到漫画", fontWeight = FontWeight.Bold) },
-            text = {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    // 左侧封面小窗口
-                    JmCoverImage(
-                        comicId = comic.id,
-                        remoteHost = remoteImageHost,
-                        imageLoader = imageLoader,
-                        contentDescription = "${comic.name}的封面",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .width(96.dp)
-                            .height(128.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                    )
-                    // 右侧信息
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        // JM 编码
-                        AssistChip(
-                            onClick = {},
-                            label = { Text("JM${comic.id}") }
-                        )
-                        // 标题
-                        Text(
-                            text = comic.name,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 2,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                        )
-                        // 作者
-                        if (comic.authorList.isNotEmpty()) {
-                            Text(
-                                text = "作者：${comic.authorList.joinToString("、")}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 2,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                            )
-                        }
-                        // 标签
-                        if (comic.tagList.isNotEmpty()) {
-                            Text(
-                                text = "标签：${comic.tagList.take(10).joinToString("、")}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 3,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.dismissPreview()
-                    inputText = ""
-                    mainNavController.navigate("comicDetail/${comic.id}")
-                }) { Text("跳转详情") }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    viewModel.dismissPreview()
-                }) { Text("取消") }
-            }
-        )
     }
 }

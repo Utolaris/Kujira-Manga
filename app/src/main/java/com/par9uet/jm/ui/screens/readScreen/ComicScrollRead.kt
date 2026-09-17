@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
@@ -240,15 +240,16 @@ fun ComicScrollRead(
                     onZoomedCenterTap = comicReadViewModel::triggerToolBar
                 )
         ) {
-            items(list, key = {
-                "${it.comicId}_${it.originSrc}"
-            }) {
+            // index 进 key：同章出现重复/空 originSrc 时避免 Lazy 重复 key 崩溃。
+            itemsIndexed(list, key = { index, item ->
+                "${item.comicId}_${item.originSrc}_$index"
+            }) { _, item ->
                 ComicPicImage(
-                    comicPicImageState = it,
+                    comicPicImageState = item,
                         modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(
-                            it.aspectRatio
+                            item.aspectRatio
                         )
                 )
             }

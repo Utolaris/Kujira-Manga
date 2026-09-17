@@ -28,12 +28,14 @@ import com.par9uet.jm.core.network.NetWorkResult
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -121,6 +123,11 @@ class FavoritesViewModel(
         if (accountId > 0) observe(accountId, folderId) else flowOf(emptyMap())
     }
 
+    /**
+     * `cachedIn` 留在 `flatMapLatest` 内：换文件夹/筛选只缓存单 key 的 PagingData，
+     * 避免外层 cachedIn 在 key 切换时把上一代列表混进新结果。
+     * 外层 `stateIn(Eagerly)` 挂在 viewModelScope：进详情后 UI 取消收集仍保留缓存。
+     */
     val collectComicPager = combine(
         contentPreferences.blockedTags,
         _uiState.map { it.selectedFolderId to it.filter }.distinctUntilChanged(),
@@ -146,8 +153,12 @@ class FavoritesViewModel(
                     tagLogic = key.filter.tagLogic,
                 )
             },
-        ).flow
-    }.cachedIn(viewModelScope)
+        ).flow.cachedIn(viewModelScope)
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = androidx.paging.PagingData.empty(),
+    )
 
     fun onIntent(intent: FavoritesIntent) {
         when (intent) {

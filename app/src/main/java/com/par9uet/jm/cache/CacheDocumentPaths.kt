@@ -30,7 +30,7 @@ fun getComicDownloadRootPath(context: Context, comic: DownloadComic): String {
         root,
         getComicCacheRootName(comic),
         DocumentsContract.Document.MIME_TYPE_DIR,
-    )).toString()
+    )) { "无法创建漫画缓存目录：${getComicCacheRootName(comic)}" }.toString()
 }
 
 fun getComicChapterDownloadPath(context: Context, comic: DownloadComic): String {
@@ -41,7 +41,7 @@ fun getComicChapterDownloadPath(context: Context, comic: DownloadComic): String 
         root.toUri(),
         getChapterCacheName(comic),
         DocumentsContract.Document.MIME_TYPE_DIR,
-    )).toString()
+    )) { "无法创建章节缓存目录：${getChapterCacheName(comic)}" }.toString()
 }
 
 /**

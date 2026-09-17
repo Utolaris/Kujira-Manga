@@ -267,7 +267,9 @@ class ReaderImagePipeline internal constructor(
             val temporary = diskCache.createSourceTempFile()
             try {
                 val uri = page.originSrc.toUri()
-                requireNotNull(appContext.contentResolver.openInputStream(uri)).use { input ->
+                requireNotNull(appContext.contentResolver.openInputStream(uri)) {
+                    "无法打开本地页面输入流：$uri"
+                }.use { input ->
                     temporary.outputStream().use { output -> input.copyTo(output) }
                 }
                 return@withContext decodeAndCache(

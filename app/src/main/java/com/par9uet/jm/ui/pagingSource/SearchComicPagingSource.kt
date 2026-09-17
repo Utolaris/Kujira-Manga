@@ -8,6 +8,8 @@ import com.par9uet.jm.repository.ComicRepository
 import com.par9uet.jm.core.network.NetWorkResult
 import com.par9uet.jm.contentfilter.filterBlockedTags
 import com.par9uet.jm.contentfilter.normalizeSearchExcludedTags
+import com.par9uet.jm.utils.log
+import com.par9uet.jm.utils.logError
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -48,9 +50,26 @@ class SearchComicPagingSource(
         val currentPage = params.key ?: 1
         val excludedTags = normalizeSearchExcludedTags(filter.excludedTags)
         val searchQuery = buildSearchQuery(filter.searchContent, excludedTags)
+        // 关键词与排除项都为空时**不能发请求**：上游把空 keyword 当成「没有搜索条件」，
+        // 返回的是推荐/默认列表。那批数据会被当成搜索结果展示，用户既看不出没搜成，
+        // 也拿不到任何错误 —— 静默降级比失败更糟。这里直接失败，让结果页显示错误 + 空列表。
+        if (searchQuery.isBlank()) {
+            logError("SearchComicPagingSource", "拒绝空关键词请求 page=$currentPage")
+            return LoadResult.Error(IllegalArgumentException("没有可搜索的关键词，请重新输入"))
+        }
+        // 请求级日志：搜索链路此前一行都不打，出问题时（关键词没送达、上游返回推荐列表、
+        // 本地过滤把结果吃光）无法从日志区分，只能靠猜。这里记录真正发出去的 query。
+        log(
+            "SearchComicPagingSource",
+            "请求 page=$currentPage order=${filter.order.value} query=[$searchQuery]",
+        )
         return when (val data =
             comicRepository.getComicList(currentPage, filter.order, searchQuery)) {
             is NetWorkResult.Error -> {
+                logError(
+                    "SearchComicPagingSource",
+                    "失败 page=$currentPage query=[$searchQuery]: ${data.message}",
+                )
                 LoadResult.Error(Exception(data.message))
             }
 
@@ -74,6 +93,13 @@ class SearchComicPagingSource(
                     val total = data.data.total
                     val isLastPage = data.data.items.size < REMOTE_PAGE_SIZE ||
                         isLastRemotePage(currentPage, data.data.items.size, total)
+                    // raw/kept 分开记：raw=上游返回条数，kept=去掉屏蔽标签后真正展示的条数。
+                    // 两者都可能是 0，含义完全不同（关键词没送达 vs 本地屏蔽吃光）。
+                    log(
+                        "SearchComicPagingSource",
+                        "成功 page=$currentPage query=[$searchQuery] raw=${data.data.items.size} " +
+                            "kept=${list.size} total=[$total] last=$isLastPage",
+                    )
                     LoadResult.Page(
                         data = list,
                         prevKey = if (currentPage == 1) null else currentPage - 1,

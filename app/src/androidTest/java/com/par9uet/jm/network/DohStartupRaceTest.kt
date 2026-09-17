@@ -40,6 +40,7 @@ class DohStartupRaceTest {
     private object UnusedEditor : DohPreferencesEditor {
         override fun persistEnabled(enabled: Boolean): Boolean = error("unused")
         override fun persistAutoStart(enabled: Boolean): Boolean = error("unused")
+        override fun persistAutoSelectFastest(enabled: Boolean): Boolean = error("unused")
         override fun persistServer(serverId: String): Boolean = error("unused")
         override fun persistCustomServer(name: String, url: String): Boolean = error("unused")
         override fun persistUseDeviceCertificates(enabled: Boolean): Boolean = error("unused")

@@ -88,6 +88,55 @@ class SearchViewModelTest {
     }
 
     @Test
+    fun returningToSameQueryReusesCacheWithoutNewNetworkCall() = runTest(scheduler) {
+        val comic = Comic.create(1, "cached result", emptyList())
+        var requests = 0
+        val repository = Proxy.newProxyInstance(
+            ComicRepository::class.java.classLoader, arrayOf(ComicRepository::class.java),
+        ) { _, method, _ ->
+            check(method.name == "getComicList")
+            requests++
+            NetWorkResult.Success(ComicSearchPage(listOf(comic), 1, null))
+        } as ComicRepository
+        val vm = SearchViewModel(repository, FakeSettings())
+        val first = object : PagingDataPresenter<Comic>(StandardTestDispatcher(scheduler)) {
+            override suspend fun presentPagingDataEvent(event: PagingDataEvent<Comic>) = Unit
+        }
+        vm.submitSearch("same query", emptyList())
+        val leaving = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            vm.searchComicPager.collectLatest(first::collectFrom)
+        }
+        runCurrent()
+        assertEquals(1, requests)
+        assertEquals(listOf(comic), first.snapshot().items)
+
+        // 结果页进详情：UI 取消收集。
+        leaving.cancel()
+        runCurrent()
+
+        // 返回结果页：同查询 enterSearchResult 不得换代，也不得再次打网。
+        val revisionBefore = vm.searchComicFilterState.value.revision
+        vm.enterSearchResult("same query", emptyList())
+        runCurrent()
+        assertEquals(revisionBefore, vm.searchComicFilterState.value.revision)
+
+        val returning = object : PagingDataPresenter<Comic>(StandardTestDispatcher(scheduler)) {
+            override suspend fun presentPagingDataEvent(event: PagingDataEvent<Comic>) = Unit
+        }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            vm.searchComicPager.collectLatest(returning::collectFrom)
+        }
+        runCurrent()
+        assertEquals(1, requests)
+        assertEquals(listOf(comic), returning.snapshot().items)
+
+        // 搜索框再次提交同关键词：必须强制换代重新请求。
+        vm.submitSearch("same query", emptyList())
+        runCurrent()
+        assertEquals(2, requests)
+    }
+
+    @Test
     fun searchOrderChangeUpdatesFilterAndClearsPendingComicId() = runTest(scheduler) {
         val vm = SearchViewModel(FakeComicRepository(), FakeSettings())
 
