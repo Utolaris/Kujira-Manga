@@ -50,10 +50,13 @@ internal fun JmCoverImage(
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
     isScrolling: Boolean = false,
-    imageLoader: ImageLoader = getKoin().get(),
+    imageLoader: ImageLoader? = null,
     resolver: CoverImageHostResolver = getKoin().get(),
 ) {
     val context = LocalContext.current
+    val loaderHolder: com.par9uet.jm.coil.CoverImageLoaderHolder = getKoin().get()
+    val holderLoader by loaderHolder.loader.collectAsState()
+    val activeImageLoader = imageLoader ?: holderLoader
     val scrollingState = rememberUpdatedState(isScrolling)
     val networkGeneration by resolver.networkGeneration.collectAsState()
     val candidateUrls = remember(comicId, remoteHost, networkGeneration) {
@@ -84,7 +87,7 @@ internal fun JmCoverImage(
     @Suppress("UNUSED_VARIABLE")
     val requestPainter = rememberAsyncImagePainter(
         model = request,
-        imageLoader = imageLoader,
+        imageLoader = activeImageLoader,
         contentScale = contentScale,
         onState = { state ->
             when (state) {

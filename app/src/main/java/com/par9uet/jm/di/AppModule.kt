@@ -96,7 +96,7 @@ val LOCAL_SETTING_MANAGER_ALIASES = arrayOf(
  * | retrofit/Retrofit.kt | injected DohManager | NO_COOKIES | promote/settings API |
  * | data/comic/EmbeddedComicDataSource.kt | dohManager | default | image fallback |
  * | reader/ReaderImagePipeline.kt | dohManager | default | reader pages |
- * | coil/Config.kt | dohManager | default | cover loader |
+ * | coil/Config.kt | dohManager | default | cover loader；专用 Dispatcher（全局 12 / 每 host 4） |
  * | update/AppUpdateDownloadManager.kt | dohManager | default | APK download |
  * | di/AppModule.kt GithubReleaseSource | DohManager | default | release metadata |
  * | di/AppModule.kt JmImageHostHealthManager baseHttpClient | DohManager | NO_COOKIES | CDN HEAD probe |

@@ -15,11 +15,12 @@ import com.par9uet.jm.repository.ComicRepository
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.fail
 import org.junit.Test
 
 class SearchComicPagingSourceTest {
     @Test
-    fun filtersMultipleExcludedTagsByDetail() = runBlocking {
+    fun excludedTagsAreOnlySentAsServerQueryNotPostFilteredLocally() = runBlocking {
         val repository = FakeComicRepository()
         val source = SearchComicPagingSource(
             comicRepository = repository,
@@ -38,8 +39,10 @@ class SearchComicPagingSourceTest {
         )
 
         val page = result as PagingSource.LoadResult.Page<Int, Comic>
+        // 排除项只拼进 query；返回列表原样展示，不再对每条拉详情做本地排除。
         assertEquals("artist -a -b", repository.lastSearchContent)
-        assertEquals(listOf(2), page.data.map { it.id })
+        assertEquals(0, repository.detailCallCount)
+        assertEquals(listOf(1, 2), page.data.map { it.id })
     }
 
     @Test
@@ -75,11 +78,8 @@ class SearchComicPagingSourceTest {
 
     private class FakeComicRepository : ComicRepository {
         var lastSearchContent: String? = null
+        var detailCallCount = 0
 
-        /**
-         * 仓库现在直接返回领域契约：搜索结果页带 `total`，
-         * 详情直接用 `tagList` 参与标签排除（不再经过 wire 的 tags/actors/works）。
-         */
         override suspend fun getComicList(
             page: Int,
             order: ComicSearchOrderFilter,
@@ -89,8 +89,8 @@ class SearchComicPagingSourceTest {
             return NetWorkResult.Success(
                 ComicSearchPage(
                     items = listOf(
-                        comic(id = 1, tags = listOf("category")),
-                        comic(id = 2, tags = listOf("category")),
+                        comic(id = 1),
+                        comic(id = 2),
                     ),
                     total = 2,
                     redirectComicId = null,
@@ -99,9 +99,9 @@ class SearchComicPagingSourceTest {
         }
 
         override suspend fun getComicDetail(id: Int): NetWorkResult<Comic> {
-            return NetWorkResult.Success(
-                comic(id = id, tags = if (id == 1) listOf("a") else listOf("c"))
-            )
+            detailCallCount++
+            fail("搜索排除不应再请求漫画详情 id=$id")
+            throw AssertionError("unreachable")
         }
 
         override suspend fun getComicIdsByTag(tagName: String, maxPages: Int): Set<Int> {
@@ -137,7 +137,7 @@ class SearchComicPagingSourceTest {
             commentId: Int?
         ): NetWorkResult<ActionResult> = unused()
 
-        private fun comic(id: Int, tags: List<String>): Comic = Comic(
+        private fun comic(id: Int): Comic = Comic(
             id = id,
             name = "comic $id",
             authorList = listOf("author"),
@@ -145,7 +145,7 @@ class SearchComicPagingSourceTest {
             readCount = 0,
             likeCount = 0,
             commentCount = 0,
-            tagList = tags,
+            tagList = listOf("category"),
             roleList = emptyList(),
             workList = emptyList(),
             price = 0,

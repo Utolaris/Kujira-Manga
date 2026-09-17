@@ -42,7 +42,7 @@ fun ComicCoverImage(
     modifier: Modifier = Modifier,
     showIdChip: Boolean = false,
     isScrolling: Boolean = false,
-    imageLoader: ImageLoader = getKoin().get(),
+    imageLoader: ImageLoader? = null,
     toastManager: ToastManager = getKoin().get(),
     onShowDetail: (() -> Unit)? = null,
 ) {

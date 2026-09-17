@@ -53,7 +53,7 @@ private fun GroupCoverImage(
     coverPath: String,
     title: String,
     modifier: Modifier = Modifier,
-    imageLoader: ImageLoader = getKoin().get()
+    imageLoader: ImageLoader = com.par9uet.jm.coil.currentCoverImageLoader()
 ) {
     if (coverPath.isNotBlank()) {
         AsyncImage(

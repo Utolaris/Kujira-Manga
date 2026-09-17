@@ -19,9 +19,17 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
 
@@ -40,6 +48,12 @@ fun <T : Any> PullRefreshAndLoadMoreGrid(
     itemContent: @Composable ((item: T) -> Unit),
 ) {
     val isRefreshing = lazyPagingItems.loadState.refresh is LoadState.Loading
+    var isGridScrolling by remember { mutableStateOf(false) }
+    LaunchedEffect(gridState) {
+        snapshotFlow { gridState.isScrollInProgress }
+            .distinctUntilChanged()
+            .collect { isGridScrolling = it }
+    }
     val gridContent: @Composable () -> Unit = {
         LazyVerticalGrid(
             // 不要 fillMaxSize：在 heightIn(max) 父级里会把列表强行撑到上限，
@@ -117,19 +131,21 @@ fun <T : Any> PullRefreshAndLoadMoreGrid(
             }
         }
     }
-    if (enablePullRefresh) {
-        PullToRefreshBox(
-            isRefreshing = isRefreshing,
-            onRefresh = {
-                lazyPagingItems.refresh()
-            },
-            modifier = modifier
-        ) {
-            gridContent()
-        }
-    } else {
-        Box(modifier = modifier) {
-            gridContent()
+    CompositionLocalProvider(LocalComicGridScrolling provides isGridScrolling) {
+        if (enablePullRefresh) {
+            PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh = {
+                    lazyPagingItems.refresh()
+                },
+                modifier = modifier
+            ) {
+                gridContent()
+            }
+        } else {
+            Box(modifier = modifier) {
+                gridContent()
+            }
         }
     }
 }

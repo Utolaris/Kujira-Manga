@@ -49,6 +49,7 @@ data class SettingsUiState(
     val gridColumns: GridColumnsSnapshot = GridColumnsSnapshot(),
     /** null = 尚未判定（首个非零窗口宽度决定默认值）。 */
     val tabletLayoutEnabled: Boolean? = null,
+    val coverDiskCacheMb: Int = 256,
 ) {
     /** Human-readable one-line summary of the current app lock state. */
     fun appLockSummaryText(): String {
@@ -140,7 +141,8 @@ class SettingsViewModel(
         readerState,
         miscState,
         cacheNotificationPreferences.cacheNotification,
-    ) { appearance, reader, misc, notification ->
+        localSettingManager.coverDiskCacheMb,
+    ) { appearance, reader, misc, notification, coverDiskCacheMb ->
         SettingsUiState(
             theme = appearance.theme,
             colorPalette = appearance.colorPalette,
@@ -167,6 +169,7 @@ class SettingsViewModel(
                 search = misc.misc.gridColumns.search,
             ),
             tabletLayoutEnabled = misc.misc.tabletLayoutEnabled,
+            coverDiskCacheMb = coverDiskCacheMb,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
@@ -211,6 +214,8 @@ class SettingsViewModel(
 
     fun setDecodeConcurrency(concurrency: Int) =
         localSettingManager.setDecodeConcurrency(concurrency)
+
+    fun setCoverDiskCacheMb(mb: Int) = localSettingManager.setCoverDiskCacheMb(mb)
 
     /** One notification-dialog intent maps to the derived show/showName pair. */
     fun applyNotificationSetting(show: Boolean, showName: Boolean) =

@@ -12,6 +12,7 @@ import com.par9uet.jm.launcher.LauncherIdentityApplier
 import com.par9uet.jm.utils.log
 import com.par9uet.jm.contentfilter.normalizeBlockedTagList
 import com.par9uet.jm.contentfilter.normalizeBlockedTagTemplates
+import com.par9uet.jm.coil.coerceCoverDiskCacheMb
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -65,6 +66,7 @@ class LocalSettingManager(
     override val colorPalette = _projectingState(::toColorPaletteState)
     override val editor: AppearanceEditor get() = this
     override val apiEndpoint = _projectingState { it.api }
+    val coverDiskCacheMb = _projectingState { it.coverDiskCacheMb }
 
     private fun <T> _projectingState(selector: (LocalSetting) -> T): MutableStateFlow<T> {
         val flow = MutableStateFlow(selector(_localSettingState.value))
@@ -152,6 +154,10 @@ class LocalSettingManager(
 
     fun setMemoryOptEnabled(enabled: Boolean) =
         updateSetting { it.copy(readMemoryOptEnabled = enabled) }
+
+    /** 封面磁盘缓存上限（MB）；Coil 在 ImageLoader 构建时固定，变更后由 Holder 重建。 */
+    fun setCoverDiskCacheMb(mb: Int) =
+        updateSetting { it.copy(coverDiskCacheMb = coerceCoverDiskCacheMb(mb)) }
 
     // ---- Content preferences (blocked tags / templates / home exclusions) ----
 

@@ -14,6 +14,7 @@ import com.par9uet.jm.data.models.LocalSetting
 import com.par9uet.jm.contentfilter.flattenBlockedTagTemplates
 import com.par9uet.jm.contentfilter.normalizeBlockedTagList
 import com.par9uet.jm.contentfilter.normalizeBlockedTagTemplates
+import com.par9uet.jm.coil.coerceCoverDiskCacheMb
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 
@@ -138,6 +139,7 @@ internal fun normalizePersisted(savedJson: String, saved: LocalSetting): LocalSe
             dohCustomServerUrl = saved.dohCustomServerUrl,
             dohUseDeviceCertificates = saved.dohUseDeviceCertificates,
             dohPreferIpv6 = saved.dohPreferIpv6,
+            coverDiskCacheMb = coerceCoverDiskCacheMb(saved.coverDiskCacheMb),
         )
 }
 private fun nullableString(json: String, field: String, value: String?): String? =

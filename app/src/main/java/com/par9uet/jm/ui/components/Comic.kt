@@ -35,6 +35,9 @@ fun Comic(
 ) {
     val mainNavController = LocalMainNavController.current
     val detailOpener = LocalComicDetailOpener.current
+    // 宿主显式传入或 CompositionLocal 均可；任一为真即延迟封面上屏。
+    val localGridScrolling = LocalComicGridScrolling.current
+    val effectiveScrolling = isScrolling || localGridScrolling
 
     Card(
         modifier = modifier.combinedClickable(
@@ -69,7 +72,7 @@ fun Comic(
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Box {
-                ComicCoverImage(comic = comic, isScrolling = isScrolling)
+                ComicCoverImage(comic = comic, isScrolling = effectiveScrolling)
                 if (editing && selected) {
                     Checkbox(
                         checked = true,

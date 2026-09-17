@@ -62,7 +62,7 @@ interface ComicRepository {
 
     /**
      * 通过 JMComic 内置 API 按标签名搜索，返回该标签下的漫画 ID 集合。
-     * 用于标签排除：获取所有排除标签下的漫画 ID 并集，从搜索结果中过滤掉。
+     * 搜索排除已改为查询串 `-tag`，本方法不再参与搜索结果过滤。
      *
      * @param tagName 标签名（如 "催眠"）
      * @param maxPages 最多扫描的页数（每页约 20 条），默认 5 页

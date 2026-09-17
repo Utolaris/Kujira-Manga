@@ -96,6 +96,8 @@ data class LocalSetting(
     val readDecodeConcurrency: Int = 2,
     // 这些标签的漫画不出现在首页推荐中
     val homeExcludedTags: List<String> = listOf(),
+    // 封面磁盘缓存上限（MB）；候选 128/256/512/1024，构建 ImageLoader 时生效
+    val coverDiskCacheMb: Int = 256,
 )
 
 const val COLOR_PALETTE_PRESET_DEFAULT = "default"

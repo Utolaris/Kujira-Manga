@@ -11,7 +11,7 @@ fun interface DownloadCoverImages {
 
 class CoilDownloadCoverImages(
     private val context: Context,
-    private val imageLoader: ImageLoader,
+    private val imageLoaderProvider: () -> ImageLoader,
 ) : DownloadCoverImages {
     override suspend fun load(url: String, cacheKey: String): ImageResult {
         val request = ImageRequest.Builder(context)
@@ -20,6 +20,6 @@ class CoilDownloadCoverImages(
             .diskCacheKey(cacheKey)
             .allowHardware(false)
             .build()
-        return imageLoader.execute(request)
+        return imageLoaderProvider().execute(request)
     }
 }

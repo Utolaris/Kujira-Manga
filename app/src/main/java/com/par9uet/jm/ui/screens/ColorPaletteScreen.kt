@@ -50,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
@@ -90,7 +91,7 @@ fun ColorPaletteScreen(
     var editingSlot by remember { mutableStateOf<ColorSlot?>(null) }
 
     val currentPreset = colorPresets.firstOrNull { it.id == colorPalette.presetId }
-    // 当前生效的四色：莫奈取色时从动态色获取，其余从预设/自定义获取
+    // 当前生效的四色：自动取色时从动态色获取，其余从预设/自定义获取
     val effectiveColors = remember(colorPalette) {
         if (colorPalette.presetId == COLOR_PALETTE_PRESET_MONET &&
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
@@ -100,10 +101,10 @@ fun ColorPaletteScreen(
         } else {
             val presetColors = currentPreset?.colors ?: colorPresets[0].colors
             listOf(
-                colorPalette.customPrimary?.toColorOrNull() ?: Color(presetColors[0]),
-                colorPalette.customSecondary?.toColorOrNull() ?: Color(presetColors[1]),
-                colorPalette.customTertiary?.toColorOrNull() ?: Color(presetColors[2]),
-                colorPalette.customError?.toColorOrNull() ?: Color(presetColors[3]),
+                colorPalette.customPrimary?.toColorOrNull() ?: Color(presetColors[0].toInt()),
+                colorPalette.customSecondary?.toColorOrNull() ?: Color(presetColors[1].toInt()),
+                colorPalette.customTertiary?.toColorOrNull() ?: Color(presetColors[2].toInt()),
+                colorPalette.customError?.toColorOrNull() ?: Color(presetColors[3].toInt()),
             )
         }
     }
@@ -256,17 +257,19 @@ private fun PresetGrid(
 ) {
     val context = LocalContext.current
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        // 莫奈取色（仅 Android 12+）
+        // 自动取色（仅 Android 12+）
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val dynamicScheme = remember { dynamicLightColorScheme(context) }
+            // 存 ARGB long（与 colorPresets 一致）；ColorPreset 展示侧用 Color(Int) 还原。
+            // 不能用 primary.value.toLong()：那是 Compose packed ColorLong，再 Color(Long) 会偏色/近乎透明。
             val monetPreset = ColorPreset(
                 id = COLOR_PALETTE_PRESET_MONET,
-                name = "莫奈取色",
+                name = "自动取色",
                 colors = listOf(
-                    dynamicScheme.primary.value.toLong(),
-                    dynamicScheme.secondary.value.toLong(),
-                    dynamicScheme.tertiary.value.toLong(),
-                    dynamicScheme.error.value.toLong(),
+                    dynamicScheme.primary.toArgb().toLong() and 0xFFFFFFFFL,
+                    dynamicScheme.secondary.toArgb().toLong() and 0xFFFFFFFFL,
+                    dynamicScheme.tertiary.toArgb().toLong() and 0xFFFFFFFFL,
+                    dynamicScheme.error.toArgb().toLong() and 0xFFFFFFFFL,
                 )
             )
             PresetItem(
@@ -354,7 +357,8 @@ private fun PresetItem(
                         modifier = Modifier
                             .size(28.dp)
                             .clip(CircleShape)
-                            .background(Color(c))
+                            // colors 是 ARGB long（0xAARRGGBB），必须走 Color(Int) 而不是 Color(Long)
+                            .background(Color(c.toInt()))
                     )
                 }
             }

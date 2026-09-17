@@ -68,7 +68,7 @@ import org.koin.compose.getKoin
 fun ExtractCodeScreen(
     viewModel: ExtractCodeViewModel = koinViewModel(),
     toastManager: ToastManager = getKoin().get(),
-    imageLoader: ImageLoader = getKoin().get(),
+    imageLoader: ImageLoader = com.par9uet.jm.coil.currentCoverImageLoader(),
 ) {
     val mainNavController = LocalMainNavController.current
     val clipboard = LocalClipboard.current

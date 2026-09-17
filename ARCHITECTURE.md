@@ -5,15 +5,16 @@
 
 > 本文描述的是**当前代码的真实状态**，不是目标状态。文中出现的每个类名、路径和数字都应能在
 > `app/src/main/java/com/par9uet/jm` 下找到；与代码不符的措辞视为文档缺陷，应直接修正。
-> 最近一次核对：v1.4.6（`VERSION_CODE=146`），主源码 **362** 个 Kotlin 文件 / **45,139** 行
-> （`find app/src/main/java -name '*.kt' | wc -l` + `wc -l` 口径；`scripts/check-coupling.py` 同日合计约 45,176 行，差在脚本对空行/注释的计入方式）。
+> 最近一次核对：v1.4.7（`VERSION_CODE=147`），主源码 **364** 个 Kotlin 文件 / **45,507** 行
+> （`find app/src/main/java -name '*.kt' | wc -l` + `wc -l` 口径；`scripts/check-coupling.py` 同日合计约 45,544 行，差在脚本对空行/注释的计入方式）。
 > 本轮迁移（store 清空 + 依赖环消除）后的全量核对：2026-09-12；
 > 工具链与 hygiene 对齐后的再次核对：2026-09-12（Java 21 / OpenJDK 21 构建，详见文末）；
 > 表现层解耦（`ui/components` 收窄 + 仓库返回领域类型 + `ui/screens` 领域直连下沉）后的核对：2026-09-13；
 > 安全写确认 / 备份 v4 / 组提交串行 / DoH 客户端清单 / 历史会话绑定落地后的核对：2026-09-13（v1.4.3）；
 > 平板模式（CompositionLocal + 悬浮导航 + GlassModal 3/4）落地后的核对：2026-09-15；
 > 玻璃弹窗全量对齐 + 列表 Paging 共享约定（内层 `cachedIn` + 外层 `stateIn(Eagerly)`）+ 死路由
-> `userCollectComic` 移除后的再次核对：v1.4.6。
+> `userCollectComic` 移除后的再次核对：v1.4.6；
+> 搜索排除改为纯服务端 `-tag`、封面滚动延迟上屏/专用并发、设置隐私分区落地后的核对：v1.4.7。
 >
 > 模块耦合表可用 `python3 scripts/check-coupling.py` 复现（细分口径，见该脚本头部说明）；
 > 该口径与下方「耦合热点」表的粗口径不同，两者不可直接对比。
@@ -222,8 +223,17 @@ data/ repository/ retrofit/  历史命名保留；本轮列出的历史依赖环
   把整条链挂在 VM 生命周期上——结果页进详情后 UI 取消收集，返回仍复用缓存。
   搜索另用 `SearchComicFilter.revision` 做 UI `key`：`enterSearchResult` 同查询不换代，
   `submitSearch`（搜索框提交）强制 bump，同关键词也重新请求。
+  搜索排除标签只拼进查询串 `-tag` 交给服务端过滤，`SearchComicPagingSource` 请求返回后
+  不再对条目做本地二次排除（旧实现逐条拉详情是搜索延迟主因）。
   收藏文件夹切换、历史会话变化各自 bump 对应 filter/session 并同步
   `resetGeneration` 视口代际，防止陈旧滚动位置落到新列表。
+- **封面加载约定**（`ui/components/JmCoverImage` + `coil/`，2026-09 对齐）：
+  统一 `memoryCacheKey/diskCacheKey = jm-cover-{id}`；CDN 串行回退（`CoverImageHostResolver`）。
+  滚动中网络/磁盘结果延迟上屏：`PullRefreshAndLoadMoreGrid` 经 `LocalComicGridScrolling`
+  写入，首页另可显式传 `isScrolling`；memory 命中仍立即上屏。
+  封面专用 OkHttp：`Dispatcher` 全局 12 / 每 host 4，与下载、阅读连接池隔离。
+  磁盘缓存上限由设置 `coverDiskCacheMb`（默认 256MB）决定；`CoverImageLoaderHolder`
+  在变更后重建 `ImageLoader` 并 shutdown 旧实例，注入方一律经 Holder 取当前实例。
 - 更新入口拆为 `AboutScreen` 和 `CheckUpdateScreen`；`AppUpdateViewModel` 管理检查、弹窗、下载和安装决策，
   `update` 提供版本解析（`GithubReleaseSource`）、发布模型（`AppRelease`）、系统安装适配器（`ApkInstaller`）
   与 APK 下载协调（`AppUpdateDownloadManager`）。

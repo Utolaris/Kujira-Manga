@@ -45,7 +45,7 @@ fun AppTheme(
         "dark" -> true
         else -> false
     }
-    // 仅当用户选择"莫奈取色"预设时才使用动态色；其余预设始终应用调色板覆盖
+    // 仅当用户选择"自动取色"预设时才使用动态色；其余预设始终应用调色板覆盖
     val supportDynamic = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val useDynamic = colorPalette.presetId == COLOR_PALETTE_PRESET_MONET && supportDynamic
     val baseScheme = when {

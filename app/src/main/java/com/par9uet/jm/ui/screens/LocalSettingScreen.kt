@@ -3,8 +3,13 @@ package com.par9uet.jm.ui.screens
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -104,6 +109,7 @@ private sealed class SettingType {
     object NotificationManagement : SettingType()
     object AllGridColumns : SettingType()
     object ReadDecodeConcurrency : SettingType()
+    object CoverDiskCache : SettingType()
 }
 
 private const val NOTIFICATION_ON_WITH_NAME = "on_with_name"
@@ -175,6 +181,11 @@ fun LocalSettingScreen(
             ) {
                 Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("缓存路径", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        "自定义缓存路径在部分手机上可能导致你的漫画被系统识别为照片，从而出现在相册中",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                    )
                     Text("选择新位置后会迁移已有漫画缓存。迁移完成前继续使用原路径，可切换到后台并通过通知查看进度。")
                     if (cachePath.active) {
                         LinearProgressIndicator(progress = { cachePath.progress / 100f }, modifier = Modifier.fillMaxWidth())
@@ -222,7 +233,7 @@ fun LocalSettingScreen(
                         title = "\u8c03\u8272\u677f",
                         value = when (ui.colorPalette.presetId) {
                             "custom" -> "\u81ea\u5b9a\u4e49"
-                            "monet" -> "\u83ab\u5948\u53d6\u8272"
+                            "monet" -> "\u81ea\u52a8\u53d6\u8272"
                             else -> "\u9884\u8bbe\u65b9\u6848"
                         }
                     ) {
@@ -231,12 +242,6 @@ fun LocalSettingScreen(
                     SettingsRow(Icons.Rounded.Image, "\u56fe\u6807\u4f2a\u88c5", LauncherDisguise.fromId(ui.launcherDisguiseId).label) {
                         openSetting(SettingType.LauncherDisguise)
                     }
-                    SettingsSwitchRow(
-                        icon = Icons.Rounded.ContentPaste,
-                        title = "\u526a\u5207\u677f\u81ea\u52a8\u68c0\u6d4b",
-                        value = ui.clipboardAutoDetectEnabled,
-                        onCheckedChange = settingsViewModel::setClipboardAutoDetectEnabled
-                    )
                     SettingsSwitchRow(
                         icon = Icons.Rounded.TabletMac,
                         title = "\u5e73\u677f\u6a21\u5f0f",
@@ -260,6 +265,20 @@ fun LocalSettingScreen(
                         value = appLockStatusText
                     ) {
                         mainNavController.navigate("appLockSetting")
+                    }
+                    SettingsSwitchRow(
+                        icon = Icons.Rounded.ContentPaste,
+                        title = "\u526a\u5207\u677f\u81ea\u52a8\u68c0\u6d4b",
+                        value = ui.clipboardAutoDetectEnabled,
+                        onCheckedChange = settingsViewModel::setClipboardAutoDetectEnabled
+                    )
+                    SettingsRow(
+                        Icons.Rounded.Download,
+                        "\u7f13\u5b58\u8def\u5f84",
+                        if (cachePath.active) "\u6b63\u5728\u8fc1\u79fb · ${cachePath.progress}%"
+                        else if (cachePath.treeUri.isBlank()) "\u9ed8\u8ba4\u8def\u5f84" else "\u81ea\u5b9a\u4e49\u8def\u5f84"
+                    ) {
+                        showCachePathDialog = true
                     }
                 }
             }
@@ -298,13 +317,19 @@ fun LocalSettingScreen(
                         value = ui.recommendationEnabled,
                         onCheckedChange = { settingsViewModel.setPreferenceRecommendEnabled(it) }
                     )
-                    if (ui.recommendationEnabled) {
-                        Text(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                            text = "\u5f00\u542f\u540e\u9996\u9875\u9ed8\u8ba4\u5c55\u793a\u57fa\u4e8e\u767b\u5f55\u8d26\u53f7\u7684\u4e2a\u6027\u5316\u63a8\u8350\uff0c\u53ef\u80fd\u4e0d\u7a33\u5b9a",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    SettingsRow(
+                        Icons.Rounded.CloudSync,
+                        "\u5f3a\u5236\u5237\u65b0\u6536\u85cf\u5939",
+                        if (favoriteSyncState.isSyncing && favoriteSyncState.isForceRefresh) {
+                            "\u6b63\u5728\u91cd\u5efa${favoriteSyncState.phase.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""} " +
+                                "${favoriteSyncState.completed}/${favoriteSyncState.total}"
+                        } else {
+                            "\u91cd\u65b0\u83b7\u53d6\u6536\u85cf\u53ca\u5b8c\u6574\u5143\u6570\u636e"
+                        }
+                    ) {
+                        if (!favoriteSyncState.isSyncing) {
+                            settingsViewModel.requestFavoriteForceRefresh()
+                        }
                     }
                     SettingsRow(
                         icon = Icons.Rounded.Block,
@@ -362,27 +387,11 @@ fun LocalSettingScreen(
                         onCheckedChange = { settingsViewModel.setAutoSignInEnabled(it) }
                     )
                     SettingsRow(
-                        Icons.Rounded.CloudSync,
-                        "强制刷新收藏夹",
-                        if (favoriteSyncState.isSyncing && favoriteSyncState.isForceRefresh) {
-                            "正在重建${favoriteSyncState.phase.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""} " +
-                                "${favoriteSyncState.completed}/${favoriteSyncState.total}"
-                        } else {
-                            "重新获取收藏及完整元数据"
-                        }
+                        Icons.Rounded.Image,
+                        "封面磁盘缓存",
+                        "${ui.coverDiskCacheMb} MB"
                     ) {
-                        if (!favoriteSyncState.isSyncing) {
-                            // 通过窄的同步请求能力触发；Settings 不再依赖 FavoritesViewModel
-                            settingsViewModel.requestFavoriteForceRefresh()
-                        }
-                    }
-                    SettingsRow(
-                        Icons.Rounded.Download,
-                        "缓存路径",
-                        if (cachePath.active) "正在迁移 · ${cachePath.progress}%"
-                        else if (cachePath.treeUri.isBlank()) "默认路径" else "自定义路径"
-                    ) {
-                        showCachePathDialog = true
+                        openSetting(SettingType.CoverDiskCache)
                     }
                     SettingsRow(Icons.Rounded.BugReport, "\u67e5\u770b\u65e5\u5fd7", "\u8c03\u8bd5\u548c\u9519\u8bef\u4fe1\u606f") {
                         mainNavController.navigate("logViewer")
@@ -480,6 +489,18 @@ private fun SettingSelectDialogContent(
             )
         }
     }
+    val coverDiskCacheOptionList by remember {
+        derivedStateOf {
+            com.par9uet.jm.coil.COVER_DISK_CACHE_MB_OPTIONS.map { mb ->
+                val label = if (mb == com.par9uet.jm.coil.DEFAULT_COVER_DISK_CACHE_MB) {
+                    "$mb MB（推荐）"
+                } else {
+                    "$mb MB"
+                }
+                SelectOption(label, mb.toString())
+            }
+        }
+    }
     SelectDialog(
         visible = visible,
         title = settingTitle(settingType),
@@ -493,6 +514,7 @@ private fun SettingSelectDialogContent(
             is SettingType.ReadMode -> readModeOptionList
             is SettingType.NotificationManagement -> notificationOptionList
             is SettingType.ReadDecodeConcurrency -> readDecodeConcurrencyOptionList
+            is SettingType.CoverDiskCache -> coverDiskCacheOptionList
         },
         onSelect = {
             when (settingType) {
@@ -508,6 +530,7 @@ private fun SettingSelectDialogContent(
                     )
                 }
                 is SettingType.ReadDecodeConcurrency -> settingsViewModel.setDecodeConcurrency(it.toIntOrNull() ?: 2)
+                is SettingType.CoverDiskCache -> settingsViewModel.setCoverDiskCacheMb(it.toIntOrNull() ?: 256)
             }
             onDismiss()
         },
@@ -866,6 +889,7 @@ private fun settingTitle(type: SettingType): String {
         is SettingType.NotificationManagement -> "\u901a\u77e5\u7ba1\u7406"
         is SettingType.AllGridColumns -> "\u7f51\u683c\u5217\u6570"
         is SettingType.ReadDecodeConcurrency -> "\u5e76\u53d1\u89e3\u7801\u6570"
+        is SettingType.CoverDiskCache -> "\u5c01\u9762\u78c1\u76d8\u7f13\u5b58"
     }
 }
 
@@ -883,5 +907,6 @@ private fun settingValue(type: SettingType, ui: SettingsUiState): String {
         }
         is SettingType.AllGridColumns -> ""
         is SettingType.ReadDecodeConcurrency -> "${ui.decodeConcurrency}"
+        is SettingType.CoverDiskCache -> "${ui.coverDiskCacheMb} MB"
     }
 }

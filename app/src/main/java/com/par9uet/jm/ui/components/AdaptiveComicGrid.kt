@@ -1,8 +1,15 @@
 package com.par9uet.jm.ui.components
 
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+
+/**
+ * 分页/首页网格滚动中标志。由 [PullRefreshAndLoadMoreGrid] 等列表宿主写入，
+ * [Comic]/封面据此延迟网络结果上屏，避免 fling 时逐张替换 painter 掉帧。
+ */
+val LocalComicGridScrolling = compositionLocalOf { false }
 
 /**
  * @param columns 用户显式列数；0 = 自适应。

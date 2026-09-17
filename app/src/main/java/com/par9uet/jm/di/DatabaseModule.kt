@@ -59,7 +59,9 @@ val databaseModule = module {
     single { DownloadLibraryQueries(get()) }
     single { DownloadManager(get(), get(), get(), get(), get()) }
     single<DownloadContentStorage> { DownloadContentFiles(androidContext()) }
-    single<DownloadCoverImages> { CoilDownloadCoverImages(androidContext(), get()) }
+    single<DownloadCoverImages> {
+        CoilDownloadCoverImages(androidContext()) { get<com.par9uet.jm.coil.CoverImageLoaderHolder>().current() }
+    }
     single<DownloadPageDecoder> {
         val pipeline = get<ReaderImagePipeline>()
         DownloadPageDecoder { image -> pipeline.loadForDownload(image.toReaderPage()).bitmap }

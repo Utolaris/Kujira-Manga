@@ -436,7 +436,7 @@ private fun ClipboardDetectedComicDialog(
     onDismiss: () -> Unit,
     onNavigate: (Int) -> Unit,
     remoteConfigPreferences: RemoteConfigPreferences = getKoin().get(),
-    imageLoader: ImageLoader = getKoin().get(),
+    imageLoader: ImageLoader = com.par9uet.jm.coil.currentCoverImageLoader(),
 ) {
     val remoteHost by remoteConfigPreferences.remoteImageHost.collectAsState()
     GlassModal(

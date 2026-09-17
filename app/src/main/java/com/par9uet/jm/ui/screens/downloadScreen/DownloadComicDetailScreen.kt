@@ -74,7 +74,7 @@ import java.util.Locale
 fun DownloadComicDetailScreen(
     id: Int,
     viewModel: DownloadComicDetailViewModel = koinViewModel(),
-    imageLoader: ImageLoader = getKoin().get(),
+    imageLoader: ImageLoader = com.par9uet.jm.coil.currentCoverImageLoader(),
     exportViewModel: DownloadExportViewModel = koinViewModel(),
 ) {
     val mainNavController = LocalMainNavController.current
