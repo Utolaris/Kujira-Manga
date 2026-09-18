@@ -136,6 +136,9 @@ dependencies {
     implementation(libs.androidx.navigation.runtime.ktx)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.okhttp)
+    // 上游 jmcomic-core 把 okhttp-urlconnection 钉在 4.12.0，而它引用的 okhttp3.internal.Util
+    // 在 OkHttp 5 已被删除。显式依赖把它拉齐到同一版本，避免 4/5 混装的 SDK 运行时崩溃。
+    implementation(libs.okhttp.urlconnection)
     implementation(libs.gson)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.coil.compose)
@@ -160,7 +163,7 @@ dependencies {
     implementation(libs.jmcomic.android.support)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
-    testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(libs.okhttp.mockwebserver3)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

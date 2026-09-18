@@ -13,9 +13,9 @@ import com.par9uet.jm.storage.DohPreferencesEditor
 import com.par9uet.jm.storage.DohSettingsState
 
 import kotlinx.coroutines.flow.MutableStateFlow
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
 import okhttp3.Request
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.*
 import org.junit.Test
 import retrofit2.converter.scalars.ScalarsConverterFactory
@@ -43,13 +43,18 @@ class RetrofitCookieIsolationTest {
                 DohManager(prefs, editor))
             for ((index, path) in listOf("/promote", "/setting", "/promote").withIndex()) {
                 if (index == 2) { retrofit.clearCookie(); endpoint.apiEndpoint.value = "http://127.0.0.1" }
-                server.enqueue(MockResponse().setBody("public data").addHeader("Set-Cookie", "AVS=foreign; Path=/"))
+                server.enqueue(
+                    MockResponse.Builder()
+                        .body("public data")
+                        .addHeader("Set-Cookie", "AVS=foreign; Path=/")
+                        .build(),
+                )
                 retrofit.okHttpClient.newCall(Request.Builder().url(server.url(path)).build()).execute().use {
-                    assertEquals("public data", it.body!!.string())
+                    assertEquals("public data", it.body.string())
                 }
                 val request = server.takeRequest()
-                assertNull(request.getHeader("Cookie"))
-                assertNotNull(request.getHeader("token"))
+                assertNull(request.headers["Cookie"])
+                assertNotNull(request.headers["token"])
             }
         }
     }

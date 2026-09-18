@@ -14,10 +14,10 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
 import okhttp3.Call
 import okhttp3.OkHttpClient
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
@@ -34,19 +34,20 @@ class ReaderRemoteFetcherTest {
 
     @After
     fun tearDown() {
-        servers.forEach { server -> runCatching { server.shutdown() } }
+        servers.forEach { server -> runCatching { server.close() } }
     }
 
     @Test
     fun fastHeadersAndSlowBodyDoNotStartSecondary() = runBlocking {
         val primary = server(
-            MockResponse()
-                .setResponseCode(200)
-                .setHeadersDelay(20L, TimeUnit.MILLISECONDS)
-                .setBodyDelay(500L, TimeUnit.MILLISECONDS)
-                .setBody("PRIMARY"),
+            MockResponse.Builder()
+                .code(200)
+                .headersDelay(20L, TimeUnit.MILLISECONDS)
+                .bodyDelay(500L, TimeUnit.MILLISECONDS)
+                .body("PRIMARY")
+                .build(),
         )
-        val secondary = server(MockResponse().setResponseCode(200).setBody("SECONDARY"))
+        val secondary = server(MockResponse.Builder().code(200).body("SECONDARY").build())
         val filesCreated = AtomicInteger()
         val secondaryStarted = AtomicInteger()
         val fetcher = fetcher(
@@ -78,12 +79,13 @@ class ReaderRemoteFetcherTest {
     @Test
     fun queuedSecondaryIsNotCountedUntilItsHttpCallIsEnqueued() = runBlocking {
         val primary = server(
-            MockResponse()
-                .setResponseCode(200)
-                .setHeadersDelay(150L, TimeUnit.MILLISECONDS)
-                .setBody("PRIMARY"),
+            MockResponse.Builder()
+                .code(200)
+                .headersDelay(150L, TimeUnit.MILLISECONDS)
+                .body("PRIMARY")
+                .build(),
         )
-        val secondary = server(MockResponse().setResponseCode(200).setBody("SECONDARY"))
+        val secondary = server(MockResponse.Builder().code(200).body("SECONDARY").build())
         val scheduler = ReaderNetworkScheduler(totalConcurrency = 1, initialBackgroundConcurrency = 1)
         val secondaryStarted = AtomicInteger()
         val fetcher = fetcher(
@@ -115,12 +117,13 @@ class ReaderRemoteFetcherTest {
     @Test
     fun slowPrimaryHeadersStartSecondaryAndCancelPrimaryCall() = runBlocking {
         val primary = server(
-            MockResponse()
-                .setResponseCode(200)
-                .setHeadersDelay(600L, TimeUnit.MILLISECONDS)
-                .setBody("PRIMARY"),
+            MockResponse.Builder()
+                .code(200)
+                .headersDelay(600L, TimeUnit.MILLISECONDS)
+                .body("PRIMARY")
+                .build(),
         )
-        val secondary = server(MockResponse().setResponseCode(200).setBody("SECONDARY"))
+        val secondary = server(MockResponse.Builder().code(200).body("SECONDARY").build())
         val calls = ConcurrentHashMap<String, Call>()
         val secondaryStarted = AtomicInteger()
         val fetcher = fetcher(
@@ -158,8 +161,8 @@ class ReaderRemoteFetcherTest {
 
     @Test
     fun immediateHttpFailureFallsBackWithoutWaitingForHedgeDelay() = runBlocking {
-        val primary = server(MockResponse().setResponseCode(500))
-        val secondary = server(MockResponse().setResponseCode(200).setBody("SECONDARY"))
+        val primary = server(MockResponse.Builder().code(500).build())
+        val secondary = server(MockResponse.Builder().code(200).body("SECONDARY").build())
         val fetcher = fetcher()
         val startedAt = System.nanoTime()
 
@@ -183,12 +186,13 @@ class ReaderRemoteFetcherTest {
     @Test
     fun hedgeCreatesOnlyWinnerFileAndCancelsLoser() = runBlocking {
         val primary = server(
-            MockResponse()
-                .setResponseCode(200)
-                .setHeadersDelay(500L, TimeUnit.MILLISECONDS)
-                .setBody("PRIMARY"),
+            MockResponse.Builder()
+                .code(200)
+                .headersDelay(500L, TimeUnit.MILLISECONDS)
+                .body("PRIMARY")
+                .build(),
         )
-        val secondary = server(MockResponse().setResponseCode(200).setBody("SECONDARY"))
+        val secondary = server(MockResponse.Builder().code(200).body("SECONDARY").build())
         val calls = ConcurrentHashMap<String, Call>()
         val filesCreated = AtomicInteger()
         val loserCanceled = AtomicInteger()
@@ -226,18 +230,20 @@ class ReaderRemoteFetcherTest {
     @Test
     fun backgroundPreemptionReleasesSlotForVisibleHedge() = runBlocking {
         val background = server(
-            MockResponse()
-                .setResponseCode(200)
-                .setBody("x".repeat(256 * 1024))
-                .throttleBody(1_024L, 100L, TimeUnit.MILLISECONDS),
+            MockResponse.Builder()
+                .code(200)
+                .body("x".repeat(256 * 1024))
+                .throttleBody(1_024L, 100L, TimeUnit.MILLISECONDS)
+                .build(),
         )
         val primary = server(
-            MockResponse()
-                .setResponseCode(200)
-                .setHeadersDelay(600L, TimeUnit.MILLISECONDS)
-                .setBody("PRIMARY"),
+            MockResponse.Builder()
+                .code(200)
+                .headersDelay(600L, TimeUnit.MILLISECONDS)
+                .body("PRIMARY")
+                .build(),
         )
-        val secondary = server(MockResponse().setResponseCode(200).setBody("SECONDARY"))
+        val secondary = server(MockResponse.Builder().code(200).body("SECONDARY").build())
         val scheduler = ReaderNetworkScheduler(totalConcurrency = 2, initialBackgroundConcurrency = 1)
         val hasVisible = AtomicBoolean(false)
         val calls = ConcurrentHashMap<String, Call>()
@@ -297,11 +303,12 @@ class ReaderRemoteFetcherTest {
     @Test
     fun sourceRegistryDeduplicatesPrefetchVisibleAndDownloadConsumers() = runBlocking {
         val server = server(
-            MockResponse()
-                .setResponseCode(200)
-                .setHeadersDelay(40L, TimeUnit.MILLISECONDS)
-                .setBodyDelay(200L, TimeUnit.MILLISECONDS)
-                .setBody("SOURCE"),
+            MockResponse.Builder()
+                .code(200)
+                .headersDelay(40L, TimeUnit.MILLISECONDS)
+                .bodyDelay(200L, TimeUnit.MILLISECONDS)
+                .body("SOURCE")
+                .build(),
         )
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val tracker = ReaderVisibleRequestTracker()
