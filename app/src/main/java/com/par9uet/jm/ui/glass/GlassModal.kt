@@ -11,7 +11,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -103,7 +103,8 @@ fun GlassModal(
             onDismissRequest()
         }
     }
-    BoxWithConstraints(
+    // 宽度来自 windowWidthPx / 固定 dp，不读 Box 约束；用 Box 避免无用 subcomposition。
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .then(

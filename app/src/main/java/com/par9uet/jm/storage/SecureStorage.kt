@@ -89,6 +89,8 @@ class SecureStorage(
 
     fun getStartupString(key: String): StorageReadResult<String> = readEncrypted(startupPreferences, key)
 
+    // Keystore-backed prefs must use Editor.commit() so a failed disk write is observable.
+    @android.annotation.SuppressLint("ApplySharedPref", "UseKtx")
     private fun writeEncrypted(preferences: SharedPreferences, key: String, json: String): StorageWriteResult {
         // Encrypt before opening the editor. Failure preserves the last durable value and does
         // not invalidate the current in-memory identity during a temporary Keystore outage.

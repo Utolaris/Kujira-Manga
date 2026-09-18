@@ -476,6 +476,5 @@ class ComicReadViewModel(
 
     override fun onCleared() {
         resetReaderRequests()
-        super.onCleared()
     }
 }
