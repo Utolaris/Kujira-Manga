@@ -1,3 +1,45 @@
+# v1.4.8
+
+发布日期：2026-09-19
+
+## 网络与会话
+
+- **冷启动会话探活**：`verifyStoredLogin` 先打 `GET /favorite?page=1`，仅 Authentication 类失败才用凭据走会话恢复，避免夜间误判 401。
+- 单请求 `retryTimes` 5 → 1：最坏耗时从约 120s 降到约 40s（覆盖 SDK 默认值）。
+- 会话恢复失败冷却改为指数退避（5→10→20→40→80→封顶 120s，成功清零）。
+- 域名冷启动只竞速一次后固定；连续 6 次 5xx/IOException 才重新竞速。
+- User-Agent 改为设备真实 WebView UA，替换 SDK 硬编码的 Android 9 / Chrome 91。
+- JM API 的 GET 请求补 `lang=TW`，对齐官方行为。
+- 收藏等同步失败不再立即连环重试，pending 交给下一个 30s 窗口。
+- 401 / FormBody 异常日志补充 host、cookie 名与调用栈，便于定位。
+
+## 搜索与标签
+
+- 排序项 `MOST_COLLECT_COUNT` 对齐官方为 `MOST_VIEWED`，文案「最多收藏」→「最多点击」。
+- 删除冗余的「首页标签排除」；排除模板已全局覆盖，存量 LocalSetting JSON 无需迁移。
+
+## 体验
+
+- 触感反馈（VIBRATE + AppHaptics）、预测式返回。
+- 玻璃组件、设置页与更新检查页细节调整。
+
+## 依赖
+
+- Kotlin 2.4.20，OkHttp 5.5.0（含 `okhttp-urlconnection` / `mockwebserver3` 对齐，避免 4/5 混装崩溃）。
+- Compose BOM 2026.09.00、Navigation 2.10.1、Coroutines 1.11.0、Paging 3.5.1。
+
+## 工程与发布
+
+- **编译加速**（不改业务逻辑）：Gradle 配置缓存 / build cache / parallel，堆内存与 KSP Room 增量参数；debug 增量与 release 无变更构建明显变快，R8 冷编译在缓存命中时可复用。
+- **发布分支模型**：日常开发在 `canary`；发版时将 `canary` 同步到 `dev` 并推送。`dev` 独有 GitHub Actions CI（官方 Actions **v6**）在推送后构建签名 Release APK，产出挂到 GitHub Release。
+- 更新日志与 Release 说明由维护流程在发版时写入 `CHANGELOG.md`，再发布 CI 构建的 APK。
+
+## 安装包
+
+- Release 包名：`kujira.manga`
+- 版本号：`1.4.8`（versionCode `148`）
+
+
 # v1.4.7
 
 发布日期：2026-09-17

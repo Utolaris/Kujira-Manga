@@ -7,44 +7,52 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
-val versionProps = Properties().apply {
-    val file = rootProject.file("version.properties")
-    if (file.exists()) {
-        load(file.inputStream())
+// Providers API so configuration cache tracks version.properties as an input
+// instead of a silent raw file read at configuration time.
+val versionPropsProvider = providers
+    .fileContents(rootProject.layout.projectDirectory.file("version.properties"))
+    .asText
+    .map { text ->
+        Properties().apply { load(text.byteInputStream()) }
     }
-}
 
-val versionCodeProp = versionProps.getProperty("VERSION_CODE", "1").toIntOrNull()
-val versionNameProp: String = versionProps.getProperty("VERSION_NAME", "1.1.0")
+val versionCodeProp = versionPropsProvider
+    .map { it.getProperty("VERSION_CODE", "1").toIntOrNull() ?: 1 }
+    .orElse(1)
+val versionNameProp = versionPropsProvider
+    .map { it.getProperty("VERSION_NAME", "1.1.0") }
+    .orElse("1.1.0")
 // Signing secrets live in the macOS keychain. Retrieve them with
 // `eval "$(./scripts/android signing-env)"` before running assembleRelease.
 val releaseStorePassword = providers.environmentVariable("KUJIRA_MANGA_RELEASE_STORE_PASSWORD").orNull
 val releaseKeyPassword = providers.environmentVariable("KUJIRA_MANGA_RELEASE_KEY_PASSWORD").orNull
 
-fun getGitHash() = providers
+// Lazy provider — do not .get()/getOrElse() at configuration time, or every
+// commit invalidates the configuration cache for debug builds too.
+fun gitHashProvider() = providers
     .exec {
         commandLine("git", "rev-parse", "--short", "HEAD")
         isIgnoreExitValue = true
     }
     .standardOutput
     .asText
-    .map {
-        it.trim().ifBlank { "unknown" }
-    }
-    .getOrElse("unknown")
+    .map { it.trim().ifBlank { "unknown" } }
 
 
 androidComponents {
     onVariants { variant ->
-        val hash = getGitHash()
-        val fileName = if (variant.buildType == "debug") {
-            "kujira-manga_v${versionNameProp}_debug.apk"
-        } else {
-            "kujira-manga_v${versionNameProp}_${hash}.apk"
-        }
+        val versionName = versionNameProp.get()
         variant.outputs.forEach { output ->
             if (output is com.android.build.api.variant.impl.VariantOutputImpl) {
-                output.outputFileName.set(fileName)
+                if (variant.buildType == "debug") {
+                    output.outputFileName.set("kujira-manga_v${versionName}_debug.apk")
+                } else {
+                    output.outputFileName.set(
+                        gitHashProvider().map { hash ->
+                            "kujira-manga_v${versionName}_${hash}.apk"
+                        }
+                    )
+                }
             }
         }
     }
@@ -74,8 +82,8 @@ android {
         applicationId = "kujira.manga"
         minSdk = 30
         targetSdk = 37
-        versionCode = versionCodeProp
-        versionName = versionNameProp
+        versionCode = versionCodeProp.get()
+        versionName = versionNameProp.get()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -107,9 +115,18 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        aidl = false
+        renderScript = false
+        shaders = false
     }
     lint {
         lintConfig = file("lint.xml")
+        // lintVital on assembleRelease was a large fixed cost; run lint on demand
+        // via ./gradlew lint / Android Studio instead of every release package.
+        checkReleaseBuilds = false
+        abortOnError = false
+        htmlReport = false
+        xmlReport = false
     }
     packaging {
         resources {
@@ -119,6 +136,12 @@ android {
 }
 
 composeCompiler {}
+
+ksp {
+    // Room: keep KSP incremental; emit Kotlin to avoid Java stub/descriptor detours.
+    arg("room.incremental", "true")
+    arg("room.generateKotlin", "true")
+}
 
 dependencies {
     coreLibraryDesugaring(libs.desugar.jdk.libs)

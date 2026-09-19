@@ -55,9 +55,15 @@ eval "$(./scripts/android signing-env)"
 ./scripts/android apk-sign app/build/outputs/apk/release/*.apk
 ```
 
-期望：包名 `kujira.manga`、`versionName 1.4.4`、证书主体 `CN=JMcomic Plus`、v2 方案通过。
+期望：包名 `kujira.manga`、`versionName` 与 `version.properties` 一致、证书主体 `CN=Kujira-Manga, OU=Release, O=Utolaris`、v2 方案通过。
 若 `apk-sign` 报「未签名」或证书是 debug 证书，说明环境变量没注入成功，
 Gradle 会静默产出未签名 APK —— 别急着上传。
+
+## GitHub Actions（dev 分支 CI）
+
+发版构建默认由 CI 完成：密钥库以 base64 放在仓库 Secret `RELEASE_KEYSTORE_BASE64`，
+密码在 `KUJIRA_MANGA_RELEASE_STORE_PASSWORD` / `KUJIRA_MANGA_RELEASE_KEY_PASSWORD`。
+上传方式与发版步骤见 [release-flow.md](./release-flow.md)。本地打 Release 包仍用上文流程。
 
 确认签名身份没被意外换掉：
 

@@ -7,10 +7,11 @@
 > 系统会将其视为**全新应用**，旧版本的设置、收藏与下载数据都不会自动迁移。
 
 - 系统要求：Android 11（API 30）及以上
-- 当前版本：`1.4.4`（versionCode `144`）
+- 当前版本：`1.4.8`（versionCode `148`）
 - 安装包名：release `kujira.manga`，debug `kujira.manga.debug`（与旧包名签名不同，系统会视为新应用，数据不会自动迁移）
 - 调试入口：`./scripts/android`（设备、安装、logcat、插桩测试等，见 [docs/android-cli.md](docs/android-cli.md)）
 - 发布签名：密钥库 `release-key/Kujira-Manga-Key.p12`，密码存于钥匙串条目 `Kujira-Manga-Key`（见 [docs/release-signing.md](docs/release-signing.md)）
+- 分支与发版：日常开发 `canary`，发版同步到 `dev` 由 CI 出包（见 [docs/release-flow.md](docs/release-flow.md)）
 
 ---
 
@@ -57,11 +58,12 @@
 - [四层架构约束](ARCHITECTURE.md)
 - [Android 调试 CLI](docs/android-cli.md)（默认调试入口）
 - [真机插桩测试](docs/instrumented-tests.md)
+- [分支与发版 / dev CI](docs/release-flow.md)
 
 ### 环境
 
 - 语言级别 Java 21（构建请用 Eclipse Temurin 21：`brew install --cask temurin@21`；不要用 GraalVM 当 Gradle daemon）
-- Gradle Wrapper 9.7.1 / AGP 9.4.0 / Kotlin 2.3.20
+- Gradle Wrapper 9.7.1 / AGP 9.4.0 / Kotlin 2.4.20
 
 ### 装到手机
 
