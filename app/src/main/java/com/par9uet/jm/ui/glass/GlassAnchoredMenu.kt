@@ -1,6 +1,6 @@
 package com.par9uet.jm.ui.glass
 
-import androidx.activity.compose.BackHandler
+import com.par9uet.jm.ui.navigation.HierarchicalBackHandler
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateInt
@@ -149,7 +149,7 @@ internal fun GlassAnchoredMenu(
     ) { if (it) 0 else slidePx }
     if (!visibleTransition.isRunning && !visibleState.currentState) return
 
-    BackHandler(onBack = state::dismiss)
+    HierarchicalBackHandler(onBack = state::dismiss)
 
     var containerOriginInRoot by remember { mutableStateOf(Offset.Zero) }
     BoxWithConstraints(

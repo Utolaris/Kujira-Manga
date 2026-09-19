@@ -49,6 +49,12 @@ fun AppScreen(
             exitTransition = { NavigationMotion.hierarchicalExit() },
             popEnterTransition = { NavigationMotion.hierarchicalPopEnter() },
             popExitTransition = { NavigationMotion.hierarchicalPopExit() },
+            predictivePopEnterTransition = { swipeEdge ->
+                NavigationMotion.predictivePopEnter(swipeEdge)
+            },
+            predictivePopExitTransition = { swipeEdge ->
+                NavigationMotion.predictivePopExit(swipeEdge)
+            },
         ) {
             composable(
                 route = "tab/{tabName}?",

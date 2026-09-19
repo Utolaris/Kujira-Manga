@@ -14,7 +14,6 @@ import com.par9uet.jm.storage.AppearancePreferences
 import com.par9uet.jm.storage.CacheNotificationPreferences
 import com.par9uet.jm.storage.CacheNotificationSetting
 import com.par9uet.jm.storage.ColorPaletteState
-import com.par9uet.jm.storage.ContentPreferences
 import com.par9uet.jm.storage.DohPreferences
 import com.par9uet.jm.storage.DohSettingsState
 import com.par9uet.jm.storage.LocalSettingManager
@@ -36,7 +35,6 @@ data class SettingsUiState(
     val recommendationEnabled: Boolean = true,
     val clipboardAutoDetectEnabled: Boolean = false,
     val autoSignInEnabled: Boolean = true,
-    val homeExcludedTags: List<String> = emptyList(),
     val prefetchCount: Int = 3,
     val readMode: String = "scroll",
     val memoryOptEnabled: Boolean = false,
@@ -87,7 +85,6 @@ private data class ReaderSnapshot(
 
 private data class CombinedMiscSnapshot(
     val apiEndpoint: String,
-    val homeExcludedTags: List<String>,
     val appLock: com.par9uet.jm.storage.AppLockState,
     val doh: DohSettingsState,
     val misc: com.par9uet.jm.storage.MiscSettingsState,
@@ -98,7 +95,6 @@ private data class CombinedMiscSnapshot(
  * actions; catalog validation lives here, compound invariants live in LocalSettingManager.
  */
 class SettingsViewModel(
-    contentPreferences: ContentPreferences,
     recommendationPreferences: RecommendationPreferences,
     readerPreferences: ReaderPreferences,
     cacheNotificationPreferences: CacheNotificationPreferences,
@@ -130,11 +126,10 @@ class SettingsViewModel(
 
     private val miscState = combine(
         apiEndpointPreference.apiEndpoint,
-        contentPreferences.homeExcludedTags,
         securityPreferences.appLock,
         dohPreferences.doh,
         miscSettings.misc,
-    ) { api, excludedTags, appLock, doh, misc -> CombinedMiscSnapshot(api, excludedTags, appLock, doh, misc) }
+    ) { api, appLock, doh, misc -> CombinedMiscSnapshot(api, appLock, doh, misc) }
 
     val uiState: StateFlow<SettingsUiState> = combine(
         appearanceState,
@@ -149,7 +144,6 @@ class SettingsViewModel(
             launcherDisguiseId = appearance.launcherDisguiseId,
             recommendationEnabled = appearance.recommendationEnabled,
             apiEndpoint = misc.apiEndpoint,
-            homeExcludedTags = misc.homeExcludedTags,
             prefetchCount = reader.prefetchCount,
             readMode = reader.readMode,
             memoryOptEnabled = reader.memoryOptEnabled,
@@ -224,9 +218,6 @@ class SettingsViewModel(
     /** One grid-dialog confirm updates all five page columns atomically. */
     fun applyGridColumns(home: Int, collect: Int, download: Int, history: Int, search: Int) =
         localSettingManager.applyGridColumns(home, collect, download, history, search)
-
-    fun updateHomeExcludedTags(tags: List<String>) =
-        localSettingManager.updateHomeExcludedTags(tags)
 
     /** 平板布局开关；写入后不再随窗口宽度自动变化。 */
     fun setTabletLayoutEnabled(enabled: Boolean) =

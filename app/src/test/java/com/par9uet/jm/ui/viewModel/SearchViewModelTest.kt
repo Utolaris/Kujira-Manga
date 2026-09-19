@@ -42,7 +42,6 @@ class SearchViewModelTest {
 
     private class FakeSettings : ContentPreferences {
         override val blockedTags = MutableStateFlow(emptyList<String>())
-        override val homeExcludedTags = MutableStateFlow(emptyList<String>())
     }
 
     @Test
@@ -142,8 +141,8 @@ class SearchViewModelTest {
 
         assertEquals(ComicSearchOrderFilter.NEWEST, vm.searchComicFilterState.value.order)
 
-        vm.changeSearchComicOrderFilter(ComicSearchOrderFilter.MOST_COLLECT_COUNT)
-        assertEquals(ComicSearchOrderFilter.MOST_COLLECT_COUNT, vm.searchComicFilterState.value.order)
+        vm.changeSearchComicOrderFilter(ComicSearchOrderFilter.MOST_VIEWED)
+        assertEquals(ComicSearchOrderFilter.MOST_VIEWED, vm.searchComicFilterState.value.order)
         assertNull(vm.searchComicIdState.value)
 
         vm.changeSearchComicOrderFilter(ComicSearchOrderFilter.MOST_PIC_COUNT)
@@ -212,14 +211,14 @@ class SearchViewModelTest {
         val generation = vm.searchViewportState.value.resetGeneration
         vm.saveSearchViewport(18, 72, generation)
 
-        vm.changeSearchComicOrderFilter(ComicSearchOrderFilter.MOST_COLLECT_COUNT)
+        vm.changeSearchComicOrderFilter(ComicSearchOrderFilter.MOST_VIEWED)
 
         assertEquals(0, vm.searchViewportState.value.firstVisibleItemIndex)
         assertEquals(0, vm.searchViewportState.value.firstVisibleItemScrollOffset)
         assertTrue(vm.searchViewportState.value.resetGeneration > generation)
 
         val resetGeneration = vm.searchViewportState.value.resetGeneration
-        vm.changeSearchComicOrderFilter(ComicSearchOrderFilter.MOST_COLLECT_COUNT)
+        vm.changeSearchComicOrderFilter(ComicSearchOrderFilter.MOST_VIEWED)
         assertEquals(resetGeneration, vm.searchViewportState.value.resetGeneration)
     }
 }

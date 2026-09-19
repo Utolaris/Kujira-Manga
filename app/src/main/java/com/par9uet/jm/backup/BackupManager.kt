@@ -402,13 +402,11 @@ class BackupManager {
         if (setting.api == null || setting.theme == null) return false
         if (setting.blockedTagList == null) return false
         if (setting.blockedTagTemplateList == null) return false
-        if (setting.homeExcludedTags == null) return false
         if (setting.appLockPassword == null || setting.appLockPattern == null) return false
         if (setting.blockedTagTemplateList.any { it == null || it.name == null || it.tagList == null }) {
             return false
         }
         if (setting.blockedTagList.any { it == null }) return false
-        if (setting.homeExcludedTags.any { it == null }) return false
         return true
     }
 

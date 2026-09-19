@@ -94,8 +94,9 @@ data class LocalSetting(
     // 内存优化：限制并发解码并降低采样率，缓解低端设备 OOM；并发上限仅在开启时生效
     val readMemoryOptEnabled: Boolean = false,
     val readDecodeConcurrency: Int = 2,
-    // 这些标签的漫画不出现在首页推荐中
-    val homeExcludedTags: List<String> = listOf(),
+    // 已移除：homeExcludedTags（首页标签排除）。排除模板的去重并集 blockedTagList 已经全局生效
+    //（首页/周刊/历史/收藏/相关推荐本地过滤 + 搜索交服务端），该字段冗余故废弃。
+    // 旧存档/旧备份里仍可能有这个键，Gson 反序列化时忽略未知字段，无需迁移。
     // 封面磁盘缓存上限（MB）；候选 128/256/512/1024，构建 ImageLoader 时生效
     val coverDiskCacheMb: Int = 256,
 )

@@ -252,6 +252,7 @@ class UserViewModel(
             }
             toastManager.showAsync(message)
             if (success > 0) {
+                com.par9uet.jm.ui.haptics.AppHaptics.deleteMulti()
                 _historyRefreshVersion.update { it + 1 }
             }
             clearHistorySelection()

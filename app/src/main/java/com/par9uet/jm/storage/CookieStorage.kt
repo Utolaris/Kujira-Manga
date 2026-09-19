@@ -10,7 +10,9 @@ import okhttp3.Cookie
 /** 活动认证会话 cookie 的持久化读写。[SecureCookieStorage] 提供加密实现，测试可用内存替身。 */
 interface CookieStorage {
     val state: StateFlow<List<Cookie>?>
-    fun set(cookieStore: List<Cookie>)
+
+    /** @return false 表示未能写入（含 Keystore 临时不可用）；调用方不得把未持久化的会话当成成功。 */
+    fun set(cookieStore: List<Cookie>): Boolean
     fun get(): List<Cookie>
 
     /**
@@ -32,11 +34,14 @@ class SecureCookieStorage(
     private var _state = MutableStateFlow<List<Cookie>?>(null)
     override val state = _state.asStateFlow()
 
-    override fun set(cookieStore: List<Cookie>) {
+    override fun set(cookieStore: List<Cookie>): Boolean {
         // Only publish in-memory after the durable write succeeds, so memory cannot diverge from disk.
-        when (secureStorage.set(STORAGE_KEY, cookieStore)) {
-            is StorageWriteResult.Success -> _state.update { cookieStore }
-            is StorageWriteResult.TemporaryUnavailable -> Unit
+        return when (secureStorage.set(STORAGE_KEY, cookieStore)) {
+            is StorageWriteResult.Success -> {
+                _state.update { cookieStore }
+                true
+            }
+            is StorageWriteResult.TemporaryUnavailable -> false
         }
     }
 

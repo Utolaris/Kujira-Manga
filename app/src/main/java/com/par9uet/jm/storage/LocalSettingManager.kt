@@ -47,7 +47,6 @@ class LocalSettingManager(
 
     override val blockedTags = _projectingState { it.blockedTagList }
     override val blockedTagTemplates = _projectingState { it.blockedTagTemplateList }
-    override val homeExcludedTags = _projectingState { it.homeExcludedTags }
     override val preferenceRecommendEnabled = _projectingState { it.preferenceRecommendEnabled }
     override val readMode = _projectingState { it.readMode }
     override val readTapMode = _projectingState { it.readTapMode }
@@ -195,9 +194,6 @@ class LocalSettingManager(
 
     fun replaceBlockedTagTemplates(templates: List<BlockedTagTemplate>) =
         updateSetting { it.withBlockedTagTemplates(templates) }
-
-    fun updateHomeExcludedTags(tags: List<String>) =
-        updateSetting { it.copy(homeExcludedTags = tags) }
 
     // ---- Appearance / palette: compound transitions ----
 

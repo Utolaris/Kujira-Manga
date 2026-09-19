@@ -29,10 +29,27 @@ interface UserRepository {
         login(username, password)
 
     /**
+     * 冷启动的**廉价会话探活**：只用共享客户端里已持久化的 cookie 打一个需要鉴权的接口，
+     * **不发送任何凭据、不产生登录**。
+     *
+     * 返回值语义：
+     * - `Success` → 会话仍然可用
+     * - `Error(kind = Authentication)` → 会话已失效（此时才值得动凭据）
+     * - 其它 `Error` → 网络/服务端临时问题，不能据此判定会话失效
+     *
+     * 之所以需要它：`verifyLogin` 与 `login` 是同一个实现（`POST /login`），
+     * 每次冷启动都用明文密码登录一次是撞库检测最容易命中的形态。
+     * 官方 app 的 JWT 有效期 1 小时，冷启动根本不发登录请求。
+     */
+    suspend fun probeActiveSession(): NetWorkResult<Unit>
+
+    /**
      * 把已验证的候选会话提升为活动会话（持久化 cookie 并同步活动客户端）。
      * 调用方必须确认 session generation 仍然有效。
+     *
+     * @return true 仅当会话可被认定为「真的可用」（cookie 非空且写入成功）。
      */
-    fun activateVerifiedSession(verified: CandidateSession)
+    fun activateVerifiedSession(verified: CandidateSession): Boolean
 
     /** Clears client-side session state without performing a network logout request. */
     fun clearSession()

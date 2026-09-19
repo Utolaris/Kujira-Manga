@@ -84,7 +84,6 @@ class SettingsViewModelTest {
 
         // All contract params are backed by the same real manager instance, mirroring DI.
         val vm = SettingsViewModel(
-            contentPreferences = manager,
             recommendationPreferences = manager,
             readerPreferences = manager,
             cacheNotificationPreferences = manager,
@@ -156,7 +155,6 @@ class SettingsViewModelTest {
         val manager = LocalSettingManager(persistence, RecordingLauncherApplier())
         val requester = FakeSyncRequester()
         val vm = SettingsViewModel(
-            contentPreferences = manager,
             recommendationPreferences = manager,
             readerPreferences = manager,
             cacheNotificationPreferences = manager,

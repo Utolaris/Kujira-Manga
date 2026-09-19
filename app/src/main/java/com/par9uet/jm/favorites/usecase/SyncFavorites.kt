@@ -3,6 +3,7 @@ package com.par9uet.jm.favorites.usecase
 import android.os.SystemClock
 import com.par9uet.jm.favorites.data.FavoriteLocalSync
 import com.par9uet.jm.favorites.data.FavoriteRemoteQuery
+import com.par9uet.jm.favorites.data.causeChainText
 import com.par9uet.jm.favorites.data.toFavoriteSyncError
 import com.par9uet.jm.core.network.NetWorkResult
 import com.par9uet.jm.favorites.data.FAVORITE_SCOPE_ALL
@@ -147,11 +148,16 @@ class SyncFavorites(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            val classified = e.toFavoriteSyncError()
             logError(
                 "FavoritesSync",
-                "${e.message ?: "同步收藏夹失败"} duration=${elapsedRealtime() - startedAt}ms",
+                "synchronize FAILED account=$accountId folder=$folderId force=$force " +
+                    "kind=${classified.kind} code=${classified.code} " +
+                    "uiMessage=${classified.message} " +
+                    "cause=${e.causeChainText()} " +
+                    "duration=${elapsedRealtime() - startedAt}ms",
             )
-            e.toFavoriteSyncError()
+            classified
         }
     }
 

@@ -1,6 +1,6 @@
 package com.par9uet.jm.ui.screens.downloadScreen
 
-import androidx.activity.compose.BackHandler
+import com.par9uet.jm.ui.navigation.HierarchicalBackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -88,7 +88,7 @@ fun DownloadScreen(
         editState.selectedIds.any { it in activeItemIds }
     }
 
-    BackHandler(enabled = editState.editing) {
+    HierarchicalBackHandler(enabled = editState.editing) {
         downloadViewModel.clearSelection()
     }
     // Pending deletion request waiting for user confirmation (single dialog for both paths).

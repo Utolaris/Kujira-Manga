@@ -478,7 +478,7 @@ class EmbeddedComicDataSource(
 
     private fun ComicSearchOrderFilter.toEmbeddedOrderBy(): OrderBy = when (this) {
         ComicSearchOrderFilter.NEWEST -> OrderBy.LATEST
-        ComicSearchOrderFilter.MOST_COLLECT_COUNT -> OrderBy.MOST_VIEWED
+        ComicSearchOrderFilter.MOST_VIEWED -> OrderBy.MOST_VIEWED
         ComicSearchOrderFilter.MOST_PIC_COUNT -> OrderBy.MOST_IMAGES
         ComicSearchOrderFilter.MOST_LIKE_COUNT -> OrderBy.MOST_LIKED
     }

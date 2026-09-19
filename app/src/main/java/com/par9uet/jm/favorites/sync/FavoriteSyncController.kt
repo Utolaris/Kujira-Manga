@@ -2,13 +2,15 @@ package com.par9uet.jm.favorites.sync
 
 import com.par9uet.jm.favorites.model.FavoriteSession
 import com.par9uet.jm.favorites.model.FavoriteSessionSnapshot
+import com.par9uet.jm.favorites.data.FAVORITE_SCOPE_ALL
+import com.par9uet.jm.favorites.data.causeChainText
 import com.par9uet.jm.favorites.data.toFavoriteSyncError
 import com.par9uet.jm.favorites.model.FavoriteSyncUiState
 import com.par9uet.jm.core.network.NetWorkResult
 import com.par9uet.jm.session.withAuthenticationRecovery
-import com.par9uet.jm.favorites.data.FAVORITE_SCOPE_ALL
 import com.par9uet.jm.favorites.sync.FavoriteSyncProgress
 import com.par9uet.jm.favorites.sync.FavoriteSyncReport
+import com.par9uet.jm.utils.logError
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -149,6 +151,15 @@ class FavoriteSyncController(
                 synchronized(lock) {
                     if (isCurrentRequest(snapshot, generation)) {
                         syncJob = null
+                        if (failure != null) {
+                            val f = failure
+                            val chain = f.cause?.causeChainText() ?: f.message
+                            logError(
+                                "FavoritesSync",
+                                "sync FAILED folder=$folderId force=$force " +
+                                    "kind=${f.kind} code=${f.code} message=${f.message} cause=$chain",
+                            )
+                        }
                         _state.value = if (failure == null) {
                             FavoriteSyncUiState()
                         } else {
@@ -158,7 +169,15 @@ class FavoriteSyncController(
                                 errorKind = failure.kind,
                             )
                         }
-                        autoSyncCoordinator.onSyncFinished()?.let { startSync(it, force = false) }
+                        // 失败时**不立刻续跑**。后端拥塞的时段（例如晚间）如果失败后马上再起一轮，
+                        // 就会把失败叠成连续失败风暴 —— 每一轮都会重新走一遍 401 恢复 + 登录，
+                        // 用户看到的是"一直弹需要重新登录"。
+                        //
+                        // 这里刻意不动 coordinator 的状态：pending 请求留在原地，
+                        // 由下一个 30 秒窗口（AUTO 请求进来变 Coalesced → scheduleTrailing）自然消化。
+                        if (failure == null) {
+                            autoSyncCoordinator.onSyncFinished()?.let { startSync(it, force = false) }
+                        }
                     }
                 }
             }

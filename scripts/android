@@ -157,6 +157,9 @@ Kujira-Manga Android 调试 CLI
 设备与环境
   doctor                 检查 SDK / adb / JAVA_HOME / 设备
   devices                列出设备（真机/模拟器）
+  adb-pair <ip:port> [配对码]  无线调试配对（开发者选项 → 无线调试 → 使用配对码）
+  adb-connect <ip:port>  连接已配对的无线调试设备（用无线调试页「IP 和端口」，不是配对端口）
+  adb-reconnect [ip:port]  重连无线调试：先 mDNS 自动发现，再尝试指定 ip:port
   sdk-list               已安装的 SDK 包
   sdk-update [pkg...]    更新/安装 SDK 包（默认 platform-tools）
 
@@ -193,6 +196,8 @@ HyperOS
 
 示例
   ./scripts/android doctor
+  ./scripts/android adb-pair 192.168.5.103:38615 795546
+  ./scripts/android adb-connect 192.168.5.103:42xxx
   ./scripts/android install-debug
   ./scripts/android logcat
   ./scripts/android test-class com.par9uet.jm.cache.atom.CacheFilesDeviceTest
@@ -220,6 +225,44 @@ cmd_doctor() {
 }
 
 cmd_devices() {
+  device_table
+}
+
+cmd_adb_pair() {
+  local target="${1:-}"
+  local code="${2:-}"
+  [ -n "$target" ] || { echo "用法: ./scripts/android adb-pair <ip:pair_port> [pair_code]" >&2; exit 1; }
+  echo "==> adb pair $target"
+  if [ -n "$code" ]; then
+    "$ADB" pair "$target" "$code"
+  else
+    # 交互输入配对码（无线调试弹窗上显示的 6 位码）
+    "$ADB" pair "$target"
+  fi
+}
+
+cmd_adb_connect() {
+  local target="${1:-}"
+  [ -n "$target" ] || { echo "用法: ./scripts/android adb-connect <ip:connect_port>" >&2; exit 1; }
+  echo "==> adb connect $target"
+  # adb connect 失败时仍打印设备表，便于确认状态
+  "$ADB" connect "$target" || true
+  device_table
+}
+
+# 无线调试重连：已配对设备优先走系统 mDNS（_adb-tls-connect），比死记连接端口稳。
+# Clash TUN 开着时若仍失败，检查 Merge/Script 是否含 inet4-route-exclude-address（局域网旁路）。
+cmd_adb_reconnect() {
+  local target="${1:-}"
+  echo "==> adb mdns services（无线调试）"
+  "$ADB" mdns services 2>/dev/null || true
+  if [ -n "$target" ]; then
+    echo "==> adb connect $target"
+    "$ADB" connect "$target" || true
+  fi
+  # 让 adb 自己去解析/重连已授权的无线设备
+  "$ADB" reconnect offline 2>/dev/null || true
+  sleep 1
   device_table
 }
 
@@ -429,6 +472,9 @@ main() {
     ""|-h|--help|help) usage ;;
     doctor) cmd_doctor "$@" ;;
     devices) cmd_devices "$@" ;;
+    adb-pair) cmd_adb_pair "$@" ;;
+    adb-connect) cmd_adb_connect "$@" ;;
+    adb-reconnect) cmd_adb_reconnect "$@" ;;
     sdk-list) cmd_sdk_list "$@" ;;
     sdk-update) cmd_sdk_update "$@" ;;
     install-debug) cmd_install_debug "$@" ;;

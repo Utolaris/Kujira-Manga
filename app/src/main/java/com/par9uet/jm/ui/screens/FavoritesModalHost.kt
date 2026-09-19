@@ -432,7 +432,9 @@ private fun FilterDialog(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        // 必须低于 SearchFieldSurface 的 surfaceContainerHigh，否则搜索框与 sheet 同色糊成一片，
+        // 看起来像「没有搜索框」；首页搜索页的底是 background，卡片因此才显形。
+        containerColor = MaterialTheme.colorScheme.surface,
         sheetGesturesEnabled = false,
         dragHandle = null,
     ) {
@@ -503,7 +505,8 @@ private fun FilterDialog(
             Spacer(modifier = Modifier.height(12.dp))
             PrimaryTabRow(
                 selectedTabIndex = selectedTabIndex,
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                // 不要给 Tab 栏整条填色：只保留文字/指示线，与 sheet 底融在一起。
+                containerColor = Color.Transparent,
             ) {
                 Tab(
                     selected = selectedTabIndex == 0,
@@ -590,25 +593,21 @@ private fun FilterDialog(
                     }
                 }
             }
-            Surface(
-                tonalElevation = 3.dp,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            // 底部动作区不铺底色：只保留清空 / 确定按钮本身。
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    OutlinedButton(
-                        onClick = onClear,
-                        modifier = Modifier.weight(1f),
-                    ) { Text("清空") }
-                    Button(
-                        onClick = onConfirm,
-                        modifier = Modifier.weight(1f),
-                    ) { Text("确定") }
-                }
+                OutlinedButton(
+                    onClick = onClear,
+                    modifier = Modifier.weight(1f),
+                ) { Text("清空") }
+                Button(
+                    onClick = onConfirm,
+                    modifier = Modifier.weight(1f),
+                ) { Text("确定") }
             }
         }
     }

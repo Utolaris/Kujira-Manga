@@ -12,10 +12,37 @@ class EmbeddedSessionCookiesTest {
     @Test fun restoredAvsSurvivesResponsesWithoutSetCookieAndRotatesOnlyToTrustedHttps() {
         val restored = mergeEmbeddedCookies(listOf(avs), emptyList())
         assertEquals(listOf(avs), restored)
-        assertEquals(listOf(avs), embeddedCookiesForRequest(restored, "https://api-b.example/history".toHttpUrl(), trusted))
+        val rotated = embeddedCookiesForRequest(restored, "https://api-b.example/history".toHttpUrl(), trusted)
+        assertEquals(1, rotated.size)
+        assertEquals("AVS", rotated.single().name)
+        assertEquals("session", rotated.single().value)
+        assertTrue(rotated.single().matches("https://api-b.example/history".toHttpUrl()))
         for (url in listOf("https://evil.example/history", "https://api-b.example.evil.test/", "http://api-b.example/")) {
             assertTrue(embeddedCookiesForRequest(restored, url.toHttpUrl(), trusted).isEmpty())
         }
+    }
+
+    @Test fun loginHostAvsIsRehostedToTrustedApiHost() {
+        // 真实登录：AVS 挂在站点域，业务 API 在轮换的 API 域；两者都可能不在同一字符串列表里。
+        val siteAvs = Cookie.Builder().name("AVS").value("from-login")
+            .hostOnlyDomain("www.18comic.vip").secure().build()
+        val injected = embeddedCookiesForRequest(
+            listOf(siteAvs),
+            "https://api-a.example/favorites".toHttpUrl(),
+            trusted,
+        )
+        assertEquals(1, injected.size)
+        assertEquals("AVS", injected.single().name)
+        assertEquals("from-login", injected.single().value)
+        assertTrue(injected.single().matches("https://api-a.example/favorites".toHttpUrl()))
+        // 非可信域名仍然拒绝
+        assertTrue(
+            embeddedCookiesForRequest(
+                listOf(siteAvs),
+                "https://evil.example/favorites".toHttpUrl(),
+                trusted,
+            ).isEmpty(),
+        )
     }
 
     @Test fun expiryPathAndOrdinaryCookieDomainsAreHonored() {

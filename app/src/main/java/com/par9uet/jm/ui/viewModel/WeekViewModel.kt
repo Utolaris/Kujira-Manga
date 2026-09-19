@@ -78,9 +78,8 @@ class WeekViewModel(
     val weekComicPager = combine(
         _weekFilterState,
         contentPreferences.blockedTags,
-        contentPreferences.homeExcludedTags,
-    ) { filter, blockedTagList, homeExcludedTags ->
-        filter to (blockedTagList + homeExcludedTags).distinct()
+    ) { filter, blockedTagList ->
+        filter to blockedTagList
     }
         .flatMapLatest { (filter, blockedTagList) ->
         Pager(

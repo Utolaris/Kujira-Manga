@@ -9,10 +9,11 @@ import kotlinx.coroutines.flow.StateFlow
  * projection instead of the whole persistence object, avoiding unrelated state updates.
  */
 interface ContentPreferences {
+    /**
+     * 标签排除（`排除模板` 里所有模板标签的去重并集，见 [LocalSettingManager.withBlockedTagTemplates]）。
+     * 客户端在 首页 / 周刊 / 历史 / 收藏 / 详情页相关推荐 本地过滤，搜索则拼进 `search_query` 交服务端排除。
+     */
     val blockedTags: StateFlow<List<String>>
-
-    /** Additional Home-feed exclusions configured in Settings; combined with [blockedTags]. */
-    val homeExcludedTags: StateFlow<List<String>>
 }
 
 interface BlockedTagTemplatePreferences {

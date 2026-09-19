@@ -8,6 +8,9 @@ import com.par9uet.jm.favorites.usecase.MoveFavorites
 import com.par9uet.jm.repository.ComicRepository
 import com.par9uet.jm.network.AuthenticatedEmbeddedClient
 import com.par9uet.jm.network.AuthenticatedRequestGate
+import com.par9uet.jm.network.DeviceWebViewUserAgent
+import com.par9uet.jm.network.DohManager
+import com.par9uet.jm.network.EmbeddedUserAgentProvider
 import com.par9uet.jm.repository.impl.ComicRepositoryImpl
 import com.par9uet.jm.network.EmbeddedClientManager
 import com.par9uet.jm.reader.ReaderImagePipeline
@@ -23,7 +26,10 @@ import org.koin.dsl.bind
 import org.koin.dsl.module
 
 val comicModule = module {
-    single { EmbeddedClientManager(get(), get()) }
+    // 设备真实 WebView UA 的来源；由 JmApplication.onCreate 在主线程预热一次。
+    // 用 lambda 绑定而不是注入 Context —— 保持 Koin 图不依赖 androidContext。
+    single<EmbeddedUserAgentProvider> { EmbeddedUserAgentProvider { DeviceWebViewUserAgent.current() } }
+    single { EmbeddedClientManager(get(), get(), get(), createSharedCookielessDohClient(get<DohManager>())) }
     // The network client only knows the ordering port; the session gate (which funnels
     // requests through UserManager's executor during restoration) is bound here so the
     // orchestration ownership stays in the session layer.

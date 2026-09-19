@@ -100,8 +100,8 @@ val LOCAL_SETTING_MANAGER_ALIASES = arrayOf(
  * | update/AppUpdateDownloadManager.kt | dohManager | default | APK download |
  * | di/AppModule.kt GithubReleaseSource | DohManager | default | release metadata |
  * | di/AppModule.kt JmImageHostHealthManager baseHttpClient | DohManager | NO_COOKIES | CDN HEAD probe |
- * | network/DohManager.kt DohResolver bootstrap | bootstrapDns | default | **intentional system-DNS exception** for resolving the DoH server itself |
- * | update/GithubReleaseSource.kt default parameter | bare (tests only) | default | production always injects the AppModule client |
+ * | network/EmbeddedClientManager.kt domainProbeClient | baseHttpClient (DoH) | NO_COOKIES | 域名重赛探针；由注入的共享基座 `newBuilder()` 派生，不新造客户端 |
+ * | network/DohManager.kt DohResolver bootstrap | bootstrapDns | default | **intentional system-DNS exception** for resolving the DoH server itself | * | update/GithubReleaseSource.kt default parameter | bare (tests only) | default | production always injects the AppModule client |
  * | image/JmImageHostHealthManager.kt default parameter | bare (tests only) | default | production always injects the AppModule client |
  *
  * System DNS is therefore only used by the DoH bootstrap path listed above.
@@ -203,7 +203,7 @@ val appModule = module {
         com.par9uet.jm.backup.DeviceBackupRestoreOperations(get(), get(), get(), get(), get())
     }
     viewModel { com.par9uet.jm.ui.viewModel.BackupRestoreViewModel(get(), get(), get()) }
-    viewModel { com.par9uet.jm.ui.viewModel.SettingsViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    viewModel { com.par9uet.jm.ui.viewModel.SettingsViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
 
     single<Gson> { GsonBuilder().setStrictness(Strictness.LENIENT).serializeNulls().create() }
 }

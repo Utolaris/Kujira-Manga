@@ -361,6 +361,9 @@ class FavoritesViewModel(
         dismissModal()
         viewModelScope.launch {
             val result = uncollectFavorites(sessionSnapshot, ids)
+            if (result.succeeded > 0) {
+                com.par9uet.jm.ui.haptics.AppHaptics.deleteMulti()
+            }
             toastManager.showAsync(favoriteBatchMessage(result.succeeded, result.failed, "取消收藏"))
             clearSelection()
         }

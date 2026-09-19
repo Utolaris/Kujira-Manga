@@ -69,8 +69,6 @@ class HomeViewModelTest {
 
         private val _blockedTags = MutableStateFlow(emptyList<String>())
         override val blockedTags = _blockedTags.asStateFlow()
-        private val _homeExcludedTags = MutableStateFlow(emptyList<String>())
-        override val homeExcludedTags = _homeExcludedTags.asStateFlow()
         private val _preferenceRecommendEnabled = MutableStateFlow(false)
         override val preferenceRecommendEnabled = _preferenceRecommendEnabled.asStateFlow()
     }

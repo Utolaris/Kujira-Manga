@@ -1,7 +1,7 @@
 package com.par9uet.jm.ui.screens
 
 import android.content.ClipData
-import androidx.activity.compose.BackHandler
+import com.par9uet.jm.ui.navigation.HierarchicalBackHandler
 import android.net.Uri
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
@@ -383,8 +383,9 @@ fun ComicDetailScreen(
     }
 
     // COMMENT mode consumes Back so it never pops ComicDetail; ACTIONS falls through to
-    // normal navigation Back behavior.
-    BackHandler(enabled = detailBottomState.mode == DetailBottomMode.COMMENT) {
+    // normal navigation Back behavior. HierarchicalBackHandler keeps the page whole during
+    // a held side-back gesture instead of the system scale-out preview.
+    HierarchicalBackHandler(enabled = detailBottomState.mode == DetailBottomMode.COMMENT) {
         exitCommentMode()
     }
     LaunchedEffect(detailBottomState.mode, commentFocusRequestTick) {

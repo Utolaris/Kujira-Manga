@@ -18,6 +18,7 @@ import com.par9uet.jm.core.ToastManager
 import com.par9uet.jm.core.model.CommonUIState
 import com.par9uet.jm.ui.pagingSource.ComicCommentPagingSource
 import com.par9uet.jm.ui.state.CommentSubmissionGate
+import com.par9uet.jm.ui.haptics.AppHaptics
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -219,6 +220,7 @@ class ComicDetailViewModel(
 
                 is NetWorkResult.Success -> {
                     val committed = commitFavoriteUiIfCurrent(snapshot) {
+                        AppHaptics.success()
                         toastManager.showAsync("收藏成功")
                         _comicDetailState.update { state ->
                             val currentData = state.data?.takeIf { it.id == id }

@@ -109,6 +109,7 @@ class DownloadViewModel(
         if (ids.isEmpty()) return
         viewModelScope.launch {
             downloadManager.deleteDownloads(ids)
+            com.par9uet.jm.ui.haptics.AppHaptics.deleteMulti()
             _editState.update {
                 val selected = it.selectedIds - ids
                 it.copy(editing = selected.isNotEmpty(), selectedIds = selected)

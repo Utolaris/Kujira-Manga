@@ -153,8 +153,9 @@ class TemporaryUnavailableHistoryTest {
         )
         val storage = object : CookieStorage {
             override val state = kotlinx.coroutines.flow.MutableStateFlow<List<Cookie>?>(null)
-            override fun set(cookieStore: List<Cookie>) {
+            override fun set(cookieStore: List<Cookie>): Boolean {
                 writes += cookieStore
+                return !unavailable
             }
             override fun get(): List<Cookie> = getOrNull().orEmpty()
             override fun getOrNull(): List<Cookie>? = if (unavailable) null else cookies

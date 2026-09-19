@@ -114,7 +114,11 @@ class FavoriteSyncControllerTest {
         controller.request(FavoriteSyncRequestKind.FORCE)
         runCurrent()
         assertEquals(NetworkErrorKind.Authentication, controller.state.value.errorKind)
-        assertEquals("登录已失效，请重新登录后同步", controller.state.value.errorMessage)
+        // Controller 透传 syncOperation 返回的 message；分类文案由 toFavoriteSyncError 负责。
+        assertTrue(
+            "actual=${controller.state.value.errorMessage}",
+            controller.state.value.errorMessage.orEmpty().contains("登录已失效"),
+        )
         assertTrue(controller.state.value.isForceRefresh)
         shouldFail = false
         controller.request(FavoriteSyncRequestKind.MANUAL)
@@ -298,7 +302,10 @@ class FavoriteSyncControllerTest {
         })
         controller.request(FavoriteSyncRequestKind.MANUAL)
         runCurrent()
-        assertEquals("offline", controller.state.value.errorMessage)
+        assertTrue(
+            "actual=${controller.state.value.errorMessage}",
+            controller.state.value.errorMessage.orEmpty().contains("offline"),
+        )
         assertFalse(controller.state.value.isSyncing)
         repeat(2) {
             controller.request(FavoriteSyncRequestKind.MANUAL)

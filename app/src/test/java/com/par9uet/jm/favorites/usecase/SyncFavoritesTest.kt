@@ -27,7 +27,8 @@ class SyncFavoritesTest {
         }
         val result = SyncFavorites(remote, LocalSnapshot(), session) { 0L }
             .synchronize(session.snapshot()) as NetWorkResult.Error
-        assertEquals("网络连接失败，请检查网络后重试", result.message)
+        assertTrue(result.message.orEmpty().startsWith("网络连接失败，请检查网络后重试"))
+        assertTrue(result.message.orEmpty().contains("timeout") || result.message.orEmpty().contains("SocketTimeout"))
         assertEquals(NetworkErrorKind.Network, result.kind)
     }
 
@@ -40,7 +41,7 @@ class SyncFavoritesTest {
         }
         val result = SyncFavorites(remote, local, session) { 0L }
             .synchronize(session.snapshot(), force = true) as NetWorkResult.Error
-        assertEquals("网络连接失败，请检查网络后重试", result.message)
+        assertTrue(result.message.orEmpty().startsWith("网络连接失败，请检查网络后重试"))
         assertEquals(NetworkErrorKind.Network, result.kind)
         assertTrue(generateSequence(result.cause) { it.cause }.any { it is java.net.SocketTimeoutException })
         assertTrue(local.replacements.isEmpty())

@@ -22,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -38,6 +39,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.par9uet.jm.ui.glass.GlassSurface
 import com.par9uet.jm.ui.glass.GlassSurfaceStyle
+import com.par9uet.jm.ui.haptics.AppHaptics
 import kotlin.math.roundToInt
 
 @Composable
@@ -153,12 +155,17 @@ private fun PageProgressBar(
     val trackColor = MaterialTheme.colorScheme.surfaceVariant
     val disabledColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.32f)
     var size by remember { mutableStateOf(IntSize.Zero) }
+    var lastHapticPage by remember { mutableIntStateOf(currentIndex) }
 
     fun selectFromX(x: Float) {
         if (pageCount <= 1 || size.width <= 0) return
 
         val fraction = (x / size.width).coerceIn(0f, 1f)
         val target = (fraction * (pageCount - 1)).roundToInt().coerceIn(0, pageCount - 1)
+        if (target != lastHapticPage) {
+            lastHapticPage = target
+            AppHaptics.tick()
+        }
         onPageSelected(target)
     }
 

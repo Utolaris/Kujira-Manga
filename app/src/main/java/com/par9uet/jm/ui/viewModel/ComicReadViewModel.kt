@@ -26,6 +26,7 @@ import com.par9uet.jm.storage.ReaderPreferences
 import com.par9uet.jm.storage.ReadHistoryManager
 import com.par9uet.jm.core.ToastManager
 import com.par9uet.jm.core.model.CommonUIState
+import com.par9uet.jm.ui.haptics.AppHaptics
 import com.par9uet.jm.utils.log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -172,6 +173,7 @@ class ComicReadViewModel(
                     }
                     is NetWorkResult.Success -> {
                         favoriteSession.withCurrentSession(snapshot) {
+                            if (targetCollect) AppHaptics.success()
                             toastManager.showAsync(if (targetCollect) "收藏成功" else "取消收藏成功")
                             _comicDetailState.update {
                                 if (it.data?.id == comicId) it.copy(data = it.data.copy(isCollect = targetCollect)) else it

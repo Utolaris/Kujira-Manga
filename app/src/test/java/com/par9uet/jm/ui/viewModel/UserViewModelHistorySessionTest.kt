@@ -240,8 +240,9 @@ class UserViewModelHistorySessionTest {
     private class FakeCookieStorage(initial: List<Cookie> = emptyList()) : CookieStorage {
         private val _state = MutableStateFlow<List<Cookie>?>(initial)
         override val state: StateFlow<List<Cookie>?> = _state.asStateFlow()
-        override fun set(cookieStore: List<Cookie>) {
+        override fun set(cookieStore: List<Cookie>): Boolean {
             _state.value = cookieStore
+            return true
         }
 
         override fun get(): List<Cookie> = _state.value ?: emptyList()
@@ -267,7 +268,9 @@ class UserViewModelHistorySessionTest {
             )
         }
 
-        override fun activateVerifiedSession(verified: CandidateSession) = Unit
+        override suspend fun probeActiveSession(): NetWorkResult<Unit> = error("unused")
+
+        override fun activateVerifiedSession(verified: CandidateSession) = true
         override fun clearSession() = Unit
 
         override suspend fun getHistoryComicList(page: Int): NetWorkResult<ComicPage> {
@@ -302,7 +305,6 @@ class UserViewModelHistorySessionTest {
 
     private class FakeContentPreferences : ContentPreferences {
         override val blockedTags: StateFlow<List<String>> = MutableStateFlow(emptyList())
-        override val homeExcludedTags: StateFlow<List<String>> = MutableStateFlow(emptyList())
     }
 
     private class Environment(

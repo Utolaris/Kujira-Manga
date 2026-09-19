@@ -16,6 +16,7 @@ import com.par9uet.jm.core.network.AuthFailure
 import com.par9uet.jm.retrofit.model.LoginResponse
 import com.par9uet.jm.core.model.SignInData
 import com.par9uet.jm.core.network.NetWorkResult
+import com.par9uet.jm.core.network.NetworkErrorKind
 import com.par9uet.jm.data.models.ActionResult
 import com.par9uet.jm.data.models.ComicPage
 import com.par9uet.jm.data.models.CommentPage
@@ -149,7 +150,11 @@ class UserManagerSessionTest {
     fun retryIsBoundedAndOrdinaryNetworkFailureDoesNotStartRecovery() = runBlocking {
         val cookies = FakeCookieStorage(listOf(avsCookie("expired")))
         val repository = GateUserRepository(cookies)
-        repository.completeVerify(NetWorkResult.Success(CandidateSession(loginResponse(1, "accountA"))))
+        repository.completeVerify(
+            NetWorkResult.Success(
+                CandidateSession(loginResponse(1, "accountA"), listOf(avsCookie("renewed"))),
+            ),
+        )
         val readiness = SessionReadinessHolder()
         manager(FakeUserStorage(user(1, "accountA")), cookies, repository, readiness)
         val gate = AuthenticatedSessionGate(readiness)
@@ -455,9 +460,10 @@ class UserManagerSessionTest {
         override val state: StateFlow<List<Cookie>?> = _state.asStateFlow()
         private val writes = mutableListOf<List<Cookie>>()
 
-        override fun set(cookieStore: List<Cookie>) {
+        override fun set(cookieStore: List<Cookie>): Boolean {
             writes.add(cookieStore)
             _state.value = cookieStore
+            return true
         }
 
         override fun get(): List<Cookie> = _state.value ?: emptyList()
@@ -471,23 +477,43 @@ class UserManagerSessionTest {
 
 
     /**
-     * 可编排的网络替身。verifyLogin 模拟真实的不可取消阻塞网络调用：
+     * 可编排的网络替身。两个通道都要 gate：
+     *
+     * - [probeActiveSession] 是冷启动的**只读探活**（不发送凭据）。`verifyStoredLogin` 只用它。
+     * - [verifyLogin] 是**真正的凭据登录**，只在探活判定会话失效后由
+     *   `recoverExpiredSession` 调用。`verifyCalls` 统计它 —— 冷启动不该让它增加。
+     *
+     * 两者都模拟真实的不可取消阻塞网络调用：
      * gate 完成前即使外部 job 被取消，调用仍会完成（返回后由 ensureActive 中止提交）。
      */
     private class GateUserRepository(
         private val cookieStorage: CookieStorage,
     ) : UserRepository {
+        val probeStarted = CompletableDeferred<Unit>()
+        private val probeGate = CompletableDeferred<NetWorkResult<Unit>>()
+
+        /** 真正发出的凭据登录次数：冷启动应为 0，并发失效恢复应被合并成 1。 */
+        var verifyCalls = 0
+            private set
+
         val verifyStarted = CompletableDeferred<Unit>()
         private val verifyGate = CompletableDeferred<NetWorkResult<CandidateSession>>()
         val activated = mutableListOf<CandidateSession>()
         var loginHandler: (suspend (String, String) -> NetWorkResult<CandidateSession>)? = null
 
-        /** 真正发出的登录次数：并发失效是否被合并成一次，靠它断言。 */
-        var verifyCalls = 0
-            private set
+        fun completeProbe(result: NetWorkResult<Unit>) {
+            probeGate.complete(result)
+        }
 
         fun completeVerify(result: NetWorkResult<CandidateSession>) {
             verifyGate.complete(result)
+        }
+
+        override suspend fun probeActiveSession(): NetWorkResult<Unit> {
+            probeStarted.complete(Unit)
+            return withContext(Dispatchers.Default + NonCancellable) {
+                probeGate.await()
+            }
         }
 
         override suspend fun verifyLogin(
@@ -508,11 +534,13 @@ class UserManagerSessionTest {
             return checkNotNull(loginHandler).invoke(username, password)
         }
 
-        override fun activateVerifiedSession(verified: CandidateSession) {
+        override fun activateVerifiedSession(verified: CandidateSession): Boolean {
             activated += verified
             if (verified.embeddedCookies.isNotEmpty()) {
                 cookieStorage.set(verified.embeddedCookies)
+                return true
             }
+            return false
         }
 
         override fun clearSession() = Unit
@@ -580,7 +608,7 @@ class UserManagerSessionTest {
     ) = UserManager(userStorage, cookieStorage, repository, readiness)
 
     @Test
-    fun staleVerifierCannotOverwriteNewerManualLogin() = runBlocking {
+    fun staleProbeCannotOverwriteNewerManualLogin() = runBlocking {
         val userStorage = FakeUserStorage(user(1, "accountA"))
         val cookieStorage = FakeCookieStorage()
         val repository = GateUserRepository(cookieStorage)
@@ -592,70 +620,33 @@ class UserManagerSessionTest {
                 )
             )
         }
-        val manager = manager(userStorage, cookieStorage, repository)
+        val readiness = SessionReadinessHolder()
+        val manager = manager(userStorage, cookieStorage, repository, readiness)
 
         val verifier = launch { manager.verifyStoredLogin() }
-        repository.verifyStarted.await()
+        repository.probeStarted.await()
 
-        // 验证 A 的网络请求仍在进行时，用户手动登录 B 并完成。
+        // 探活 A 仍在进行时，用户手动登录 B 并完成。
         val loginResult = manager.login("accountB", "pwdB")
         assertTrue(loginResult is NetWorkResult.Success)
 
-        // A 的候选验证随后返回。
-        repository.completeVerify(
-            NetWorkResult.Success(
-                CandidateSession(
-                    loginResponse = loginResponse(1, "accountA"),
-                    embeddedCookies = listOf(avsCookie("session-A")),
-                )
-            )
-        )
+        // A 的探活随后返回「会话仍有效」—— 这是属于上一个 generation 的结论，必须被丢弃。
+        repository.completeProbe(NetWorkResult.Success(Unit))
         verifier.join()
 
-        // 活动身份仍然是 B；存储 cookie 是 B 的会话；A 的候选从未被激活。
+        // 活动身份仍然是 B；B 的会话 cookie 未被覆盖；A 也从未被激活过。
         assertEquals(2, manager.userState.value.data?.id)
         assertEquals("session-B", cookieStorage.get().single().value)
-        assertTrue(repository.activated.none {
-            it.embeddedCookies.any { c -> c.value == "session-A" }
-        })
         assertTrue(repository.activated.any {
             it.embeddedCookies.any { c -> c.value == "session-B" }
         })
+        // 冷启动探活不产生候选会话，因此 activated 里不该有任何来自 A 探活的条目。
+        assertEquals(1, repository.activated.size)
+        assertEquals(SessionReadiness.Authenticated, readiness.state.value)
     }
 
     @Test
-    fun staleVerifierCannotRestoreAfterLogout() = runBlocking {
-        val userStorage = FakeUserStorage(user(1, "accountA"))
-        val cookieStorage = FakeCookieStorage(listOf(avsCookie("session-A")))
-        val repository = GateUserRepository(cookieStorage)
-        val manager = manager(userStorage, cookieStorage, repository)
-
-        val verifier = launch { manager.verifyStoredLogin() }
-        repository.verifyStarted.await()
-
-        // 验证进行中用户登出。
-        manager.clearUser()
-        assertEquals(0, manager.userState.value.data?.id)
-
-        repository.completeVerify(
-            NetWorkResult.Success(
-                CandidateSession(
-                    loginResponse = loginResponse(1, "accountA"),
-                    embeddedCookies = listOf(avsCookie("session-A")),
-                )
-            )
-        )
-        verifier.join()
-
-        // 登出保持有效：身份为空、cookie 存储被清空、没有发生激活。
-        assertEquals(0, manager.userState.value.data?.id)
-        assertTrue(cookieStorage.get().isEmpty())
-        assertEquals(User.create(), userStorage.get())
-        assertTrue(repository.activated.isEmpty())
-    }
-
-    @Test
-    fun transientVerifyFailureRetainsCachedIdentity() = runBlocking {
+    fun staleProbeCannotRestoreAfterLogout() = runBlocking {
         val userStorage = FakeUserStorage(user(1, "accountA"))
         val cookieStorage = FakeCookieStorage(listOf(avsCookie("session-A")))
         val repository = GateUserRepository(cookieStorage)
@@ -663,8 +654,35 @@ class UserManagerSessionTest {
         val manager = manager(userStorage, cookieStorage, repository, readiness)
 
         val verifier = launch { manager.verifyStoredLogin() }
-        repository.verifyStarted.await()
-        repository.completeVerify(
+        repository.probeStarted.await()
+
+        // 探活进行中用户登出。
+        manager.clearUser()
+        assertEquals(0, manager.userState.value.data?.id)
+        val readinessAfterLogout = readiness.state.value
+
+        repository.completeProbe(NetWorkResult.Success(Unit))
+        verifier.join()
+
+        // 登出保持有效：身份为空、cookie 存储被清空、readiness 不被陈旧探活改写。
+        assertEquals(0, manager.userState.value.data?.id)
+        assertTrue(cookieStorage.get().isEmpty())
+        assertEquals(User.create(), userStorage.get())
+        assertEquals(readinessAfterLogout, readiness.state.value)
+        assertTrue(repository.activated.isEmpty())
+    }
+
+    @Test
+    fun transientProbeFailureRetainsCachedIdentity() = runBlocking {
+        val userStorage = FakeUserStorage(user(1, "accountA"))
+        val cookieStorage = FakeCookieStorage(listOf(avsCookie("session-A")))
+        val repository = GateUserRepository(cookieStorage)
+        val readiness = SessionReadinessHolder()
+        val manager = manager(userStorage, cookieStorage, repository, readiness)
+
+        val verifier = launch { manager.verifyStoredLogin() }
+        repository.probeStarted.await()
+        repository.completeProbe(
             NetWorkResult.Error("网络连接超时", authFailure = AuthFailure.TemporaryFailure)
         )
         verifier.join()
@@ -672,12 +690,14 @@ class UserManagerSessionTest {
         assertEquals(1, manager.userState.value.data?.id)
         assertEquals("session-A", cookieStorage.get().single().value)
         assertTrue(repository.activated.isEmpty())
+        // 临时失败不是「会话失效」的证据：绝不能动用凭据。
+        assertEquals(0, repository.verifyCalls)
         assertEquals(SessionReadiness.Authenticated, readiness.state.value)
         assertEquals(false, manager.userState.value.isLoading)
     }
 
     @Test
-    fun invalidCredentialsClearsPersistentIdentity() = runBlocking {
+    fun expiredSessionFallsBackToCredentialLoginAndClearsOnInvalidCredentials() = runBlocking {
         val userStorage = FakeUserStorage(user(1, "accountA"))
         val cookieStorage = FakeCookieStorage(listOf(avsCookie("session-A")))
         val repository = GateUserRepository(cookieStorage)
@@ -685,6 +705,11 @@ class UserManagerSessionTest {
         val manager = manager(userStorage, cookieStorage, repository, readiness)
 
         val verifier = launch { manager.verifyStoredLogin() }
+        repository.probeStarted.await()
+        // 探活明确判定会话失效 —— 只有这种情况才允许用凭据重新登录。
+        repository.completeProbe(
+            NetWorkResult.Error("登录会话已失效", kind = NetworkErrorKind.Authentication)
+        )
         repository.verifyStarted.await()
         repository.completeVerify(
             NetWorkResult.Error(
@@ -702,43 +727,42 @@ class UserManagerSessionTest {
     }
 
     @Test
-    fun successfulCandidateVerificationPromotesFullSessionWithAVS() = runBlocking {
+    fun coldStartWithHealthySessionNeverLogsIn() = runBlocking {
         val userStorage = FakeUserStorage(user(1, "accountA"))
-        val cookieStorage = FakeCookieStorage()
+        val cookieStorage = FakeCookieStorage(listOf(avsCookie("session-A")))
         val repository = GateUserRepository(cookieStorage)
         val readiness = SessionReadinessHolder()
         val manager = manager(userStorage, cookieStorage, repository, readiness)
 
         val verifier = launch { manager.verifyStoredLogin() }
-        repository.verifyStarted.await()
-        repository.completeVerify(
-            NetWorkResult.Success(
-                CandidateSession(
-                    loginResponse = loginResponse(1, "accountA"),
-                    embeddedCookies = listOf(avsCookie("session-A")),
-                )
-            )
-        )
+        repository.probeStarted.await()
+        // 探活只说「会话还有效」，不带任何凭据。
+        repository.completeProbe(NetWorkResult.Success(Unit))
         verifier.join()
 
+        // 这是 R1 的核心不变量：冷启动**一次凭据登录都不发**。
+        assertEquals(0, repository.verifyCalls)
+        assertTrue(repository.activated.isEmpty())
+        // 已持久化的会话原样保留，没有被重写。
+        assertEquals("session-A", cookieStorage.get().single().value)
         assertEquals(1, manager.userState.value.data?.id)
-        // 完整 embedded cookie（含 AVS）被持久化为活动会话。
-        val persisted = cookieStorage.get()
-        assertEquals(1, persisted.size)
-        assertEquals("AVS", persisted.single().name)
-        assertEquals("session-A", persisted.single().value)
         assertEquals(SessionReadiness.Authenticated, readiness.state.value)
-        assertEquals(1, repository.activated.size)
+        assertEquals(false, manager.userState.value.isLoading)
     }
 
     @Test
-    fun promotedSessionIsAvailableToAuthenticatedFeatures() = runBlocking {
+    fun expiredSessionRecoveryPromotesFreshSessionWithAVS() = runBlocking {
         val userStorage = FakeUserStorage(user(1, "accountA"))
-        val cookieStorage = FakeCookieStorage()
+        val cookieStorage = FakeCookieStorage(listOf(avsCookie("stale-session")))
         val repository = GateUserRepository(cookieStorage)
-        val manager = manager(userStorage, cookieStorage, repository)
+        val readiness = SessionReadinessHolder()
+        val manager = manager(userStorage, cookieStorage, repository, readiness)
 
         val verifier = launch { manager.verifyStoredLogin() }
+        repository.probeStarted.await()
+        repository.completeProbe(
+            NetWorkResult.Error("登录会话已失效", kind = NetworkErrorKind.Authentication)
+        )
         repository.verifyStarted.await()
         repository.completeVerify(
             NetWorkResult.Success(
@@ -750,9 +774,13 @@ class UserManagerSessionTest {
         )
         verifier.join()
 
+        // 过期才用凭据，且新会话（含 AVS）被提升为活动会话。
+        assertEquals(1, repository.verifyCalls)
+        assertEquals(1, manager.userState.value.data?.id)
         val activeCookie = cookieStorage.get().single()
         assertEquals("AVS", activeCookie.name)
         assertEquals("session-A", activeCookie.value)
+        assertEquals(SessionReadiness.Authenticated, readiness.state.value)
     }
 
     @Test
@@ -827,7 +855,8 @@ class UserManagerSessionTest {
         val cookies = FakeCookieStorage()
         val readiness = SessionReadinessHolder()
         val repository = object : UserRepository by GateUserRepository(cookies) {
-            override suspend fun verifyLogin(username: String, password: String): NetWorkResult<CandidateSession> =
+            // 冷启动探活遇到临时网络问题：保留缓存身份，不需要（也不允许）动用凭据。
+            override suspend fun probeActiveSession(): NetWorkResult<Unit> =
                 NetWorkResult.Error("Temporary offline")
         }
         val manager = manager(userStorage, cookies, repository, readiness)

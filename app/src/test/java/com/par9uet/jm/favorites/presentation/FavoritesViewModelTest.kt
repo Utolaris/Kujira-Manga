@@ -495,8 +495,6 @@ class FavoritesViewModelTest {
     private class FakeLocalSettings : ContentPreferences {
         override val blockedTags: StateFlow<List<String>> =
             MutableStateFlow(emptyList<String>()).asStateFlow()
-        override val homeExcludedTags: StateFlow<List<String>> =
-            MutableStateFlow(emptyList<String>()).asStateFlow()
     }
 
     private class FakeFavoriteSession(initialAccountId: Int = 42) : FavoriteSession {

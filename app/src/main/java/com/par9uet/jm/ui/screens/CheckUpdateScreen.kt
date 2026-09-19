@@ -79,7 +79,6 @@ fun CheckUpdateScreen(
     val clipboardScope = rememberCoroutineScope()
     val appIcon = remember(context) { loadAppIconBitmap(context) }
     val appVersion = remember(context) { appVersionName(context) }
-    val versionCode = remember(context) { appVersionCode(context) }
     val downloadState by viewModel.downloadState.collectAsState()
     val state by viewModel.state.collectAsState()
     val updateState = state.updateState
@@ -132,7 +131,7 @@ fun CheckUpdateScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
-                CurrentVersionCard(appIcon, appVersion, versionCode)
+                CurrentVersionCard(appIcon, appVersion)
             }
             item {
                 UpdateStatusCard(
@@ -171,7 +170,8 @@ private fun AutoCheckUpdateCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        // 与同页 CurrentVersionCard / UpdateStatusCard 一致，避免开关卡片底色突兀。
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Row(
@@ -243,7 +243,6 @@ private fun InstallCard(
 private fun CurrentVersionCard(
     appIcon: android.graphics.Bitmap?,
     appVersion: String,
-    versionCode: String,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -278,21 +277,11 @@ private fun CurrentVersionCard(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        text = "v$appVersion",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "($versionCode)",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                Text(
+                    text = "v$appVersion",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
@@ -392,12 +381,6 @@ private fun UpdateStatusCard(
                             icon = Icons.Rounded.Info,
                             text = "当前已经是最新版本。",
                             highlight = false
-                        )
-                        Text(
-                            text = "最新版本：${state.release.version}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(start = 32.dp)
                         )
                     }
                 }

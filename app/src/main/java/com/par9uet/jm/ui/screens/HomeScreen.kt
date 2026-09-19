@@ -182,7 +182,6 @@ internal fun HomeScreen(
     val homeState by homeViewModel.homeState.collectAsState()
     val preferenceRecommendEnabled by localSettingManager.preferenceRecommendEnabled.collectAsState()
     val blockedTags by localSettingManager.blockedTags.collectAsState()
-    val homeExcludedTags by localSettingManager.homeExcludedTags.collectAsState()
     val miscSettings by localSettingManager.misc.collectAsState()
     val pullRevealPadding = 36.dp * pullDownState.progress
     val gridState = rememberLazyGridState()
@@ -218,11 +217,8 @@ internal fun HomeScreen(
     }
 
     val currentContent = selectedState?.content.orEmpty()
-    val allExcludedTags = remember(blockedTags, homeExcludedTags) {
-        (blockedTags + homeExcludedTags).distinct()
-    }
-    val comicList = remember(currentContent, allExcludedTags) {
-        currentContent.filterBlockedTags(allExcludedTags).distinctBy { it.id }
+    val comicList = remember(currentContent, blockedTags) {
+        currentContent.filterBlockedTags(blockedTags).distinctBy { it.id }
     }
     LazyVerticalGrid(
         modifier = pullDownModifier.fillMaxSize(),
@@ -291,11 +287,11 @@ internal fun HomeScreen(
                             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                         )
                         Text(
-                            text = if (allExcludedTags.isNotEmpty()) "当前分类的漫画均被标签排除过滤" else "暂无漫画",
+                            text = if (blockedTags.isNotEmpty()) "当前分类的漫画均被标签排除过滤" else "暂无漫画",
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        if (allExcludedTags.isNotEmpty()) {
+                        if (blockedTags.isNotEmpty()) {
                             Text(
                                 text = "可在 设置 → 标签排除 中调整",
                                 style = MaterialTheme.typography.bodySmall,

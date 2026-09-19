@@ -9,15 +9,19 @@ import com.par9uet.jm.data.models.CommentPage
 import com.par9uet.jm.network.AuthenticatedEmbeddedClient
 import com.par9uet.jm.network.EmbeddedClientManager
 import com.par9uet.jm.session.CandidateSession
+import com.par9uet.jm.session.LoginSessionGate
 import com.par9uet.jm.session.UserRepository
 import com.par9uet.jm.core.model.SignInData
 import com.par9uet.jm.core.network.AuthFailure
+import com.par9uet.jm.utils.log
+import com.par9uet.jm.utils.logError
 import com.par9uet.jm.retrofit.model.LoginResponse
 import com.par9uet.jm.core.network.NetWorkResult
 import com.par9uet.jm.core.network.map
 import com.par9uet.jm.retrofit.model.UserHistoryComicListResponse
 import com.par9uet.jm.retrofit.model.UserHistoryCommentListResponse
 import io.github.jukomu.jmcomic.api.exception.NetworkException
+import io.github.jukomu.jmcomic.api.model.FavoriteQuery
 import io.github.jukomu.jmcomic.api.model.ForumQuery
 import io.github.jukomu.jmcomic.api.model.JmAlbumMeta
 import io.github.jukomu.jmcomic.api.model.JmCategoryMeta
@@ -44,6 +48,26 @@ class UserRepositoryImpl(
         password: String,
     ): NetWorkResult<CandidateSession> = authenticateCandidate(username, password)
 
+    /**
+     * 只读的鉴权探针：`GET /favorite?page=1`。
+     *
+     * 选这个端点的理由：它的 401 语义已经被 [AuthenticatedEmbeddedClient] +
+     * `recoverExpiredSession` 在收藏同步链路里验证过，不会出现「匿名也能 200」的假阳性
+     * （相比之下 `notifications/unreadCount`、`useredit/<uid>` 这类接口可能对匿名也返回数据，
+     * 拿来做探针会永远判定"会话有效"）。
+     *
+     * 结果只用于判定，不落任何本地状态；返回的 payload 直接丢弃。
+     */
+    override suspend fun probeActiveSession(): NetWorkResult<Unit> =
+        safeEmbeddedCall("校验登录状态失败") {
+            requireNotNull(
+                authenticatedEmbeddedClient.withClient { client ->
+                    client.getFavorites(FavoriteQuery.Builder().folderId(0).page(1).build())
+                }
+            )
+            Unit
+        }
+
     private suspend fun authenticateCandidate(
         username: String,
         password: String,
@@ -54,16 +78,30 @@ class UserRepositoryImpl(
                 // commit in UserManager promotes these cookies to the shared session.
                 when (val result = embeddedClientManager.verifyCandidate(username, password)) {
                     is EmbeddedClientManager.EmbeddedLoginResult.Success -> {
-                        NetWorkResult.Success(
-                            CandidateSession(
-                                loginResponse = result.userInfo.toLoginResponse(),
-                                embeddedCookies = result.sessionCookies,
-                            )
+                        val candidate = CandidateSession(
+                            loginResponse = result.userInfo.toLoginResponse(),
+                            embeddedCookies = result.sessionCookies,
                         )
+                        log(
+                            LoginSessionGate.TAG,
+                            "authenticateCandidate SUCCESS uid=${candidate.loginResponse.uid} " +
+                                "username=${candidate.loginResponse.username} " +
+                                "cookieNames=${LoginSessionGate.cookieNames(candidate.embeddedCookies)}",
+                        )
+                        LoginSessionGate.validateCandidate(candidate)?.let { gateError ->
+                            logError(LoginSessionGate.TAG, "authenticateCandidate gate failed: ${gateError.message}")
+                            return@withContext gateError
+                        }
+                        NetWorkResult.Success(candidate)
                     }
 
                     is EmbeddedClientManager.EmbeddedLoginResult.Failure -> {
                         val exception = result.exception
+                        logError(
+                            LoginSessionGate.TAG,
+                            "authenticateCandidate FAILURE businessCode=${result.businessCode} " +
+                                "httpCode=${exception.errorCode} message=${exception.message}",
+                        )
                         NetWorkResult.Error(
                             message = "内置API登录失败：" + (exception.message ?: "未知错误"),
                             code = result.businessCode ?: exception.errorCode,
@@ -74,6 +112,7 @@ class UserRepositoryImpl(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                logError(LoginSessionGate.TAG, "authenticateCandidate EXCEPTION: ${e.message}")
                 NetWorkResult.Error(
                     message = "内置API登录失败：" + (e.message ?: "未知错误"),
                     authFailure = e.classifyAuthFailure()
@@ -84,9 +123,15 @@ class UserRepositoryImpl(
 
     /**
      * 把已验证的候选会话提升为活动会话。调用方（UserManager）已确认 generation 有效。
+     * @return false 表示 cookie 未能写入活动会话，不得视为登录成功。
      */
-    override fun activateVerifiedSession(verified: CandidateSession) {
-        embeddedClientManager.activateCandidateSession(
+    override fun activateVerifiedSession(verified: CandidateSession): Boolean {
+        val gateError = LoginSessionGate.validateCandidate(verified)
+        if (gateError != null) {
+            logError(LoginSessionGate.TAG, "activateVerifiedSession gate failed: ${gateError.message}")
+            return false
+        }
+        return embeddedClientManager.activateCandidateSession(
             cookies = verified.embeddedCookies,
             username = verified.loginResponse.username,
         )

@@ -1,6 +1,6 @@
 package com.par9uet.jm.ui.screens
 
-import androidx.activity.compose.BackHandler
+import com.par9uet.jm.ui.navigation.HierarchicalBackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -94,7 +94,7 @@ fun UserHistoryComicScreen(
     LaunchedEffect(historyEditState.editing) {
         if (!historyEditState.editing) showDeleteConfirmDialog = false
     }
-    BackHandler(enabled = historyEditState.editing) {
+    HierarchicalBackHandler(enabled = historyEditState.editing) {
         userViewModel.clearHistorySelection()
     }
 

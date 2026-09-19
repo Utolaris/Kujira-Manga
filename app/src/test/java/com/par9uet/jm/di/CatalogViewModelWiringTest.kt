@@ -41,7 +41,6 @@ class CatalogViewModelWiringTest {
         } as ComicRepository
         val settings = object : ContentPreferences, RecommendationPreferences {
             override val blockedTags = MutableStateFlow(emptyList<String>())
-            override val homeExcludedTags = MutableStateFlow(emptyList<String>())
             override val preferenceRecommendEnabled = MutableStateFlow(false)
         }
         val app = koinApplication {

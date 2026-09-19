@@ -1,6 +1,5 @@
 package com.par9uet.jm.ui.glass
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.MutableTransitionState
@@ -35,6 +34,7 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.par9uet.jm.ui.models.LocalTabletLayoutEnabled
+import com.par9uet.jm.ui.navigation.HierarchicalBackHandler
 
 /**
  * 玻璃弹窗的默认几何。
@@ -99,7 +99,7 @@ fun GlassModal(
     val windowWidthPx = LocalWindowInfo.current.containerSize.width
     val density = LocalDensity.current
     if (dismissOnBack) {
-        BackHandler(enabled = visible && active) {
+        HierarchicalBackHandler(enabled = visible && active) {
             onDismissRequest()
         }
     }

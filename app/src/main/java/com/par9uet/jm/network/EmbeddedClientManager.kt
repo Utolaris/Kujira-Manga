@@ -4,18 +4,24 @@ package com.par9uet.jm.network
 import com.google.gson.JsonParser
 import com.par9uet.jm.storage.CookieStorage
 import com.par9uet.jm.utils.log
+import com.par9uet.jm.utils.logError
+import com.par9uet.jm.utils.redactSensitiveJson
 import io.github.jukomu.jmcomic.api.enums.ClientType
 import io.github.jukomu.jmcomic.api.exception.ResponseException
 import io.github.jukomu.jmcomic.api.model.JmUserInfo
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient
 import io.github.jukomu.jmcomic.core.config.JmConfiguration
 import io.github.jukomu.jmcomic.core.net.OkHttpBuilder
+import io.github.jukomu.jmcomic.core.net.provider.DomainProbe
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import okhttp3.Cookie
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.io.IOException
 import java.time.Duration
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.LinkedBlockingQueue
@@ -45,6 +51,12 @@ import java.util.concurrent.TimeUnit
 class EmbeddedClientManager(
     private val cookieStorage: CookieStorage,
     private val dohManager: com.par9uet.jm.network.DohManager,
+    private val userAgentProvider: EmbeddedUserAgentProvider,
+    /**
+     * 共享的、无 cookie 的 DoH 基座客户端（见 `di/AppModule.kt` 的 OkHttpClient 清单）。
+     * 域名重赛探针由它 `.newBuilder()` 派生，避免再新造客户端、也避免绕开 DoH。
+     */
+    private val baseHttpClient: OkHttpClient,
 ) {
     sealed class EmbeddedLoginResult {
         /**
@@ -124,10 +136,24 @@ class EmbeddedClientManager(
         return try {
             val userInfo = candidate.login(username, password)
             val sessionCookies = candidate.getCookies()
+            val cookieNames = sessionCookies.map { it.name }
+            log(
+                "Login",
+                "verifyCandidate SUCCESS uid=${userInfo.uid} username=${userInfo.username} " +
+                    "cookieCount=${sessionCookies.size} cookieNames=$cookieNames",
+            )
+            if (sessionCookies.isEmpty()) {
+                logError("Login", "verifyCandidate: SDK login returned empty cookies — not a usable session")
+            }
             EmbeddedLoginResult.Success(userInfo, sessionCookies)
         } catch (e: CancellationException) {
             throw e
         } catch (e: ResponseException) {
+            logError(
+                "Login",
+                "verifyCandidate FAILURE businessCode=${loginBusinessCode.get()} " +
+                    "httpCode=${e.errorCode} message=${e.message}",
+            )
             EmbeddedLoginResult.Failure(e, loginBusinessCode.get())
         } finally {
             loginBusinessCode.remove()
@@ -139,26 +165,61 @@ class EmbeddedClientManager(
      * 把验证通过的候选会话提升为活动会话：持久化完整 cookie（含 AVS），并同步到已存在的
      * 共享客户端 CookieJar。
      *
+     * **故意不把 username 写进共享客户端内存缓存。** JMComic-Api-Java 在 cookie 失效后会用
+     * `login(username, decryptPasswordFromMemory())` 自动重登；共享客户端从不持有密码，
+     * 一旦写入 username 就会在 `FormBody.Builder.add` 上 NPE（“Parameter specified as non-null”）。
+     * 401 应由 [com.par9uet.jm.session.UserManager] 用本地保存的密码走恢复登录。
+     * 评论成功后的 username 映射由 [AuthenticatedEmbeddedClient] 的 ParseResponseException 兜底。
+     *
      * 调用方（UserManager）必须在持有会话锁、且确认用户 session generation 仍然有效之后
      * 调用；本方法内部再用内置会话 generation 做第二道守卫。
+     *
+     * @param username 仅用于日志核对，不写入 SDK 客户端。
      */
-    /**
-     * @param username 可选。写入客户端内存中的登录名缓存；恢复 cookie 不会自动填充该字段，
-     * 而 `postComment`/`replyToComment` 在服务端已接受后仍会读取它。
-     */
-    fun activateCandidateSession(cookies: List<Cookie>, username: String? = null) {
-        if (cookies.isEmpty()) return
+    fun activateCandidateSession(cookies: List<Cookie>, username: String? = null): Boolean {
+        val cookieNames = cookies.map { it.name }
+        log(
+            "Login",
+            "activateCandidateSession cookieCount=${cookies.size} names=$cookieNames username=$username",
+        )
+        if (cookies.isEmpty()) {
+            logError("Login", "activateCandidateSession: empty cookie snapshot, refuse promote")
+            return false
+        }
         val persistenceGeneration = sharedSessionGeneration.get()
-        synchronized(this) {
+        val written = synchronized(this) {
             if (isCurrentSession(persistenceGeneration)) {
                 cookieStorage.set(cookies)
+            } else {
+                logError(
+                    "Login",
+                    "activateCandidateSession: persistence generation stale ($persistenceGeneration), skip storage",
+                )
+                false
             }
         }
-        val shared = sharedClient
-        if (shared != null && isCurrentSession(shared.clientSessionGeneration)) {
-            runCatching { shared.client.setCookies(cookies) }
-                .onFailure { log("EmbeddedClientManager: 同步活动客户端 cookie 失败：" + it.message) }
-            username?.let { cacheEmbeddedLoggedInUserName(shared.client, it) }
+        if (!written) {
+            logError("Login", "activateCandidateSession: CookieStorage write failed; refuse promote")
+            return false
+        }
+        // 强制确保共享客户端存在并装上 cookie：登录成功后不得只落盘、内存客户端仍空会话。
+        return runCatching {
+            val shared = getSharedClient()
+            if (!isCurrentSession(shared.clientSessionGeneration)) {
+                logError(
+                    "Login",
+                    "activateCandidateSession: shared client generation stale " +
+                        "(${shared.clientSessionGeneration} vs $persistenceGeneration)",
+                )
+                return false
+            }
+            shared.client.setCookies(cookies)
+            // 不写 cacheUsername：见方法注释（FormBody null / SDK 自动重登）。
+            log("Login", "activateCandidateSession: shared client cookies applied ok")
+            true
+        }.getOrElse { error ->
+            logError("Login", "activateCandidateSession: apply cookies failed: ${error.message}")
+            false
         }
     }
 
@@ -175,6 +236,29 @@ class EmbeddedClientManager(
         staleClient?.client?.let(::closeAsync)
     }
 
+    /**
+     * 「被固定的域名疑似崩溃」时重新竞速用的可达性探针。
+     * 只在累计到失败阈值时跑一次。
+     *
+     * **派生自注入的共享 DoH 基座**（`.newBuilder()`），沿用 `di/AppModule.kt` 里那张
+     * OkHttpClient 清单要求的约定：不新造客户端、不绕开 DoH、不带 cookie。
+     */
+    private val domainProbeClient: OkHttpClient by lazy {
+        baseHttpClient.newBuilder()
+            .connectTimeout(DOMAIN_PROBE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .readTimeout(DOMAIN_PROBE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .callTimeout(DOMAIN_PROBE_CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(false)
+            .build()
+    }
+
+    private val domainProbe = DomainProbe { domain ->
+        runCatching {
+            val request = Request.Builder().url("https://$domain/").head().build()
+            domainProbeClient.newCall(request).execute().use { true }
+        }.getOrDefault(false)
+    }
+
     private fun createClient(
         persistCookies: Boolean,
         loginBusinessCode: ThreadLocal<Int?>,
@@ -184,16 +268,56 @@ class EmbeddedClientManager(
             .clientType(ClientType.API)
             .executor(clientExecutor)
             .timeout(Duration.ofSeconds(20))
+            // SDK 默认 retryTimes = 5（JmConfiguration.Builder 的字段初值），不设就是每个失败请求
+            // 最多 6 次尝试，而 RetryAndDomainRedirectInterceptor 每次尝试都会
+            // domainManager.getBestDomain() 重选域名（= 失败计数最少的那个）并 replaceHost。
+            // 后端白天正常时无所谓；晚上后端一慢，6 次尝试 × 20s 就把单个请求放大到最多约 2 分钟，
+            // 而收藏同步是成百个顺序请求 —— 总时长直接以分钟计。
+            // 收到 1：保留一次换域名重试的机会，把最坏情况砍半。
+            .retryTimes(1)
             .imageTimeout(Duration.ofSeconds(60))
             .downloadThreadPoolSize(2)
             .domainProbeTimeoutMs(3000)
             .build()
         val context = OkHttpBuilder.build(config)
         val domainManager = context.domainManager
+        // 只在持久化的共享客户端上启用「冷启动竞速一次后固定域名」。
+        // 候选客户端（登录验证）是短命的，等不到初始化完成，保持 SDK 原行为。
+        val domainPinning = if (persistCookies) {
+            EmbeddedDomainPinning(
+                domainManager = domainManager,
+                scope = cleanupScope,
+                probe = domainProbe,
+            ).also { it.start() }
+        } else {
+            null
+        }
         // Route every JMComic API request through the shared DoH resolver while keeping the
         // library's own domain manager, session generation, cookies and AVS handling intact.
         val clientWithCookieInjection = context.client.newBuilder()
             .dns(dohManager)
+            .addInterceptor { chain ->
+                // SDK 补不上的两件应用层小事：
+                // 1. 官方 app 的 fetchGet 恒补 lang，SDK 只在少数方法发；
+                // 2. SDK 把 User-Agent 硬编码成 Android 9 / Chrome 91（全设备同一串），
+                //    这里换成设备真实的 WebView UA。
+                val request = chain.request()
+                    .withEmbeddedLang(domainManager.domains)
+                    .withEmbeddedUserAgent(userAgentProvider.userAgent())
+                if (domainPinning == null) return@addInterceptor chain.proceed(request)
+                // 每次尝试都记一次结果，用于判断「被固定的域名是不是真的崩了」。
+                try {
+                    val response = chain.proceed(request)
+                    domainPinning.onAttempt(
+                        request.url.host,
+                        EmbeddedDomainPinning.outcomeForStatus(response.code),
+                    )
+                    response
+                } catch (error: IOException) {
+                    domainPinning.onTransportFailure(request.url.host)
+                    throw error
+                }
+            }
             .addInterceptor { chain ->
                 val response = chain.proceed(chain.request())
                 // Business-code inspection must run after BridgeInterceptor decompresses JSON.
@@ -204,6 +328,7 @@ class EmbeddedClientManager(
                 // Reevaluate every redirect after BridgeInterceptor. The persisted active
                 // snapshot is authoritative, including on a fresh SDK client with no loginHost.
                 val original = chain.request()
+                var sentCookieNames: List<String> = emptyList()
                 val request = if (persistCookies) {
                     // getOrNull()==null（Keystore 暂不可读）时不注入也不 merge 写回，
                     // 避免空列表覆盖完整认证快照。
@@ -214,11 +339,24 @@ class EmbeddedClientManager(
                             domainManager.domains,
                         )
                     } else emptyList()
+                    sentCookieNames = allowed.map { it.name }
                     original.newBuilder().removeHeader("Cookie").apply {
                         if (allowed.isNotEmpty()) header("Cookie", allowed.joinToString("; ") { "${it.name}=${it.value}" })
                     }.build()
                 } else original
                 val response = chain.proceed(request)
+                if (response.code == 401) {
+                    // 晚间「登录成功但几秒后又 401」的排查里，最缺的就是这两项证据：
+                    // 请求究竟打到了哪个 host，以及当时实际带上了哪些 cookie 名。
+                    // 只有 cookie 名，没有值 —— 不要在这里泄露会话材料。
+                    logError(
+                        "AuthEmbedded",
+                        "401 host=${request.url.host} path=${request.url.encodedPath} " +
+                            "sentCookies=$sentCookieNames " +
+                            "pinned=${domainPinning?.pinnedDomainOrNull()} " +
+                            "domainCount=${domainManager.domains.size}",
+                    )
+                }
                 if (persistCookies && clientSessionGeneration != null &&
                     request.url.isHttps && request.url.host in domainManager.domains
                 ) {
@@ -291,12 +429,55 @@ class EmbeddedClientManager(
     ) {
         if (request.url.pathSegments.lastOrNull() != "login") return
         try {
-            val json = JsonParser.parseString(response.peekBody(1024 * 1024L).string()).asJsonObject
-            businessCode.set(json.get("code")?.takeUnless { it.isJsonNull }?.asInt)
+            val encoding = response.header("Content-Encoding").orEmpty()
+            val contentType = response.header("Content-Type").orEmpty()
+            val rawPeek = response.peekBody(LOGIN_RESPONSE_PEEK_BYTES).bytes()
+            val text = decodeLoginBodyForLog(rawPeek, encoding)
+            log(
+                "Login",
+                "login HTTP=${response.code} url=${request.url.encodedPath} " +
+                    "contentEncoding=$encoding contentType=$contentType " +
+                    "peekBytes=${rawPeek.size} body=${redactSensitiveJson(text)}",
+            )
+            val jsonCandidate = text.trim()
+            if (jsonCandidate.startsWith("{") || jsonCandidate.startsWith("[")) {
+                val json = JsonParser.parseString(jsonCandidate).asJsonObject
+                val code = json.get("code")?.takeUnless { it.isJsonNull }?.asInt
+                businessCode.set(code)
+                log("Login", "login businessCode=$code")
+            } else {
+                logError("Login", "login response is not JSON after decode; businessCode not captured")
+            }
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Exception) {
-            // A malformed/non-JSON response is classified as unknown by the repository.
+        } catch (error: Exception) {
+            logError("Login", "login response parse/log failed: ${error.message}")
         }
+    }
+
+    /**
+     * OkHttp 应用层拦截器看到的 body 仍可能是 gzip（业务解压在更内层 / peek 不触发透明解压）。
+     * 日志侧自行识别 magic 并 gunzip，保证导出日志里能看到可读 JSON。
+     */
+    private fun decodeLoginBodyForLog(raw: ByteArray, contentEncoding: String): String {
+        fun isGzip(bytes: ByteArray) =
+            bytes.size >= 2 && bytes[0] == 0x1f.toByte() && bytes[1] == 0x8b.toByte()
+
+        val gunzipped = if (isGzip(raw) || contentEncoding.contains("gzip", ignoreCase = true)) {
+            runCatching {
+                java.util.zip.GZIPInputStream(raw.inputStream()).use { it.readBytes() }
+            }.getOrElse { raw }
+        } else {
+            raw
+        }
+        return runCatching { String(gunzipped, Charsets.UTF_8) }.getOrElse {
+            "non-utf8 bytes=${gunzipped.size} headHex=${gunzipped.take(32).joinToString(" ") { b -> "%02x".format(b) }}"
+        }
+    }
+
+    private companion object {
+        private const val LOGIN_RESPONSE_PEEK_BYTES = 256L * 1024L
+        private const val DOMAIN_PROBE_TIMEOUT_SECONDS = 3L
+        private const val DOMAIN_PROBE_CALL_TIMEOUT_SECONDS = 4L
     }
 }

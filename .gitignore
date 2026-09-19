@@ -29,3 +29,6 @@ release-key
 *.apk
 *.aab
 __pycache__/
+
+# Lab: 分析用样本 APK 与反编译产物，不入库
+/Lab/

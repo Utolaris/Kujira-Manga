@@ -55,7 +55,10 @@ class EmbeddedSessionWiringTest {
     private class InMemoryCookieStorage : CookieStorage {
         override val state = MutableStateFlow<List<okhttp3.Cookie>?>(null)
         private var cookies: List<okhttp3.Cookie> = emptyList()
-        override fun set(cookieStore: List<okhttp3.Cookie>) { cookies = cookieStore }
+        override fun set(cookieStore: List<okhttp3.Cookie>): Boolean {
+            cookies = cookieStore
+            return true
+        }
         override fun get(): List<okhttp3.Cookie> = cookies
         override fun remove() { cookies = emptyList() }
     }

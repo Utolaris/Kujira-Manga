@@ -12,8 +12,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -32,7 +30,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.rounded.Api
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.Bookmarks
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Close
@@ -63,7 +60,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.InputChip
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -153,7 +149,6 @@ fun LocalSettingScreen(
     val favoriteSyncState by settingsViewModel.favoriteSyncState.collectAsState()
     var settingType by remember { mutableStateOf<SettingType>(SettingType.Api) }
     var isOpenSettingSelectDialog by remember { mutableStateOf(false) }
-    var showHomeExcludedTagsDialog by remember { mutableStateOf(false) }
 
     fun openSetting(type: SettingType) {
         settingType = type
@@ -202,15 +197,6 @@ fun LocalSettingScreen(
                     }
                 }
             }
-            HomeExcludedTagsDialog(
-                visible = showHomeExcludedTagsDialog,
-                tags = ui.homeExcludedTags,
-                onConfirm = { tags ->
-                    settingsViewModel.updateHomeExcludedTags(tags)
-                    showHomeExcludedTagsDialog = false
-                },
-                onDismiss = { showHomeExcludedTagsDialog = false }
-            )
         },
     ) { topContentPadding, bottomContentPadding ->
         LazyColumn(
@@ -330,13 +316,6 @@ fun LocalSettingScreen(
                         if (!favoriteSyncState.isSyncing) {
                             settingsViewModel.requestFavoriteForceRefresh()
                         }
-                    }
-                    SettingsRow(
-                        icon = Icons.Rounded.Block,
-                        title = "\u9996\u9875\u6807\u7b7e\u6392\u9664",
-                        value = if (ui.homeExcludedTags.isEmpty()) "\u672a\u8bbe\u7f6e" else "${ui.homeExcludedTags.size} \u4e2a\u6807\u7b7e"
-                    ) {
-                        showHomeExcludedTagsDialog = true
                     }
                 }
             }
@@ -638,104 +617,6 @@ private fun AllGridColumnSliderDialog(
                 TextButton(onClick = {
                     onConfirm(home.toInt(), collect.toInt(), download.toInt(), history.toInt(), search.toInt())
                 }) { Text("确定") }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun HomeExcludedTagsDialog(
-    visible: Boolean,
-    tags: List<String>,
-    onConfirm: (List<String>) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var text by remember { mutableStateOf("") }
-    var currentTags by remember { mutableStateOf(tags) }
-
-    LaunchedEffect(visible) {
-        if (visible) {
-            text = ""
-            currentTags = tags
-        }
-    }
-
-    val screenHeight = LocalWindowInfo.current.containerSize.height.dp
-    GlassModal(
-        visible = visible,
-        onDismissRequest = onDismiss,
-        surfaceId = "settings-home-excluded-tags-glass-modal",
-        modifier = Modifier.settingsDialogWidth(),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = screenHeight * 0.85f)
-                .verticalScroll(rememberScrollState())
-                .padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text("首页标签排除", style = MaterialTheme.typography.titleLarge)
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    "添加标签后，首页推荐将不再显示包含这些标签的漫画",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    label = { Text("输入标签名") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    trailingIcon = {
-                        IconButton(
-                            onClick = {
-                                val trimmed = text.trim()
-                                if (trimmed.isNotEmpty() && trimmed !in currentTags) {
-                                    currentTags = currentTags + trimmed
-                                    text = ""
-                                }
-                            }
-                        ) {
-                            Icon(Icons.Rounded.Add, contentDescription = "添加")
-                        }
-                    }
-                )
-                if (currentTags.isNotEmpty()) {
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        currentTags.forEach { tag ->
-                            InputChip(
-                                label = { Text(tag) },
-                                selected = false,
-                                onClick = {},
-                                trailingIcon = {
-                                    Icon(
-                                        Icons.Rounded.Close,
-                                        contentDescription = "删除",
-                                        tint = MaterialTheme.colorScheme.error,
-                                        modifier = Modifier
-                                            .size(16.dp)
-                                            .clickable {
-                                                currentTags = currentTags - tag
-                                            }
-                                    )
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                TextButton(onClick = onDismiss) { Text("取消") }
-                TextButton(onClick = { onConfirm(currentTags) }) { Text("确定") }
             }
         }
     }

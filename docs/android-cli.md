@@ -26,6 +26,14 @@ CLI 会自动探测 SDK（`ANDROID_HOME` → `ANDROID_SDK_ROOT` → 常见路径
 # 设备
 ./scripts/android devices
 ./scripts/android doctor
+# 无线调试：配对端口/配对码来自「使用配对码配对设备」弹窗；
+# 连接要用无线调试主页上的「IP 地址和端口」（通常不是配对端口）。
+# 已配对设备也可走 mDNS 自动发现（adb-reconnect）。
+./scripts/android adb-pair 192.168.5.103:38615 795546
+./scripts/android adb-connect 192.168.5.103:<连接端口>
+./scripts/android adb-reconnect
+./scripts/android adb-reconnect 192.168.5.103:<连接端口>
+# Clash TUN 与 adb：见下方「Clash TUN」小节。
 
 # 安装 / 启动
 ./scripts/android install-debug          # 编译 + 装到唯一真机
@@ -47,6 +55,8 @@ CLI 会自动探测 SDK（`ANDROID_HOME` → `ANDROID_SDK_ROOT` → 常见路径
 # 分析
 ./scripts/android apk-info app/build/outputs/apk/debug/*.apk
 ./scripts/android apk-sign  app/build/outputs/apk/release/*.apk
+# 登录链路日志（应用内 Log 导出 / adb logcat 过滤 tag Login）
+./scripts/android logcat | rg '\[KUJIRA-MANGA\] Login|LoginSessionGate|verifyCandidate|login businessCode'
 
 # 发布签名（从钥匙串取密码，详见 docs/release-signing.md）
 eval "$(./scripts/android signing-env)"   # 导出 KUJIRA_MANGA_RELEASE_*_PASSWORD
@@ -68,6 +78,36 @@ eval "$(./scripts/android signing-env)"   # 导出 KUJIRA_MANGA_RELEASE_*_PASSWO
 4. **JDK**：CLI 编译前会过 `scripts/jdk-guard.sh`，把 `JAVA_HOME` 锁到 Eclipse Temurin 21
    （`brew install --cask temurin@21`）；解析不到合格 JDK 会直接失败并打印安装命令。
 5. 新调试能力请加进 `scripts/android`，并在本文件补一行用法，而不是另起碎片脚本。
+
+## Clash TUN 与无线 adb
+
+Clash Verge / mihomo 开 TUN 且 `auto-route: true` 时，默认可能把局域网与组播也收进虚拟网卡，
+导致 `adb pair` / `adb connect` / mDNS 出现 `No route to host`。
+
+**规则里 `IP-CIDR,192.168.0.0/16,DIRECT` 不够**——DIRECT 是策略，不改变 TUN 是否抢路由。
+需要在配置里把局域网从 auto-route 排除（mihomo `inet4-route-exclude-address`）：
+
+```yaml
+# Clash Verge → 订阅 Merge.yaml（profiles/Merge.yaml）与扩展 Script.js 均已写入
+tun:
+  auto-route: true
+  auto-detect-interface: true
+  strict-route: false
+  inet4-route-exclude-address:
+    - 127.0.0.0/8
+    - 10.0.0.0/8
+    - 172.16.0.0/12
+    - 192.168.0.0/16
+    - 169.254.0.0/16
+    - 224.0.0.0/4   # mDNS 组播，无线调试发现依赖它
+```
+
+注意：
+
+- **不要**排除 `198.18.0.0/15`（fake-ip 段），否则 TUN 下域名分流会坏。
+- 改 Merge/Script 后需在 Clash Verge 里 **重新应用订阅/重载配置** 再开 TUN。
+- 已配对设备在 TUN 下也可：`./scripts/android adb-reconnect`（优先 mDNS）。
+- 手机侧 Clash 一般不影响 adb；电脑侧 TUN + 未排除局域网才是主因。
 
 ## 与既有脚本的关系
 

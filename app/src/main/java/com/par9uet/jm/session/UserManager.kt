@@ -12,6 +12,7 @@ import com.par9uet.jm.core.network.NetworkErrorKind
 import com.par9uet.jm.storage.CookieStorage
 import com.par9uet.jm.storage.UserStorage
 import com.par9uet.jm.utils.log
+import com.par9uet.jm.utils.logError
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -181,8 +182,14 @@ class UserManager(
      * 若每个请求各自登录，同一份凭据会被连发多次，而且后一次登录会把前一次刚恢复的会话再踢掉。
      * 这里只让排头发一次 [UserRepository.verifyLogin]，同时在锁外等待的调用者复用它的结果：
      * - 成功后在 [SESSION_RECOVERY_FRESHNESS_MS] 内复用成功结果（并发的兄弟请求直接重放自己的请求）；
-     * - 失败后在 [SESSION_RECOVERY_FAILURE_COOLDOWN_MS] 内复用失败结果，不再重试 —— 服务端已经拒绝
-     *   或网络不通时，反复把密码发出去只会更糟。`null`（身份已变、无凭据、正在验证中）不缓存。
+     * - 失败后在一段**递增**冷却内复用失败结果，不再重试 —— 服务端已经拒绝或网络不通时，
+     *   反复把密码发出去只会更糟。冷却按连续失败次数指数增长
+     *   （[SESSION_RECOVERY_FAILURE_COOLDOWN_MS] 起步，翻倍，封顶
+     *   [SESSION_RECOVERY_FAILURE_COOLDOWN_MAX_MS]）。
+     *
+     *   为什么不能是固定 5 秒：后端拥塞的时段（例如晚间），401 会成批出现，
+     *   固定短冷却等于让本机每隔几秒就发一次带明文凭据的登录 —— 既是无效重试，
+     *   也是最容易被风控盯上的形态。成功一次即清零，恢复正常节奏。
      *
      * 结果按 (accountId, generation) 归档：手动登录会推进 generation，登出会清空身份，
      * 因此换账号 / 重新登录后绝不会复用上一个会话的结论。
@@ -191,12 +198,20 @@ class UserManager(
         cachedRecovery(accountId, generation)?.let { return it.result }
         return sessionRecoveryLock.withLock {
             cachedRecovery(accountId, generation)?.let { return@withLock it.result }
+            val previousStreak = (lastRecovery?.takeIf { it.generation == generation }?.failureStreak ?: 0)
             val result = refreshRejectedSession(accountId, generation)
+            val succeeded = result is NetWorkResult.Success
             lastRecovery = SessionRecoveryOutcome(
                 accountId = accountId,
                 generation = generation,
                 atMillis = System.currentTimeMillis(),
                 result = result,
+                // 成功清零；失败累加（null 不缓存、也不累加）。
+                failureStreak = when {
+                    succeeded -> 0
+                    result == null -> previousStreak
+                    else -> previousStreak + 1
+                },
             )
             result
         }
@@ -210,7 +225,7 @@ class UserManager(
         val window = if (result is NetWorkResult.Success) {
             SESSION_RECOVERY_FRESHNESS_MS
         } else {
-            SESSION_RECOVERY_FAILURE_COOLDOWN_MS
+            recoveryFailureCooldownMillis(cached.failureStreak)
         }
         return cached.takeIf { System.currentTimeMillis() - it.atMillis < window }
     }
@@ -256,7 +271,12 @@ class UserManager(
                             kind = NetworkErrorKind.Authentication,
                         )
                     }
-                    userRepository.activateVerifiedSession(result.data)
+                    if (!commitVerifiedCandidate(result.data, password = snapshot.user.password)) {
+                        return@withSessionTransition NetWorkResult.Error(
+                            "登录会话写入失败，请重新登录",
+                            kind = NetworkErrorKind.Authentication,
+                        )
+                    }
                     sessionReadinessHolder.set(SessionReadiness.Authenticated)
                     NetWorkResult.Success(Unit)
                 }
@@ -278,12 +298,23 @@ class UserManager(
     }
 
     /**
-     * Verifies the saved credentials after the first screen is interactive.
-     * 只有认证分类明确为 InvalidCredentials 才注销本地身份；离线、超时等临时错误保留缓存身份，
-     * 避免“秒开时暂时没网 → 后台验证失败 → 用户被突然登出”。
+     * 冷启动校验已有会话 —— **不发凭据**。
      *
-     * 网络验证在 loginMutex 外运行；提交（cookie 持久化、用户写入、读就绪状态）在锁内
-     * 做 generation + 身份校验，陈旧候选结果（验证 A 期间手动登录 B / 登出）一律丢弃。
+     * 旧实现直接调 `userRepository.verifyLogin()`，而它与 `login()` 是同一个函数
+     * （都走 `authenticateCandidate` → `POST /login`），于是**每次冷启动都会用明文密码登录一次**。
+     * 对一个每天启停多次的客户端来说，这是最容易被风控当成自动化行为的形态；
+     * 官方 app 的 JWT 有效期 1 小时，冷启动根本不发登录请求。
+     *
+     * 现在改为两段式：
+     * 1. 用共享客户端里已持久化的 cookie 调 [UserRepository.probeActiveSession] 探活（1 个只读请求，无凭据）；
+     * 2. 只有探活**明确判定会话失效**（`kind == Authentication`）才走 [recoverExpiredSession]
+     *    —— 它自带单飞 + 冷却，并且本来就是这个用途。
+     *
+     * 身份处置沿用旧语义：只有明确 `InvalidCredentials` 才注销本地身份；
+     * 离线/超时等临时错误保留缓存身份，避免「秒开时暂时没网 → 后台校验失败 → 用户被突然登出」。
+     *
+     * 注意：[recoverExpiredSession] 内部会自己取 `boundRemoteGate → loginMutex` 并提交状态，
+     * 所以**不能**把它包在 [withSessionTransition] 里（Mutex 不可重入，会死锁）。
      */
     suspend fun verifyStoredLogin() {
         val snapshot = loginMutex.withLock {
@@ -294,7 +325,7 @@ class UserManager(
             SessionSnapshot(sessionGeneration.get(), user)
         } ?: return
 
-        log("检测到已保存了用户登录信息，后台验证登录状态")
+        log("检测到已保存了用户登录信息，后台校验已有会话（不发送凭据）")
         runInBackground {
             if (!isCurrentSession(snapshot)) return@runInBackground
             loginMutex.withLock {
@@ -305,37 +336,59 @@ class UserManager(
                 }
             }
 
-            // This request intentionally runs outside loginMutex. The repository uses an
-            // isolated cookie jar/client so it cannot mutate a newer active session.
-            val result = userRepository.verifyLogin(snapshot.user.username, snapshot.user.password)
+            // 只读探活：用共享客户端里恢复出来的 cookie，不产生登录，也不改会话。
+            val probe = userRepository.probeActiveSession()
             coroutineContext.ensureActive()
+            if (!isCurrentSession(snapshot)) return@runInBackground
 
-            withSessionTransition {
-                if (!isCurrentSession(snapshot)) return@withSessionTransition
-                when (result) {
-                    is NetWorkResult.Error -> {
-                        if (result.authFailure == AuthFailure.InvalidCredentials) {
-                            clearIdentityWhileLocked(result.message)
-                            sessionReadinessHolder.set(SessionReadiness.Unauthenticated)
-                        } else {
-                            // 临时失败保留缓存身份与已持久化的会话；仍按“已认证”对待，
-                            // 避免收藏等请求在验证失败后一直空等。
+            when (probe) {
+                is NetWorkResult.Success -> withSessionTransition {
+                    if (!isCurrentSession(snapshot)) return@withSessionTransition
+                    sessionReadinessHolder.set(SessionReadiness.Authenticated)
+                    _userState.update { it.copy(isLoading = false) }
+                }
+
+                is NetWorkResult.Error -> {
+                    if (probe.kind != NetworkErrorKind.Authentication) {
+                        // 临时失败保留缓存身份与已持久化的会话；仍按“已认证”对待，
+                        // 避免收藏等请求在探活失败后一直空等。
+                        withSessionTransition {
+                            if (!isCurrentSession(snapshot)) return@withSessionTransition
                             sessionReadinessHolder.set(SessionReadiness.Authenticated)
                             _userState.update {
-                                it.copy(isError = true, errorMsg = result.message, isLoading = false)
+                                it.copy(isError = true, errorMsg = probe.message, isLoading = false)
                             }
                         }
+                        return@runInBackground
                     }
 
-                    is NetWorkResult.Success<CandidateSession> -> {
-                        persistUserWhileLocked(
-                            result.data.loginResponse.toUser(
-                                password = snapshot.user.password
+                    // 会话确实已失效 —— 这才是唯一需要用凭据的场景。
+                    //
+                    // 关键：先把 isLoading 摘掉。refreshRejectedSession() 开头有
+                    // `|| _userState.value.isLoading` 守卫，探活阶段置上的 loading 会让它直接
+                    // 返回 null（表现为「恢复登录被静默跳过」）。
+                    withSessionTransition {
+                        if (isCurrentSession(snapshot)) {
+                            _userState.update { it.copy(isLoading = false) }
+                        }
+                    }
+                    log("已有会话已失效，改用保存的凭据恢复登录")
+                    val recovery = recoverExpiredSession(snapshot.user.id, snapshot.generation)
+                    coroutineContext.ensureActive()
+                    // 恢复成功时的 readiness 与身份提交、以及明确 InvalidCredentials 时的
+                    // 注销，都已经由 recoverExpiredSession 内部完成；这里只收尾 loading 与提示。
+                    // null（账号已变 / 正在登录）不当作错误。
+                    val errorToShow = (recovery as? NetWorkResult.Error)
+                        ?.takeIf { it.authFailure != AuthFailure.InvalidCredentials }
+                    withSessionTransition {
+                        if (!isCurrentSession(snapshot)) return@withSessionTransition
+                        _userState.update {
+                            it.copy(
+                                isLoading = false,
+                                isError = errorToShow != null,
+                                errorMsg = errorToShow?.message.orEmpty(),
                             )
-                        )
-                        userRepository.activateVerifiedSession(result.data)
-                        sessionReadinessHolder.set(SessionReadiness.Authenticated)
-                        _userState.update { it.copy(isLoading = false) }
+                        }
                     }
                 }
             }
@@ -419,6 +472,29 @@ class UserManager(
         generation
     }
 
+    /**
+     * 真登录成功：候选会话通过 gate，且 activate 把 cookie 写进活动会话。
+     * 任一失败都不得留下「本地已登录、业务不可用」的状态。
+     */
+    private fun commitVerifiedCandidate(candidate: CandidateSession, password: String): Boolean {
+        LoginSessionGate.validateCandidate(candidate)?.let { gateError ->
+            logError(LoginSessionGate.TAG, "commitVerifiedCandidate gate: ${gateError.message}")
+            return false
+        }
+        if (!userRepository.activateVerifiedSession(candidate)) {
+            logError(LoginSessionGate.TAG, "commitVerifiedCandidate activate failed; clearing identity")
+            clearIdentityWhileLocked("登录会话写入失败，请重新登录")
+            return false
+        }
+        persistUserWhileLocked(candidate.loginResponse.toUser(password = password))
+        log(
+            LoginSessionGate.TAG,
+            "commitVerifiedCandidate OK uid=${candidate.loginResponse.uid} " +
+                "username=${candidate.loginResponse.username}",
+        )
+        return true
+    }
+
     private suspend fun commitLoginResult(
         generation: Long,
         password: String,
@@ -444,14 +520,16 @@ class UserManager(
                 }
 
                 is NetWorkResult.Success<CandidateSession> -> {
-                    persistUserWhileLocked(
-                        result.data.loginResponse.toUser(
-                            password = password
+                    if (!commitVerifiedCandidate(result.data, password = password)) {
+                        val failed = NetWorkResult.Error(
+                            "登录会话写入失败，请重新登录",
+                            kind = NetworkErrorKind.Authentication,
                         )
-                    )
-                    // 提交完整会话（内置 API 含 AVS）。generation 校验保证陈旧的登录/验证结果
-                    // 无法覆盖更新的会话。网络 API 的 CookieJar 为空操作，已移除。
-                    userRepository.activateVerifiedSession(result.data)
+                        _userState.update {
+                            it.copy(isError = true, errorMsg = failed.message, isLoading = false)
+                        }
+                        return@withSessionTransition failed
+                    }
                     sessionReadinessHolder.set(SessionReadiness.Authenticated)
                 }
             }
@@ -530,6 +608,8 @@ class UserManager(
         val generation: Long,
         val atMillis: Long,
         val result: NetWorkResult<Unit>?,
+        /** 连续失败次数（成功即清零）。用于把失败冷却做成指数退避。 */
+        val failureStreak: Int = 0,
     )
 }
 
@@ -539,8 +619,27 @@ class UserManager(
  */
 private const val SESSION_RECOVERY_FRESHNESS_MS = 1_500L
 
-/** 恢复失败后的冷却窗口：期间不再尝试登录，避免请求风暴把凭据反复发给后端。 */
+/**
+ * 恢复失败后的冷却窗口：期间不再尝试登录，避免请求风暴把凭据反复发给后端。
+ * 按连续失败次数**指数增长**（5s → 10s → 20s → 40s → 80s → 封顶 120s），成功一次即清零。
+ *
+ * 固定 5 秒在后端拥塞时段（晚间 401 成批出现）等于每隔几秒发一次带明文凭据的登录，
+ * 既是无效重试，也是最像自动化攻击的形态。
+ */
 private const val SESSION_RECOVERY_FAILURE_COOLDOWN_MS = 5_000L
+private const val SESSION_RECOVERY_FAILURE_COOLDOWN_MAX_MS = 120_000L
+
+/**
+ * 指数退避：`base << (streak - 1)`，封顶 [SESSION_RECOVERY_FAILURE_COOLDOWN_MAX_MS]。
+ * `streak <= 0`（成功或从未失败）时退回基础值。
+ */
+internal fun recoveryFailureCooldownMillis(streak: Int): Long {
+    if (streak <= 1) return SESSION_RECOVERY_FAILURE_COOLDOWN_MS
+    val shift = (streak - 1).coerceIn(0, 16)
+    val backoff = SESSION_RECOVERY_FAILURE_COOLDOWN_MS shl shift
+    return if (backoff <= 0) SESSION_RECOVERY_FAILURE_COOLDOWN_MAX_MS
+    else backoff.coerceAtMost(SESSION_RECOVERY_FAILURE_COOLDOWN_MAX_MS)
+}
 
 data class UserSessionSnapshot(
     val accountId: Int,

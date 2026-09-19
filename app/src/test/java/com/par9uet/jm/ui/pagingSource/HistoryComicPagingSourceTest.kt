@@ -92,7 +92,8 @@ class HistoryComicPagingSourceTest {
         }
 
         override suspend fun login(username: String, password: String): NetWorkResult<CandidateSession> = error("unused")
-        override fun activateVerifiedSession(verified: CandidateSession) = Unit
+        override suspend fun probeActiveSession(): NetWorkResult<Unit> = error("unused")
+        override fun activateVerifiedSession(verified: CandidateSession) = true
         override fun clearSession() = Unit
         override suspend fun deleteHistoryComic(id: Int): NetWorkResult<Unit> = error("unused")
         override suspend fun getHistoryCommentList(page: Int, userId: Int): NetWorkResult<CommentPage> = error("unused")

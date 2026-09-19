@@ -50,4 +50,16 @@ object NavigationMotion {
         animationSpec = HierarchicalSpring,
         targetOffsetX = { fullWidth -> fullWidth },
     )
+
+    /**
+     * 侧滑预测性返回的进/出动画。必须与 [hierarchicalPopEnter]/[hierarchicalPopExit] 一致：
+     * navigation-compose 2.8+ 在 predictive back 进行中会改走 predictivePop*，默认实现是
+     * scaleOut（屏幕中部缩小淡出），与本项目的水平 Spring 不是一套语言。
+     * swipeEdge 目前不参与偏移：nagram 式 pop 固定向右退出。
+     */
+    fun predictivePopEnter(@Suppress("UNUSED_PARAMETER") swipeEdge: Int): EnterTransition =
+        hierarchicalPopEnter()
+
+    fun predictivePopExit(@Suppress("UNUSED_PARAMETER") swipeEdge: Int): ExitTransition =
+        hierarchicalPopExit()
 }

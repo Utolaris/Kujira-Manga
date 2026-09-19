@@ -1,6 +1,6 @@
 package com.par9uet.jm.ui.screens.tabScreen
 
-import androidx.activity.compose.BackHandler
+import com.par9uet.jm.ui.navigation.HierarchicalBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -314,7 +314,7 @@ internal fun FavoritesVariableGlassTopBar(
         if (mode != FavoritesToolbarMode.SEARCH) keyboardController?.hide()
         if (mode != FavoritesToolbarMode.NORMAL) folderMenuState.dismiss()
     }
-    BackHandler(enabled = mode != FavoritesToolbarMode.NORMAL) {
+    HierarchicalBackHandler(enabled = mode != FavoritesToolbarMode.NORMAL) {
         when (mode) {
             FavoritesToolbarMode.SEARCH -> exitSearch()
             FavoritesToolbarMode.SELECTION -> favoritesViewModel.onIntent(FavoritesIntent.SelectionCleared)
@@ -623,7 +623,7 @@ internal fun FavoritesMaterialTopBar(
     LaunchedEffect(selectedCount) {
         if (selectedCount > 0 && state.searchActive) exitSearch()
     }
-    BackHandler(enabled = mode != FavoritesToolbarMode.NORMAL) {
+    HierarchicalBackHandler(enabled = mode != FavoritesToolbarMode.NORMAL) {
         when (mode) {
             FavoritesToolbarMode.SEARCH -> exitSearch()
             FavoritesToolbarMode.SELECTION -> favoritesViewModel.onIntent(FavoritesIntent.SelectionCleared)

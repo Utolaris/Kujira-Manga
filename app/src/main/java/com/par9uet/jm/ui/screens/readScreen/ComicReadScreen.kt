@@ -1,7 +1,7 @@
 package com.par9uet.jm.ui.screens.readScreen
 
 import android.app.Activity
-import androidx.activity.compose.BackHandler
+import com.par9uet.jm.ui.navigation.HierarchicalBackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.core.tween
@@ -260,11 +260,12 @@ fun ComicReadScreen(
     // page relayout invisibly. Restoring in onDispose (after the exit animation) instead let
     // the user watch the page jump when the navigation bar/dock reappeared.
     //
-    // BackHandler is composition-owned: it registers once and removes itself on dispose, so
-    // chapter jumps / comment / app-lock cannot leave a stale enabled callback holding this
-    // chapter's resume state. A raw OnBackPressedCallback added in the function body was
-    // re-registered on every recomposition and never removed.
-    BackHandler {
+    // HierarchicalBackHandler is composition-owned: it registers once and removes itself on
+    // dispose, so chapter jumps / comment / app-lock cannot leave a stale enabled callback
+    // holding this chapter's resume state. A raw OnBackPressedCallback added in the function
+    // body was re-registered on every recomposition and never removed. It also consumes
+    // predictive-back progress so the page does not system-scale while the gesture is held.
+    HierarchicalBackHandler {
         controller?.show(WindowInsetsCompat.Type.systemBars())
         // Latch exit BEFORE popBackStack so dispose-time markReading cannot revive it.
         readerResumeManager.endReading(comicId, localOnly)
