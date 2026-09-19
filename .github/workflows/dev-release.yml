@@ -56,9 +56,10 @@ jobs:
             exit 1
           fi
           yes | "${SDKMANAGER}" --licenses >/dev/null || true
+          # compileSdk=37 对应 SDK 包名 platforms;android-37.0（不是 android-37）
           "${SDKMANAGER}" \
             "platform-tools" \
-            "platforms;android-37" \
+            "platforms;android-37.0" \
             "build-tools;37.0.0"
           echo "ANDROID_HOME=${ANDROID_HOME}" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT}" >> "$GITHUB_ENV"
