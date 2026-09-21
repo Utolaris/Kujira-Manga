@@ -44,13 +44,13 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Recommend
 import androidx.compose.material.icons.rounded.Source
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SystemUpdate
+import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.CleaningServices
@@ -86,7 +86,10 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.par9uet.jm.data.models.APP_LANGUAGE_SIMPLIFIED
+import com.par9uet.jm.data.models.APP_LANGUAGE_TRADITIONAL
 import com.par9uet.jm.data.models.AVAILABLE_APIS
+import com.par9uet.jm.data.models.AVAILABLE_APP_LANGUAGES
 import com.par9uet.jm.data.models.AVAILABLE_THEMES
 import com.par9uet.jm.data.models.LauncherDisguise
 import com.par9uet.jm.ui.navigation.LocalMainNavController
@@ -104,8 +107,7 @@ private sealed class SettingType {
     object ReadMode : SettingType()
     object NotificationManagement : SettingType()
     object AllGridColumns : SettingType()
-    object ReadDecodeConcurrency : SettingType()
-    object CoverDiskCache : SettingType()
+    object AppLanguage : SettingType()
 }
 
 private const val NOTIFICATION_ON_WITH_NAME = "on_with_name"
@@ -116,6 +118,11 @@ private val themeTextMap = mapOf(
     "auto" to "\u8ddf\u968f\u7cfb\u7edf",
     "light" to "\u65e5\u95f4\u6a21\u5f0f",
     "dark" to "\u591c\u95f4\u6a21\u5f0f",
+)
+
+private val appLanguageTextMap = mapOf(
+    APP_LANGUAGE_SIMPLIFIED to "简体中文",
+    APP_LANGUAGE_TRADITIONAL to "繁體中文",
 )
 
 private fun gridColumnsText(columns: Int): String =
@@ -241,6 +248,13 @@ fun LocalSettingScreen(
                     ) {
                         openSetting(SettingType.AllGridColumns)
                     }
+                    SettingsRow(
+                        Icons.Rounded.Translate,
+                        "内容语言",
+                        appLanguageTextMap[ui.appLanguage].orEmpty()
+                    ) {
+                        openSetting(SettingType.AppLanguage)
+                    }
                 }
             }
             item {
@@ -327,27 +341,6 @@ fun LocalSettingScreen(
                     SettingsRow(Icons.AutoMirrored.Rounded.MenuBook, "\u9605\u8bfb\u6a21\u5f0f", readModeText(ui.readMode)) {
                         openSetting(SettingType.ReadMode)
                     }
-                    SettingsSwitchRow(
-                        icon = Icons.Rounded.Memory,
-                        title = "\u56fe\u7247\u5185\u5b58\u4f18\u5316",
-                        value = ui.memoryOptEnabled,
-                        onCheckedChange = { settingsViewModel.setMemoryOptEnabled(it) }
-                    )
-                    if (ui.memoryOptEnabled) {
-                        Text(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                            text = "\u5f00\u542f\u540e\u9650\u5236\u5e76\u53d1\u89e3\u7801\u6570\u5e76\u964d\u4f4e\u91c7\u6837\u7387\uff0c\u7f13\u89e3\u4f4e\u7aef\u8bbe\u5907 OOM\uff1b\u63a8\u8350\u503c 2",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        SettingsRow(
-                            icon = Icons.Rounded.Memory,
-                            title = "\u5e76\u53d1\u89e3\u7801\u6570",
-                            value = "\u63a8\u8350 ${ui.decodeConcurrency}"
-                        ) {
-                            openSetting(SettingType.ReadDecodeConcurrency)
-                        }
-                    }
                 }
             }
             item {
@@ -365,17 +358,10 @@ fun LocalSettingScreen(
                         value = ui.autoSignInEnabled,
                         onCheckedChange = { settingsViewModel.setAutoSignInEnabled(it) }
                     )
-                    SettingsRow(
-                        Icons.Rounded.Image,
-                        "封面磁盘缓存",
-                        "${ui.coverDiskCacheMb} MB"
-                    ) {
-                        openSetting(SettingType.CoverDiskCache)
-                    }
                     SettingsRow(Icons.Rounded.BugReport, "\u67e5\u770b\u65e5\u5fd7", "\u8c03\u8bd5\u548c\u9519\u8bef\u4fe1\u606f") {
                         mainNavController.navigate("logViewer")
                     }
-                    SettingsRow(Icons.Rounded.CleaningServices, "\u7f13\u5b58\u6e05\u7406", "\u6e05\u7406\u56fe\u7247\u3001\u6f2b\u753b\u7b49\u7f13\u5b58\u6587\u4ef6") {
+                    SettingsRow(Icons.Rounded.CleaningServices, "缓存控制", "总额度、分项配额与下载豁免") {
                         mainNavController.navigate("cacheCleanup")
                     }
                     SettingsRow(Icons.Rounded.CloudSync, "\u6570\u636e\u5907\u4efd", "\u5907\u4efd\u4e0e\u6062\u590d\u5e94\u7528\u8bbe\u7f6e") {
@@ -440,6 +426,11 @@ private fun SettingSelectDialogContent(
             )
         }
     }
+    val appLanguageOptionList by remember {
+        derivedStateOf {
+            AVAILABLE_APP_LANGUAGES.map { SelectOption(appLanguageTextMap[it].orEmpty(), it) }
+        }
+    }
     val readModeOptionList by remember {
         derivedStateOf {
             listOf(
@@ -458,28 +449,6 @@ private fun SettingSelectDialogContent(
             )
         }
     }
-    val readDecodeConcurrencyOptionList by remember {
-        derivedStateOf {
-            listOf(
-                SelectOption("1", "1"),
-                SelectOption("2\uff08\u63a8\u8350\uff09", "2"),
-                SelectOption("3", "3"),
-                SelectOption("4", "4")
-            )
-        }
-    }
-    val coverDiskCacheOptionList by remember {
-        derivedStateOf {
-            com.par9uet.jm.coil.COVER_DISK_CACHE_MB_OPTIONS.map { mb ->
-                val label = if (mb == com.par9uet.jm.coil.DEFAULT_COVER_DISK_CACHE_MB) {
-                    "$mb MB（推荐）"
-                } else {
-                    "$mb MB"
-                }
-                SelectOption(label, mb.toString())
-            }
-        }
-    }
     SelectDialog(
         visible = visible,
         title = settingTitle(settingType),
@@ -492,8 +461,7 @@ private fun SettingSelectDialogContent(
             is SettingType.PrefetchCount -> prefetchCountOptionList
             is SettingType.ReadMode -> readModeOptionList
             is SettingType.NotificationManagement -> notificationOptionList
-            is SettingType.ReadDecodeConcurrency -> readDecodeConcurrencyOptionList
-            is SettingType.CoverDiskCache -> coverDiskCacheOptionList
+            is SettingType.AppLanguage -> appLanguageOptionList
         },
         onSelect = {
             when (settingType) {
@@ -508,8 +476,7 @@ private fun SettingSelectDialogContent(
                         showName = it == NOTIFICATION_ON_WITH_NAME
                     )
                 }
-                is SettingType.ReadDecodeConcurrency -> settingsViewModel.setDecodeConcurrency(it.toIntOrNull() ?: 2)
-                is SettingType.CoverDiskCache -> settingsViewModel.setCoverDiskCacheMb(it.toIntOrNull() ?: 256)
+                is SettingType.AppLanguage -> settingsViewModel.selectAppLanguage(it)
             }
             onDismiss()
         },
@@ -769,8 +736,7 @@ private fun settingTitle(type: SettingType): String {
         is SettingType.ReadMode -> "\u9605\u8bfb\u6a21\u5f0f"
         is SettingType.NotificationManagement -> "\u901a\u77e5\u7ba1\u7406"
         is SettingType.AllGridColumns -> "\u7f51\u683c\u5217\u6570"
-        is SettingType.ReadDecodeConcurrency -> "\u5e76\u53d1\u89e3\u7801\u6570"
-        is SettingType.CoverDiskCache -> "\u5c01\u9762\u78c1\u76d8\u7f13\u5b58"
+        is SettingType.AppLanguage -> "\u5185\u5bb9\u8bed\u8a00"
     }
 }
 
@@ -787,7 +753,6 @@ private fun settingValue(type: SettingType, ui: SettingsUiState): String {
             else -> NOTIFICATION_ON_WITHOUT_NAME
         }
         is SettingType.AllGridColumns -> ""
-        is SettingType.ReadDecodeConcurrency -> "${ui.decodeConcurrency}"
-        is SettingType.CoverDiskCache -> "${ui.coverDiskCacheMb} MB"
+        is SettingType.AppLanguage -> ui.appLanguage
     }
 }

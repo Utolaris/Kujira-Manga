@@ -26,6 +26,19 @@ class ArchitectureBoundaryTest {
             addAll(forbiddenImports("retrofit", listOf(
                 "com.par9uet.jm.data.", "com.par9uet.jm.store.", "com.par9uet.jm.session.",
                 "com.par9uet.jm.network.",
+            ), except = listOf(
+                // OkHttp 共享工厂归属 network（L4）；retrofit 构建客户端时允许引用这些扩展函数。
+                "com.par9uet.jm.network.applyAppHttpDefaults",
+                "com.par9uet.jm.network.applyHttpLogging",
+                "com.par9uet.jm.network.createHttpCache",
+                "com.par9uet.jm.network.createCdnConnectionPool",
+                "com.par9uet.jm.network.createSharedCookielessDohClient",
+            )))
+            addAll(forbiddenQualifiedUsages("retrofit", listOf(
+                "com.par9uet.jm.data.", "com.par9uet.jm.session.", "com.par9uet.jm.network.",
+            ), except = listOf(
+                "com.par9uet.jm.network.applyAppHttpDefaults",
+                "com.par9uet.jm.network.applyHttpLogging",
             )))
             addAll(forbiddenImports("network", listOf(
                 "com.par9uet.jm.repository.", "com.par9uet.jm.data.",
@@ -38,13 +51,47 @@ class ArchitectureBoundaryTest {
                 "com.par9uet.jm.data.", "com.par9uet.jm.repository.",
             ), except = listOf("com.par9uet.jm.data.models.")))
             addAll(forbiddenImports("favorites/data", listOf(
-                "com.par9uet.jm.repository.",
+                "com.par9uet.jm.repository.", "com.par9uet.jm.session.",
+            )))
+            addAll(forbiddenQualifiedUsages("favorites/data", listOf(
+                "com.par9uet.jm.session.",
             )))
             // UI only speaks favorites.model ports/contracts; Room/session impl stay in data.
             addAll(forbiddenImports("ui", listOf("com.par9uet.jm.favorites.data.")))
             addAll(forbiddenQualifiedUsages("ui", listOf("com.par9uet.jm.favorites.data.")))
-            // Screens must not touch cache file atoms; CacheCleanupViewModel is the L2 exception.
-            addAll(forbiddenImports("ui/screens", listOf("com.par9uet.jm.cache.atom.")))
+            // Screens must not touch cache policy objects; VM injects stops/slices.
+            addAll(forbiddenImports("ui/screens", listOf("com.par9uet.jm.cache.")))
+            addAll(forbiddenQualifiedUsages("ui/screens", listOf("com.par9uet.jm.cache.")))
+            // ui/screens 一律不得服务定位（getKoin）；依赖经 Feature ViewModel / 组合根注入。
+            addAll(forbiddenImports("ui/screens", listOf(
+                "org.koin.compose.getKoin",
+                "org.koin.androidx.compose.getKoin",
+            )))
+            addAll(forbiddenQualifiedUsages("ui/screens", listOf(
+                "org.koin.compose.getKoin",
+                "org.koin.androidx.compose.getKoin",
+            )))
+            // FQN 绕过：设置/引导页不得再全限定引用 storage/network 或 getKoin 取领域服务
+            listOf(
+                "DohSettingScreen.kt",
+                "AppLockSettingScreen.kt",
+                "WelcomeScreen.kt",
+                "CheckUpdateScreen.kt",
+                "AboutScreen.kt",
+                "BackupRestoreScreen.kt",
+            ).forEach { screen ->
+                addAll(forbiddenImports("ui/screens/$screen", listOf(
+                    "com.par9uet.jm.network.",
+                    "com.par9uet.jm.storage.",
+                    "com.par9uet.jm.session.UserManager",
+                )))
+                addAll(forbiddenQualifiedUsages("ui/screens/$screen", listOf(
+                    "com.par9uet.jm.network.",
+                    "com.par9uet.jm.storage.",
+                    "com.par9uet.jm.session.UserManager",
+                    "org.koin.compose.getKoin",
+                )))
+            }
             // 支撑层不得反向依赖具体页面：导航基础设施与通用组件只允许依赖 ui/navigation、
             // ui/theme、ui/glass 同层设施，LocalMainNavController 因此归 ui/navigation。
             addAll(forbiddenImports("ui/components", listOf("com.par9uet.jm.ui.screens.")))
@@ -62,15 +109,17 @@ class ArchitectureBoundaryTest {
             // 组合根负责（见 ARCHITECTURE.md「已采用的边界」）。
             addAll(forbiddenImports("ui/components", listOf(
                 "com.par9uet.jm.storage.", "com.par9uet.jm.repository.", "com.par9uet.jm.database.",
-                "com.par9uet.jm.session.", "com.par9uet.jm.cache.", "com.par9uet.jm.download.",
-                "com.par9uet.jm.backup.", "com.par9uet.jm.update.", "com.par9uet.jm.network.",
+                "com.par9uet.jm.session.", "com.par9uet.jm.download.",
+                "com.par9uet.jm.backup.", "com.par9uet.jm.update.",
                 "com.par9uet.jm.reader.", "com.par9uet.jm.favorites.", "com.par9uet.jm.ui.viewModel.",
+                "com.par9uet.jm.cache.", "com.par9uet.jm.network.",
             )))
             addAll(forbiddenQualifiedUsages("ui/components", listOf(
                 "com.par9uet.jm.storage.", "com.par9uet.jm.repository.", "com.par9uet.jm.database.",
-                "com.par9uet.jm.session.", "com.par9uet.jm.cache.", "com.par9uet.jm.download.",
-                "com.par9uet.jm.backup.", "com.par9uet.jm.update.", "com.par9uet.jm.network.",
+                "com.par9uet.jm.session.", "com.par9uet.jm.download.",
+                "com.par9uet.jm.backup.", "com.par9uet.jm.update.",
                 "com.par9uet.jm.reader.", "com.par9uet.jm.favorites.", "com.par9uet.jm.ui.viewModel.",
+                "com.par9uet.jm.cache.", "com.par9uet.jm.network.",
             )))
             listOf(
                 "data", "retrofit", "network", "session", "favorites/data",
@@ -82,6 +131,9 @@ class ArchitectureBoundaryTest {
             )))
             addAll(forbiddenQualifiedUsages("retrofit", listOf(
                 "com.par9uet.jm.data.", "com.par9uet.jm.session.", "com.par9uet.jm.network.",
+            ), except = listOf(
+                "com.par9uet.jm.network.applyAppHttpDefaults",
+                "com.par9uet.jm.network.applyHttpLogging",
             )))
             addAll(forbiddenQualifiedUsages("network", listOf(
                 "com.par9uet.jm.repository.", "com.par9uet.jm.data.",

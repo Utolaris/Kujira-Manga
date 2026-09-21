@@ -1,6 +1,5 @@
 package com.par9uet.jm.ui.screens.readScreen
 import com.par9uet.jm.reader.readerPageKey
-import com.par9uet.jm.reader.toReaderPage
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -19,14 +18,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import com.par9uet.jm.data.models.ComicPicImageState
 import com.par9uet.jm.reader.ReaderImageException
-import com.par9uet.jm.reader.ReaderImagePipeline
+import com.par9uet.jm.ui.viewModel.LoadedPageImage
 import kotlinx.coroutines.CancellationException
-import org.koin.compose.getKoin
 
 private sealed interface ReaderImageUiState {
     data object Loading : ReaderImageUiState
@@ -34,25 +31,27 @@ private sealed interface ReaderImageUiState {
     data class Failure(val reason: String) : ReaderImageUiState
 }
 
+/**
+ * Renders one reader page. The parent passes [loadPage] from ComicReadViewModel —
+ * this composable never service-locates the image pipeline.
+ */
 @Composable
 fun ComicPicImage(
     modifier: Modifier = Modifier,
     comicPicImageState: ComicPicImageState,
     contentScale: ContentScale = ContentScale.FillBounds,
-    readerImagePipeline: ReaderImagePipeline = getKoin().get(),
+    loadPage: suspend (ComicPicImageState) -> LoadedPageImage,
 ) {
     var retryToken by remember(comicPicImageState.readerPageKey()) { mutableIntStateOf(0) }
-    val page = remember(comicPicImageState.readerPageKey()) { comicPicImageState.toReaderPage() }
     val imageState by produceState<ReaderImageUiState>(
         initialValue = ReaderImageUiState.Loading,
-        key1 = page.key,
+        key1 = comicPicImageState.readerPageKey(),
         key2 = retryToken,
     ) {
         value = ReaderImageUiState.Loading
         try {
-            val loaded = readerImagePipeline.loadVisiblePage(page)
-            comicPicImageState.updateAspectRatio(loaded.aspectRatio)
-            value = ReaderImageUiState.Success(loaded.bitmap.asImageBitmap(), loaded.aspectRatio)
+            val loaded = loadPage(comicPicImageState)
+            value = ReaderImageUiState.Success(loaded.bitmap, loaded.aspectRatio)
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {

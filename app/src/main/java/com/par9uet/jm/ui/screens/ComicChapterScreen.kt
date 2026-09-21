@@ -24,15 +24,12 @@ import androidx.compose.ui.unit.dp
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.ComicDetailViewModel
-import com.par9uet.jm.storage.ReadHistoryManager
-import org.koin.compose.getKoin
 import org.koin.compose.viewmodel.koinActivityViewModel
 
 @Composable
 fun ComicChapterScreen(
     currentChapterId: Int = -1,
     comicDetailViewModel: ComicDetailViewModel = koinActivityViewModel(),
-    readHistoryManager: ReadHistoryManager = getKoin().get(),
 ) {
     val comicDetailState by comicDetailViewModel.comicDetailState.collectAsState()
     val comic = comicDetailState.data
@@ -40,14 +37,9 @@ fun ComicChapterScreen(
     val comicChapterList = remember(comic) {
         (comic?.comicChapterList ?: emptyList()).distinctBy { it.id }
     }
-    val readHistory by readHistoryManager.readHistoryState.collectAsState()
+    val readHistory by comicDetailViewModel.readHistoryState.collectAsState()
     val readChapterIds = remember(comic, readHistory) {
-        comic?.let {
-            readHistoryManager.readChapterIds(
-                readHistoryManager.historyKey(it, it.id),
-                readHistory
-            )
-        } ?: emptySet()
+        comic?.let { comicDetailViewModel.readChapterIdsForComic(it) } ?: emptySet()
     }
     val mainNavController = LocalMainNavController.current
 

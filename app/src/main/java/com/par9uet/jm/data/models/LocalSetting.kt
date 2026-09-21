@@ -35,6 +35,8 @@ data class LocalSetting(
     val api: String = AVAILABLE_APIS.first(),
     // auto | light | dark（候选集合见 [AVAILABLE_THEMES]）
     val theme: String = "auto",
+    // 内置 API 请求的 lang 参数：CN = 简体，TW = 繁體（候选集合见 [AVAILABLE_APP_LANGUAGES]）
+    val appLanguage: String = DEFAULT_APP_LANGUAGE,
     // 阅读页预先加载的图片张数
     val prefetchCount: Int = 3,
     // scroll | page | tap
@@ -91,14 +93,18 @@ data class LocalSetting(
     // 平板（大屏）布局开关。null = 尚未判定：手机侧首个非零窗口宽度写 false；
     // 平板侧由首次询问弹窗或设置开关写入。之后只由设置开关改写。
     val tabletLayoutEnabled: Boolean? = null,
-    // 内存优化：限制并发解码并降低采样率，缓解低端设备 OOM；并发上限仅在开启时生效
+    // 历史遗留：原「图片内存优化」开关。设置已移除；字段保留兼容旧备份 JSON，读取时忽略。
     val readMemoryOptEnabled: Boolean = false,
     val readDecodeConcurrency: Int = 2,
     // 已移除：homeExcludedTags（首页标签排除）。排除模板的去重并集 blockedTagList 已经全局生效
     //（首页/周刊/历史/收藏/相关推荐本地过滤 + 搜索交服务端），该字段冗余故废弃。
     // 旧存档/旧备份里仍可能有这个键，Gson 反序列化时忽略未知字段，无需迁移。
-    // 封面磁盘缓存上限（MB）；候选 128/256/512/1024，构建 ImageLoader 时生效
+    // 封面磁盘缓存上限（MB）；历史字段，现由 cacheBudgetMb 按份额推导，读取时忽略用户旧值。
     val coverDiskCacheMb: Int = 256,
+    // 缓存控制：总预算（MB）。各命名空间按 CacheBudget 推荐份额分配。
+    val cacheBudgetMb: Int = 1024,
+    // true = 已下载漫画不受缓存总配额限制（默认）
+    val downloadExemptFromCacheLimit: Boolean = true,
 )
 
 const val COLOR_PALETTE_PRESET_DEFAULT = "default"
@@ -112,3 +118,27 @@ const val COLOR_PALETTE_PRESET_MONET = "monet"
 const val READ_MODE_SCROLL = "scroll"
 const val READ_MODE_PAGE = "page"
 const val READ_MODE_TAP = "tap"
+
+/**
+ * 内置 API 请求带的 `lang` 参数，对齐官方 app 的 `localStorage.lang`。
+ *
+ * 官方只认这两个值且**都是大写**（`HttpUtil.fetchGet` 无条件补 `lang`），语义上是繁體 / 简体。
+ * 该参数**影响服务端返回的内容**（标题 / 标签 / 分类文案），不只是 UI 文案 —— 官方切换语言时
+ * 会清空主列表并重拉设置，正是因为这个。
+ */
+const val APP_LANGUAGE_SIMPLIFIED = "CN"
+const val APP_LANGUAGE_TRADITIONAL = "TW"
+
+val AVAILABLE_APP_LANGUAGES = listOf(APP_LANGUAGE_SIMPLIFIED, APP_LANGUAGE_TRADITIONAL)
+
+/** 与官方相反：官方缺省繁體，本项目缺省简体。 */
+const val DEFAULT_APP_LANGUAGE = APP_LANGUAGE_SIMPLIFIED
+
+/**
+ * 把任意读取值收口到 [AVAILABLE_APP_LANGUAGES]。
+ *
+ * `LocalSetting` 由 Gson 反序列化，字段缺失时会被留成 null（Kotlin 默认值不生效），
+ * 所以这里必须吃 `String?` 而不是 `String`。
+ */
+fun coerceAppLanguage(value: String?): String =
+    value?.takeIf { it in AVAILABLE_APP_LANGUAGES } ?: DEFAULT_APP_LANGUAGE

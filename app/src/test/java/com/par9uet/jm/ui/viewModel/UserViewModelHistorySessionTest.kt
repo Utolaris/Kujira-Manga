@@ -307,6 +307,11 @@ class UserViewModelHistorySessionTest {
         override val blockedTags: StateFlow<List<String>> = MutableStateFlow(emptyList())
     }
 
+    private class FakeMiscSettingsPreferences : com.par9uet.jm.storage.MiscSettingsPreferences {
+        override val misc: StateFlow<com.par9uet.jm.storage.MiscSettingsState> =
+            MutableStateFlow(com.par9uet.jm.storage.MiscSettingsState())
+    }
+
     private class Environment(
         val viewModel: UserViewModel,
         val userManager: UserManager,
@@ -340,6 +345,7 @@ class UserViewModelHistorySessionTest {
             toastManager = ToastManager(),
             contentPreferences = FakeContentPreferences(),
             downloadManager = testDownloadManager(CoroutineScope(Dispatchers.Default)),
+            miscSettingsPreferences = FakeMiscSettingsPreferences(),
         )
         return Environment(viewModel, userManager, repository)
     }

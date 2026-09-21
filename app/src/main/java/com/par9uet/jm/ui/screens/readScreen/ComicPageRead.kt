@@ -131,7 +131,8 @@ fun ComicPageRead(
             comicPicImageState = item,
             modifier = Modifier
                 .fillMaxSize(),
-            contentScale = ContentScale.Fit
+            contentScale = ContentScale.Fit,
+            loadPage = comicReadViewModel::loadPageImage,
         )
     }
 }

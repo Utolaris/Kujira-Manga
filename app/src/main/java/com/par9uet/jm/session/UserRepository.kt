@@ -1,5 +1,6 @@
 package com.par9uet.jm.session
 import com.par9uet.jm.core.model.SignInData
+import com.par9uet.jm.core.network.AuthAttemptOrigin
 import com.par9uet.jm.core.network.NetWorkResult
 import com.par9uet.jm.data.models.ActionResult
 import com.par9uet.jm.data.models.ComicPage
@@ -24,8 +25,15 @@ interface UserRepository {
 
     /**
      * 验证凭据但不改变活动会话，返回候选认证结果（含 cookie 快照）。
+     *
+     * @param origin 触发来源。只进日志与登录密度统计 —— 服务端对高频 `/login` 的软拒绝
+     *   与「凭据真的错误」报文完全一致，无法从 `code` 区分。
      */
-    suspend fun verifyLogin(username: String, password: String): NetWorkResult<CandidateSession> =
+    suspend fun verifyLogin(
+        username: String,
+        password: String,
+        origin: AuthAttemptOrigin = AuthAttemptOrigin.UNSPECIFIED,
+    ): NetWorkResult<CandidateSession> =
         login(username, password)
 
     /**

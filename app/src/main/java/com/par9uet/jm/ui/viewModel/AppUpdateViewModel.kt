@@ -8,6 +8,7 @@ import com.par9uet.jm.update.AppUpdateDownloadRequest
 import com.par9uet.jm.update.AppUpdateDownloadState
 import com.par9uet.jm.update.AppUpdateDownloadStatus
 import com.par9uet.jm.core.ToastManager
+import com.par9uet.jm.storage.LocalSettingManager
 import com.par9uet.jm.update.AppUpdateInstaller
 import com.par9uet.jm.update.GithubRelease
 import com.par9uet.jm.update.ReleaseSource
@@ -24,6 +25,7 @@ data class AppUpdateUiState(
     val visibleRelease: GithubRelease? = null,
     val releaseDialogVisible: Boolean = false,
     val showDownloadDialog: Boolean = false,
+    val autoCheckUpdateEnabled: Boolean = true,
 )
 
 class AppUpdateViewModel(
@@ -31,13 +33,23 @@ class AppUpdateViewModel(
     private val downloads: AppUpdateDownloads,
     private val installer: AppUpdateInstaller,
     private val toastManager: ToastManager,
+    private val localSettingManager: LocalSettingManager,
 ) : ViewModel() {
     private val _state = MutableStateFlow(AppUpdateUiState())
     val state = _state.asStateFlow()
     val downloadState = downloads.state
 
     init {
+        viewModelScope.launch {
+            localSettingManager.misc.collect { misc ->
+                _state.update { it.copy(autoCheckUpdateEnabled = misc.autoCheckUpdateEnabled) }
+            }
+        }
         checkUpdate()
+    }
+
+    fun setAutoCheckUpdateEnabled(enabled: Boolean) {
+        localSettingManager.setAutoCheckUpdateEnabled(enabled)
     }
 
     fun checkUpdate() {

@@ -13,6 +13,7 @@ import com.par9uet.jm.session.LoginSessionGate
 import com.par9uet.jm.session.UserRepository
 import com.par9uet.jm.core.model.SignInData
 import com.par9uet.jm.core.network.AuthFailure
+import com.par9uet.jm.core.network.AuthAttemptOrigin
 import com.par9uet.jm.utils.log
 import com.par9uet.jm.utils.logError
 import com.par9uet.jm.retrofit.model.LoginResponse
@@ -41,12 +42,13 @@ class UserRepositoryImpl(
     private val authenticatedEmbeddedClient: AuthenticatedEmbeddedClient,
 ) : BaseRepository(), UserRepository {
     override suspend fun login(username: String, password: String): NetWorkResult<CandidateSession> =
-        authenticateCandidate(username, password)
+        authenticateCandidate(username, password, AuthAttemptOrigin.MANUAL)
 
     override suspend fun verifyLogin(
         username: String,
         password: String,
-    ): NetWorkResult<CandidateSession> = authenticateCandidate(username, password)
+        origin: AuthAttemptOrigin,
+    ): NetWorkResult<CandidateSession> = authenticateCandidate(username, password, origin)
 
     /**
      * 只读的鉴权探针：`GET /favorite?page=1`。
@@ -71,12 +73,13 @@ class UserRepositoryImpl(
     private suspend fun authenticateCandidate(
         username: String,
         password: String,
+        origin: AuthAttemptOrigin,
     ): NetWorkResult<CandidateSession> {
         return withContext(Dispatchers.IO) {
             try {
                 // Authentication always runs in an isolated client. Only the generation-checked
                 // commit in UserManager promotes these cookies to the shared session.
-                when (val result = embeddedClientManager.verifyCandidate(username, password)) {
+                when (val result = embeddedClientManager.verifyCandidate(username, password, origin)) {
                     is EmbeddedClientManager.EmbeddedLoginResult.Success -> {
                         val candidate = CandidateSession(
                             loginResponse = result.userInfo.toLoginResponse(),
@@ -84,7 +87,7 @@ class UserRepositoryImpl(
                         )
                         log(
                             LoginSessionGate.TAG,
-                            "authenticateCandidate SUCCESS uid=${candidate.loginResponse.uid} " +
+                            "authenticateCandidate SUCCESS origin=$origin uid=${candidate.loginResponse.uid} " +
                                 "username=${candidate.loginResponse.username} " +
                                 "cookieNames=${LoginSessionGate.cookieNames(candidate.embeddedCookies)}",
                         )
@@ -99,7 +102,7 @@ class UserRepositoryImpl(
                         val exception = result.exception
                         logError(
                             LoginSessionGate.TAG,
-                            "authenticateCandidate FAILURE businessCode=${result.businessCode} " +
+                            "authenticateCandidate FAILURE origin=$origin businessCode=${result.businessCode} " +
                                 "httpCode=${exception.errorCode} message=${exception.message}",
                         )
                         NetWorkResult.Error(
@@ -112,7 +115,7 @@ class UserRepositoryImpl(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                logError(LoginSessionGate.TAG, "authenticateCandidate EXCEPTION: ${e.message}")
+                logError(LoginSessionGate.TAG, "authenticateCandidate EXCEPTION origin=$origin: ${e.message}")
                 NetWorkResult.Error(
                     message = "内置API登录失败：" + (e.message ?: "未知错误"),
                     authFailure = e.classifyAuthFailure()

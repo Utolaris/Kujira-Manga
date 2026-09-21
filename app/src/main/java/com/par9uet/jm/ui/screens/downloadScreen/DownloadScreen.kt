@@ -61,21 +61,18 @@ import com.par9uet.jm.ui.glass.GlassTopBarModeTransition
 import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.download.model.DownloadItemGroup
 import com.par9uet.jm.ui.viewModel.DownloadViewModel
-import com.par9uet.jm.storage.LocalSettingManager
-import org.koin.compose.getKoin
 import org.koin.compose.viewmodel.koinActivityViewModel
 
 @Composable
 fun DownloadScreen(
     downloadViewModel: DownloadViewModel = koinActivityViewModel(),
-    localSettingManager: LocalSettingManager = getKoin().get()
 ) {
     val mainNavController = LocalMainNavController.current
     val completeGroups by downloadViewModel.completeGroups.collectAsState()
     val activeGroups by downloadViewModel.activeGroups.collectAsState()
     val errorGroups by downloadViewModel.errorGroups.collectAsState()
     val editState by downloadViewModel.editState.collectAsState()
-    val miscSettings by localSettingManager.misc.collectAsState()
+    val miscSettings by downloadViewModel.misc.collectAsState()
     var completeExpanded by rememberSaveable { mutableStateOf(true) }
     var activeExpanded by rememberSaveable { mutableStateOf(true) }
     var errorExpanded by rememberSaveable { mutableStateOf(true) }

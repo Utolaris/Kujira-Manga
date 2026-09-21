@@ -8,7 +8,12 @@ import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.data.models.ComicSearchPage
 import com.par9uet.jm.data.models.ComicSearchOrderFilter
 import com.par9uet.jm.repository.ComicRepository
+import com.par9uet.jm.storage.BlockedTagTemplatePreferences
 import com.par9uet.jm.storage.ContentPreferences
+import com.par9uet.jm.storage.HistorySearchManager
+import com.par9uet.jm.storage.HistorySearchStore
+import com.par9uet.jm.storage.MiscSettingsPreferences
+import com.par9uet.jm.storage.MiscSettingsState
 import java.lang.reflect.Proxy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -40,8 +45,29 @@ class SearchViewModelTest {
         ComicRepository::class.java.classLoader, arrayOf(ComicRepository::class.java),
     ) { _, method, _ -> error("Unexpected request: "+method.name) } as ComicRepository
 
-    private class FakeSettings : ContentPreferences {
+    private class FakeSettings : ContentPreferences, BlockedTagTemplatePreferences, MiscSettingsPreferences {
         override val blockedTags = MutableStateFlow(emptyList<String>())
+        override val blockedTagTemplates =
+            MutableStateFlow(emptyList<com.par9uet.jm.data.models.BlockedTagTemplate>())
+        override val misc = MutableStateFlow(MiscSettingsState())
+    }
+
+    private class FakeHistorySearchStore : HistorySearchStore {
+        private var items: List<String>? = emptyList()
+        override fun getOrNull(): List<String>? = items
+        override fun set(list: List<String>) { items = list }
+        override fun remove() { items = emptyList() }
+    }
+
+    private fun buildVm(repository: ComicRepository): SearchViewModel {
+        val settings = FakeSettings()
+        return SearchViewModel(
+            repository,
+            settings,
+            HistorySearchManager(FakeHistorySearchStore()),
+            settings,
+            settings,
+        )
     }
 
     @Test
@@ -57,7 +83,7 @@ class SearchViewModelTest {
             requests++
             response
         } as ComicRepository
-        val vm = SearchViewModel(repository, FakeSettings())
+        val vm = buildVm(repository)
         val presenter = object : PagingDataPresenter<Comic>(StandardTestDispatcher(scheduler)) {
             override suspend fun presentPagingDataEvent(event: PagingDataEvent<Comic>) = Unit
         }
@@ -97,7 +123,7 @@ class SearchViewModelTest {
             requests++
             NetWorkResult.Success(ComicSearchPage(listOf(comic), 1, null))
         } as ComicRepository
-        val vm = SearchViewModel(repository, FakeSettings())
+        val vm = buildVm(repository)
         val first = object : PagingDataPresenter<Comic>(StandardTestDispatcher(scheduler)) {
             override suspend fun presentPagingDataEvent(event: PagingDataEvent<Comic>) = Unit
         }
@@ -137,7 +163,7 @@ class SearchViewModelTest {
 
     @Test
     fun searchOrderChangeUpdatesFilterAndClearsPendingComicId() = runTest(scheduler) {
-        val vm = SearchViewModel(FakeComicRepository(), FakeSettings())
+        val vm = buildVm(FakeComicRepository())
 
         assertEquals(ComicSearchOrderFilter.NEWEST, vm.searchComicFilterState.value.order)
 
@@ -159,7 +185,7 @@ class SearchViewModelTest {
 
     @Test
     fun searchOrderChangeKeepsSearchCriteria() = runTest(scheduler) {
-        val vm = SearchViewModel(FakeComicRepository(), FakeSettings())
+        val vm = buildVm(FakeComicRepository())
         vm.changeSearchComicContent("neko", listOf("tag1", "tag2"))
 
         vm.changeSearchComicOrderFilter(ComicSearchOrderFilter.MOST_PIC_COUNT)
@@ -172,7 +198,7 @@ class SearchViewModelTest {
 
     @Test
     fun returningToUnchangedSearchKeepsSavedViewport() = runTest(scheduler) {
-        val vm = SearchViewModel(FakeComicRepository(), FakeSettings())
+        val vm = buildVm(FakeComicRepository())
         vm.changeSearchComicContent("neko", listOf("tag1"))
         val generation = vm.searchViewportState.value.resetGeneration
         vm.saveSearchViewport(
@@ -190,7 +216,7 @@ class SearchViewModelTest {
 
     @Test
     fun changingSearchContextResetsViewportAndRejectsStaleSaves() = runTest(scheduler) {
-        val vm = SearchViewModel(FakeComicRepository(), FakeSettings())
+        val vm = buildVm(FakeComicRepository())
         val oldGeneration = vm.searchViewportState.value.resetGeneration
         vm.saveSearchViewport(12, 48, oldGeneration)
 
@@ -207,7 +233,7 @@ class SearchViewModelTest {
 
     @Test
     fun changingSearchOrderResetsViewport() = runTest(scheduler) {
-        val vm = SearchViewModel(FakeComicRepository(), FakeSettings())
+        val vm = buildVm(FakeComicRepository())
         val generation = vm.searchViewportState.value.resetGeneration
         vm.saveSearchViewport(18, 72, generation)
 

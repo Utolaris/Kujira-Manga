@@ -26,10 +26,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import com.par9uet.jm.storage.LocalSettingManager
 import com.par9uet.jm.ui.viewModel.ComicReadViewModel
 import com.par9uet.jm.utils.log
-import org.koin.compose.getKoin
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -100,13 +98,12 @@ fun ComicScrollRead(
     targetIndex: Int,
     zoomState: ReaderZoomState,
     comicReadViewModel: ComicReadViewModel = koinViewModel(),
-    localSettingManager: LocalSettingManager = getKoin().get(),
     onUpdateSliderValue: (value: Float) -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
     var currentIndexState by comicReadViewModel.currentIndexState
     val comicPicState by comicReadViewModel.comicPicState.collectAsState()
-    val readTapMode by localSettingManager.readTapMode.collectAsState()
+    val readTapMode by comicReadViewModel.readTapMode.collectAsState()
     val list = comicPicState.data.orEmpty()
         .distinctBy { "${it.comicId}_${it.originSrc}" }
     val context = LocalContext.current
@@ -250,7 +247,8 @@ fun ComicScrollRead(
                         .fillMaxWidth()
                         .aspectRatio(
                             item.aspectRatio
-                        )
+                        ),
+                    loadPage = comicReadViewModel::loadPageImage,
                 )
             }
         }

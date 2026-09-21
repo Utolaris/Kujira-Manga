@@ -64,7 +64,6 @@ import com.par9uet.jm.download.export.PdfExportMode
 import com.par9uet.jm.ui.viewModel.DownloadComicDetailViewModel
 import com.par9uet.jm.utils.formatBytes
 import org.koin.androidx.compose.koinViewModel
-import org.koin.compose.getKoin
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale

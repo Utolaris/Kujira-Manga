@@ -3,25 +3,16 @@ package com.par9uet.jm.coil
 import android.content.Context
 import coil.ImageLoader
 import coil.disk.DiskCache
+import com.par9uet.jm.cache.CacheBudget
 import com.par9uet.jm.cache.getCommonCacheDir
 import com.par9uet.jm.network.DohManager
+import com.par9uet.jm.network.applyAppHttpDefaults
+import java.util.concurrent.TimeUnit
+import okhttp3.Cache
 import okhttp3.ConnectionPool
 import okhttp3.Dispatcher
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
-import java.util.concurrent.TimeUnit
-
-/** 封面磁盘缓存默认上限（MB）。可在设置中调整；Coil 在 ImageLoader 构建时固定上限。 */
-const val DEFAULT_COVER_DISK_CACHE_MB = 256
-
-val COVER_DISK_CACHE_MB_OPTIONS = listOf(128, 256, 512, 1024)
-
-fun coerceCoverDiskCacheMb(mb: Int): Int = when {
-    mb <= 128 -> 128
-    mb <= 256 -> 256
-    mb <= 512 -> 512
-    else -> 1024
-}
 
 private val cdnHeaderInterceptor = Interceptor { chain ->
     val request = chain.request().newBuilder()
@@ -32,13 +23,15 @@ private val cdnHeaderInterceptor = Interceptor { chain ->
 }
 
 /**
- * 封面专用 ImageLoader：独立 OkHttp 客户端与 Dispatcher，和下载/阅读的连接池隔离。
+ * 封面专用 ImageLoader：独立 Dispatcher，连接池与 CDN 客户端共享。
  * 并发上限：全局 12、每 host 4，避免网格 fling 时打满带宽与 DoH。
  */
 fun createAsyncImageLoader(
     context: Context,
     dohManager: DohManager,
-    coverDiskCacheMb: Int = DEFAULT_COVER_DISK_CACHE_MB,
+    coverDiskCacheMb: Int = CacheBudget.coverDiskCacheMb(CacheBudget.DEFAULT_TOTAL_MB),
+    connectionPool: ConnectionPool,
+    httpCache: Cache? = null,
 ): ImageLoader {
     val coverDispatcher = Dispatcher().apply {
         maxRequests = 12
@@ -47,16 +40,25 @@ fun createAsyncImageLoader(
     return ImageLoader.Builder(context)
         .okHttpClient {
             OkHttpClient.Builder()
-                .dns(dohManager)
+                .applyAppHttpDefaults(
+                    dns = dohManager,
+                    connectionPool = connectionPool,
+                    cache = httpCache,
+                    connectSeconds = 15,
+                    readSeconds = 30,
+                    writeSeconds = 30,
+                    callSeconds = 40,
+                )
                 .addInterceptor(cdnHeaderInterceptor)
                 .dispatcher(coverDispatcher)
-                .connectionPool(ConnectionPool(8, 5, TimeUnit.MINUTES))
                 .build()
         }
+        // coverDiskCacheMb 已是组件配额（MB，由总预算 × COVER_SHARE 推导），
+        // 这里只换算字节，不得再当作总额度二次分享额。
         .diskCache {
             DiskCache.Builder()
                 .directory(getCommonCacheDir(context))
-                .maxSizeBytes(coerceCoverDiskCacheMb(coverDiskCacheMb).toLong() * 1024L * 1024L)
+                .maxSizeBytes(CacheBudget.componentMbToBytes(coverDiskCacheMb))
                 .build()
         }
         .build()

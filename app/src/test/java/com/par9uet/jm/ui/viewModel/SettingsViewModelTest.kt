@@ -1,5 +1,6 @@
 package com.par9uet.jm.ui.viewModel
 
+import com.par9uet.jm.data.models.APP_LANGUAGE_TRADITIONAL
 import com.par9uet.jm.data.models.LocalSetting
 import com.par9uet.jm.favorites.model.FavoriteSyncUiState
 import com.par9uet.jm.favorites.sync.FavoriteSyncRequestKind
@@ -91,6 +92,7 @@ class SettingsViewModelTest {
             securityPreferences = manager,
             dohPreferences = manager,
             apiEndpointPreference = manager,
+            contentLanguagePreferences = manager,
             miscSettings = manager,
             localSettingManager = manager,
             favoriteSyncRequester = FakeSyncRequester(),
@@ -107,6 +109,18 @@ class SettingsViewModelTest {
         org.junit.Assert.assertTrue(state.recommendationEnabled)
         assertEquals("auto", state.theme)
         assertEquals(3, state.prefetchCount)
+        // 默认简体 CN，对应官方 lang 参数；请求层据此给 GET 补 lang。
+        assertEquals(com.par9uet.jm.data.models.APP_LANGUAGE_SIMPLIFIED, state.appLanguage)
+    }
+
+    @Test
+    fun `selectAppLanguage publishes traditional through settings ui state`() {
+        val (vm, _) = buildViewModel(recommendEnabled = true)
+
+        vm.selectAppLanguage(APP_LANGUAGE_TRADITIONAL)
+        scheduler.runCurrent()
+
+        assertEquals(APP_LANGUAGE_TRADITIONAL, subscribedValue(vm).appLanguage)
     }
 
     @Test
@@ -162,6 +176,7 @@ class SettingsViewModelTest {
             securityPreferences = manager,
             dohPreferences = manager,
             apiEndpointPreference = manager,
+            contentLanguagePreferences = manager,
             miscSettings = manager,
             localSettingManager = manager, favoriteSyncRequester = requester,
         )

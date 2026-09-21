@@ -26,7 +26,14 @@ internal fun <T> swapFirstTwoHomePages(input: List<T>): List<T> {
 class HomeViewModel(
     private val comicRepository: ComicRepository,
     private val recommendationPreferences: RecommendationPreferences,
+    private val contentPreferences: com.par9uet.jm.storage.ContentPreferences,
+    private val miscSettingsPreferences: com.par9uet.jm.storage.MiscSettingsPreferences,
 ) : ViewModel() {
+    /** HomeScreen collects these instead of service-locating LocalSettingManager. */
+    val preferenceRecommendEnabled = recommendationPreferences.preferenceRecommendEnabled
+    val blockedTags = contentPreferences.blockedTags
+    val misc = miscSettingsPreferences.misc
+
     /** 首页分类描述：id 供仓库加载，title 为展示名。 */
     data class HomeCategoryInfo(
         val id: String,

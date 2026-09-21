@@ -44,9 +44,7 @@ import com.par9uet.jm.ui.glass.AppGlassTopBar
 import com.par9uet.jm.ui.glass.ChromeMode
 import com.par9uet.jm.ui.glass.GlassConfirmDialog
 import com.par9uet.jm.ui.glass.GlassTopBarModeTransition
-import com.par9uet.jm.storage.LocalSettingManager
 import com.par9uet.jm.ui.navigation.LocalMainNavController
-import org.koin.compose.getKoin
 import com.par9uet.jm.ui.viewModel.UserViewModel
 import org.koin.compose.viewmodel.koinActivityViewModel
 
@@ -79,11 +77,10 @@ private fun UserHistoryComicSkeleton() {
 @Composable
 fun UserHistoryComicScreen(
     userViewModel: UserViewModel = koinActivityViewModel(),
-    localSettingManager: LocalSettingManager = getKoin().get(),
 ) {
     val historyComicLazyPagingItems = userViewModel.historyComicPager.collectAsLazyPagingItems()
     val historyEditState by userViewModel.historyEditState.collectAsState()
-    val miscSettings by localSettingManager.misc.collectAsState()
+    val miscSettings by userViewModel.misc.collectAsState()
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
 
     val selectedComics: List<com.par9uet.jm.data.models.Comic> = remember(historyComicLazyPagingItems.itemSnapshotList, historyEditState.selectedComicIds) {

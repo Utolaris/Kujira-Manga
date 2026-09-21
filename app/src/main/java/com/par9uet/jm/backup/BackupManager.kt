@@ -8,6 +8,7 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.par9uet.jm.data.models.LocalSetting
+import com.par9uet.jm.data.models.coerceAppLanguage
 import com.par9uet.jm.utils.logError
 import java.security.GeneralSecurityException
 import java.security.MessageDigest
@@ -387,7 +388,9 @@ class BackupManager {
             return BackupSectionResult.Corrupted
         } ?: return BackupSectionResult.Corrupted
         return if (isValidLocalSetting(setting)) {
-            BackupSectionResult.Success(setting)
+            // appLanguage 是后加的字段：老备份里没有它。这里补默认值而不是判为损坏，
+            // 否则所有 v1-v3 老备份都会无法恢复。
+            BackupSectionResult.Success(setting.copy(appLanguage = coerceAppLanguage(setting.appLanguage)))
         } else {
             BackupSectionResult.Corrupted
         }

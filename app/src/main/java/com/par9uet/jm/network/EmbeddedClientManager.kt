@@ -2,6 +2,7 @@ package com.par9uet.jm.network
 
 
 import com.google.gson.JsonParser
+import com.par9uet.jm.core.network.AuthAttemptOrigin
 import com.par9uet.jm.storage.CookieStorage
 import com.par9uet.jm.utils.log
 import com.par9uet.jm.utils.logError
@@ -57,6 +58,8 @@ class EmbeddedClientManager(
      * 域名重赛探针由它 `.newBuilder()` 派生，避免再新造客户端、也避免绕开 DoH。
      */
     private val baseHttpClient: OkHttpClient,
+    /** 内置 API 请求的 `lang` 取值来源（用户设置，默认简体）。 */
+    private val languageProvider: EmbeddedRequestLanguageProvider,
 ) {
     sealed class EmbeddedLoginResult {
         /**
@@ -84,6 +87,9 @@ class EmbeddedClientManager(
     @Volatile
     private var sharedClient: SharedClient? = null
     private val sharedSessionGeneration = AtomicLong(0L)
+
+    /** `/login` 尝试的滑动窗口时间戳，仅供 [recordLoginAttempt] 的密度观测，不参与业务判断。 */
+    private val loginAttemptTimestamps = ArrayDeque<Long>()
     private val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     // Process-owned: candidate clients share this executor and must not shut it down on close.
     // Idle workers expire so logging out leaves no permanent SDK worker threads behind.
@@ -121,10 +127,14 @@ class EmbeddedClientManager(
      * 候选会话验证：在隔离客户端上验证凭据。成功后返回候选会话的完整 cookie 快照
      * （含 AVS）。候选客户端不读写 CookieStorage、不影响共享客户端，验证完成后即关闭；
      * 是否提升为活动会话由 UserManager 按 generation 决定。
+     *
+     * @param origin 本次登录的触发来源。**只进日志与计数**：服务端对高频 `/login` 的软拒绝
+     *   与「凭据真的错误」报文完全一致，只能靠频率 + 来源区分，见 [recordLoginAttempt]。
      */
     fun verifyCandidate(
         username: String,
         password: String,
+        origin: AuthAttemptOrigin = AuthAttemptOrigin.UNSPECIFIED,
     ): EmbeddedLoginResult {
         val loginBusinessCode = ThreadLocal<Int?>()
         loginBusinessCode.set(null)
@@ -133,13 +143,15 @@ class EmbeddedClientManager(
             loginBusinessCode = loginBusinessCode,
             clientSessionGeneration = null,
         )
+        val attempt = recordLoginAttempt(origin)
         return try {
             val userInfo = candidate.login(username, password)
             val sessionCookies = candidate.getCookies()
             val cookieNames = sessionCookies.map { it.name }
             log(
                 "Login",
-                "verifyCandidate SUCCESS uid=${userInfo.uid} username=${userInfo.username} " +
+                "verifyCandidate SUCCESS origin=$origin attempt=$attempt " +
+                    "uid=${userInfo.uid} username=${userInfo.username} " +
                     "cookieCount=${sessionCookies.size} cookieNames=$cookieNames",
             )
             if (sessionCookies.isEmpty()) {
@@ -151,7 +163,8 @@ class EmbeddedClientManager(
         } catch (e: ResponseException) {
             logError(
                 "Login",
-                "verifyCandidate FAILURE businessCode=${loginBusinessCode.get()} " +
+                "verifyCandidate FAILURE origin=$origin attempt=$attempt " +
+                    "businessCode=${loginBusinessCode.get()} " +
                     "httpCode=${e.errorCode} message=${e.message}",
             )
             EmbeddedLoginResult.Failure(e, loginBusinessCode.get())
@@ -159,6 +172,41 @@ class EmbeddedClientManager(
             loginBusinessCode.remove()
             closeAsync(candidate)
         }
+    }
+
+    /**
+     * 记录一次 `/login` 尝试，返回**滑动窗口内的尝试次数**。
+     *
+     * 存在的理由：三条自动路径（冷启动探活恢复 / 请求 401 恢复 / 收藏夹同步恢复）都可能在
+     * 401 后各发一次登录，密度远高于官方 —— 官方只有「JWT 客户端有效期到点」这一条路径，
+     * 1 小时一次，且服务器 401 被刻意排除在重试之外。
+     * 服务端对高频登录的软拒绝报文与「真的输错密码」完全一样
+     * （`{"code":401,...,"errorMsg":"無效的用戶名和\/或密碼！"}`），
+     * 所以**登录频率是唯一能把两者分开的客观量**。
+     * 本方法只观测、不改变任何行为。
+     */
+    private fun recordLoginAttempt(origin: AuthAttemptOrigin): Int {
+        val now = System.currentTimeMillis()
+        val count = synchronized(loginAttemptTimestamps) {
+            loginAttemptTimestamps.addLast(now)
+            while (loginAttemptTimestamps.isNotEmpty() &&
+                now - loginAttemptTimestamps.first() > LOGIN_ATTEMPT_WINDOW_MS
+            ) {
+                loginAttemptTimestamps.removeFirst()
+            }
+            loginAttemptTimestamps.size
+        }
+        val windowSeconds = LOGIN_ATTEMPT_WINDOW_MS / 1_000
+        log("Login", "login attempt origin=$origin windowCount=$count/${windowSeconds}s")
+        if (count >= LOGIN_ATTEMPT_BURST_THRESHOLD) {
+            logError(
+                "Login",
+                "登录请求过于密集：${windowSeconds}s 内第 $count 次（本次 origin=$origin）。" +
+                    "服务端可能把自动重登软拒绝成「無效的用戶名和/或密碼」，" +
+                    "该报文与「凭据真的失效」在 code 上无法区分。",
+            )
+        }
+        return count
     }
 
     /**
@@ -302,7 +350,7 @@ class EmbeddedClientManager(
                 // 2. SDK 把 User-Agent 硬编码成 Android 9 / Chrome 91（全设备同一串），
                 //    这里换成设备真实的 WebView UA。
                 val request = chain.request()
-                    .withEmbeddedLang(domainManager.domains)
+                    .withEmbeddedLang(domainManager.domains, languageProvider.language())
                     .withEmbeddedUserAgent(userAgentProvider.userAgent())
                 if (domainPinning == null) return@addInterceptor chain.proceed(request)
                 // 每次尝试都记一次结果，用于判断「被固定的域名是不是真的崩了」。
@@ -364,7 +412,15 @@ class EmbeddedClientManager(
                     if (stored != null) {
                         synchronized(this) {
                             if (isCurrentSession(clientSessionGeneration)) {
-                                val merged = mergeEmbeddedCookies(stored, Cookie.parseAll(request.url, response.headers))
+                                // mergeEmbeddedResponseCookies：响应可以更新 theme/__cflb/ipm5 这类
+                                // 非会话 cookie，但**不能**改写或新增会话令牌 AVS。
+                                // 原实现只判「打在可信域」，不判请求是否需要会话，等于让任意公开响应
+                                // 都能污染持久化会话快照；而请求侧在同名 AVS 之间按顺序取第一个，
+                                // 选到旧值就表现为「登录成功却持续 401」。
+                                val merged = mergeEmbeddedResponseCookies(
+                                    stored,
+                                    Cookie.parseAll(request.url, response.headers),
+                                )
                                 if (stored.toSet() != merged.toSet()) cookieStorage.set(merged)
                             }
                         }
@@ -479,5 +535,16 @@ class EmbeddedClientManager(
         private const val LOGIN_RESPONSE_PEEK_BYTES = 256L * 1024L
         private const val DOMAIN_PROBE_TIMEOUT_SECONDS = 3L
         private const val DOMAIN_PROBE_CALL_TIMEOUT_SECONDS = 4L
+
+        /**
+         * `/login` 密度观测窗口与告警阈值。
+         *
+         * 恢复冷却是指数退避（5→10→20→40→80→120s 封顶），也就是说**在最坏情况下
+         * 5 分钟内理论上还能发 5 次登录**；而官方 app 是 1 小时 1 次。
+         * 阈值取 3 是为了在后端拥塞时段（401 成批出现）能提前看见趋势，
+         * 而不是等到被服务端软拒绝、用户被登出之后。
+         */
+        private const val LOGIN_ATTEMPT_WINDOW_MS = 300_000L
+        private const val LOGIN_ATTEMPT_BURST_THRESHOLD = 3
     }
 }

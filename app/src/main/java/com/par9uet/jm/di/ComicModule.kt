@@ -10,7 +10,9 @@ import com.par9uet.jm.network.AuthenticatedEmbeddedClient
 import com.par9uet.jm.network.AuthenticatedRequestGate
 import com.par9uet.jm.network.DeviceWebViewUserAgent
 import com.par9uet.jm.network.DohManager
+import com.par9uet.jm.network.EmbeddedRequestLanguageProvider
 import com.par9uet.jm.network.EmbeddedUserAgentProvider
+import com.par9uet.jm.storage.LocalSettingManager
 import com.par9uet.jm.repository.impl.ComicRepositoryImpl
 import com.par9uet.jm.network.EmbeddedClientManager
 import com.par9uet.jm.reader.ReaderImagePipeline
@@ -29,7 +31,19 @@ val comicModule = module {
     // 设备真实 WebView UA 的来源；由 JmApplication.onCreate 在主线程预热一次。
     // 用 lambda 绑定而不是注入 Context —— 保持 Koin 图不依赖 androidContext。
     single<EmbeddedUserAgentProvider> { EmbeddedUserAgentProvider { DeviceWebViewUserAgent.current() } }
-    single { EmbeddedClientManager(get(), get(), get(), createSharedCookielessDohClient(get<DohManager>())) }
+    // 服务端内容语言。同样用 lambda 绑定：拦截器在请求线程调用，只读 StateFlow 当前值。
+    single<EmbeddedRequestLanguageProvider> {
+        EmbeddedRequestLanguageProvider { get<LocalSettingManager>().appLanguage.value }
+    }
+    single {
+        EmbeddedClientManager(
+            get(),
+            get(),
+            get(),
+            com.par9uet.jm.network.createSharedCookielessDohClient(get<DohManager>(), get(), get()),
+            get(),
+        )
+    }
     // The network client only knows the ordering port; the session gate (which funnels
     // requests through UserManager's executor during restoration) is bound here so the
     // orchestration ownership stays in the session layer.
@@ -43,16 +57,20 @@ val comicModule = module {
         )
     }
     single { RetrofitNetworkHomeDataSource(get()) } bind NetworkHomeDataSource::class
-    single { EmbeddedComicDataSource(get(), get(), get()) } bind ComicEmbeddedDataSource::class
+    single {
+        EmbeddedComicDataSource(get(), get(), get(), get())
+    } bind ComicEmbeddedDataSource::class
     single { ComicRepositoryImpl(get(), get()) } bind ComicRepository::class
     single<com.par9uet.jm.reader.atom.LocalChapterFiles> { com.par9uet.jm.reader.atom.DeviceLocalChapterFiles(get()) }
     single { com.par9uet.jm.reader.molecule.LoadLocalChapter(get(), get()) }
-    single { ReaderImagePipeline(get(), get(), get(), get()) }
+    single {
+        ReaderImagePipeline(get(), get(), get(), get(), get())
+    }
 
-    viewModel { HomeViewModel(get(), get()) }
-    viewModel { SearchViewModel(get(), get()) }
+    viewModel { HomeViewModel(get(), get(), get(), get()) }
+    viewModel { SearchViewModel(get(), get(), get(), get(), get()) }
     viewModel { WeekViewModel(get(), get()) }
-    viewModel { ComicDetailViewModel(get(), get(), get(), get(), get(), get(), get()) }
-    viewModel { ComicReadViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    viewModel { ComicDetailViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    viewModel { ComicReadViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { ExtractCodeViewModel(get(), get()) }
 }

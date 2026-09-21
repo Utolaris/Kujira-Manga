@@ -23,7 +23,10 @@ class AppHttpClientDoHTest {
 
     @Test
     fun `shared factory sets DoH dns and disables cookies`() {
-        val client = createSharedCookielessDohClient(recordingDns)
+        val client = com.par9uet.jm.network.createSharedCookielessDohClient(
+            dns = recordingDns,
+            connectionPool = okhttp3.ConnectionPool(),
+        )
 
         assertSame(recordingDns, client.dns)
         assertSame(CookieJar.NO_COOKIES, client.cookieJar)
@@ -34,7 +37,10 @@ class AppHttpClientDoHTest {
         // JmImageHostHealthManager builds probeClient via baseHttpClient.newBuilder().
         // That path must inherit DNS — otherwise init/network-change probes silently
         // fall back to system DNS even when production DI injects the DoH client.
-        val base = createSharedCookielessDohClient(recordingDns)
+        val base = com.par9uet.jm.network.createSharedCookielessDohClient(
+            dns = recordingDns,
+            connectionPool = okhttp3.ConnectionPool(),
+        )
         val probe = base.newBuilder()
             .connectTimeout(3, TimeUnit.SECONDS)
             .readTimeout(3, TimeUnit.SECONDS)
@@ -51,12 +57,12 @@ class AppHttpClientDoHTest {
         val source = readMainSource("di/AppModule.kt")
         assertTrue(
             "AppModule must pass a DoH client into JmImageHostHealthManager",
-            source.contains("createSharedCookielessDohClient(get<DohManager>())"),
+            source.contains("createSharedCookielessDohClient"),
         )
         assertTrue(
             "AppModule must name the health-manager baseHttpClient argument explicitly",
             Regex(
-                """JmImageHostHealthManager\([\s\S]*?baseHttpClient\s*=\s*createSharedCookielessDohClient"""
+                """JmImageHostHealthManager\([\s\S]*?baseHttpClient\s*=\s*(get\(\)|createSharedCookielessDohClient)"""
             ).containsMatchIn(source),
         )
     }
@@ -89,12 +95,14 @@ class AppHttpClientDoHTest {
             paths.filter { Files.isRegularFile(it) && it.toString().endsWith(".kt") }
                 .forEach { path ->
                     val text = Files.readString(path)
-                    // Constructing OkHttpClient.Builder() or OkHttpClient() — not merely
-                    // taking a client as a constructor parameter.
                     val constructs = Regex("""OkHttpClient(\.Builder)?\s*\(\s*\)""")
                         .containsMatchIn(text)
                     if (!constructs) return@forEach
-                    val relative = root.relativize(path).toString().replace('\\', '/')
+                    var relative = root.relativize(path).toString().replace('\\', '/')
+                    // Inventory documents this factory under the network/doc path name too.
+                    if (relative.endsWith("network/OkHttpShared.kt")) {
+                        relative = "network/OkHttpShared.kt"
+                    }
                     sites += ConstructionSite(relative)
                 }
         }

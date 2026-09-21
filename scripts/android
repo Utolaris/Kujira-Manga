@@ -7,7 +7,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_DIR"
 
-GRADLE_FLAGS="-Dhttp.proxyHost= -Dhttp.proxyPort= -Dhttps.proxyHost= -Dhttps.proxyPort="
+# 不要把空的 -Dhttps.proxyPort= 等传给 Gradle：JVM 会打
+# "Invalid https.proxyPort '', using default 443" 警告，且并未真正清掉代理。
+# 本仓库 gradle.properties 不配代理；若环境代理干扰构建，用
+# ~/.gradle/gradle.properties 或显式 JAVA_OPTS，不要在本脚本塞空系统属性。
+GRADLE_FLAGS=""
 DEBUG_APPLICATION_ID="kujira.manga.debug"
 RELEASE_APPLICATION_ID="kujira.manga"
 TEST_PACKAGE="kujira.manga.debug.test"

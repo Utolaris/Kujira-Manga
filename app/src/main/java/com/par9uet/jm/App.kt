@@ -166,7 +166,10 @@ fun App(
 
     // Main content first, lock/onboarding/security overlay after: lock must win z-order
     // if a frame ever composes both (recents restore, HyperOS resume animation).
-    ProvideTabletLayout {
+    ProvideTabletLayout(
+        tabletLayoutEnabled = miscSettings.tabletLayoutEnabled,
+        onSeedTabletLayout = { detected -> localSettingManager.seedTabletLayoutEnabled(detected) },
+    ) {
         Box(modifier = Modifier.fillMaxSize()) {
         // 远端图片主机是 App 级环境值：在这里读一次，组件与页面只消费环境值，
         // 避免每个看图的地方各自依赖 storage 端口。

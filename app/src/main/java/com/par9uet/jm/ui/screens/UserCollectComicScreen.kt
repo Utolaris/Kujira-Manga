@@ -32,15 +32,14 @@ import com.par9uet.jm.ui.interaction.PullDownActionState
 import com.par9uet.jm.ui.interaction.rememberPullDownActionState
 import com.par9uet.jm.favorites.model.FavoritesIntent
 import com.par9uet.jm.favorites.presentation.FavoritesViewModel
-import com.par9uet.jm.storage.LocalSettingManager
+import com.par9uet.jm.ui.viewModel.UserViewModel
 import com.par9uet.jm.utils.log
-import org.koin.compose.getKoin
 import org.koin.compose.viewmodel.koinActivityViewModel
 
 @Composable
 internal fun UserCollectComicScreen(
     favoritesViewModel: FavoritesViewModel = koinActivityViewModel(),
-    localSettingManager: LocalSettingManager = getKoin().get(),
+    userViewModel: UserViewModel = koinActivityViewModel(),
     pullDownState: PullDownActionState = rememberPullDownActionState(),
     topContentPadding: Dp = 0.dp,
     bottomContentPadding: Dp = 0.dp,
@@ -49,7 +48,7 @@ internal fun UserCollectComicScreen(
     val collectComicLazyPagingItems = favoritesViewModel.collectComicPager.collectAsLazyPagingItems()
     val selectedFolderId = favoritesState.selectedFolderId
     val collectEditState = favoritesState.selection
-    val miscSettings by localSettingManager.misc.collectAsState()
+    val miscSettings by userViewModel.misc.collectAsState()
     var hasLoggedFirstLocalContent by remember { mutableStateOf(false) }
     val favoritesOpenedAt = remember { SystemClock.elapsedRealtime() }
 

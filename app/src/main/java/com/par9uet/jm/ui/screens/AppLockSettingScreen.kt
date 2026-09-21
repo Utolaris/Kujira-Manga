@@ -46,13 +46,11 @@ import com.par9uet.jm.data.models.APP_LOCK_TYPE_PATTERN
 import com.par9uet.jm.data.models.APP_LOCK_UNLOCK_MODE_BOTH
 import com.par9uet.jm.data.models.APP_LOCK_UNLOCK_MODE_PASSWORD
 import com.par9uet.jm.data.models.APP_LOCK_UNLOCK_MODE_PATTERN
-import com.par9uet.jm.core.ToastManager
-import com.par9uet.jm.storage.AppSecurityEditor
-import com.par9uet.jm.storage.AppSecurityPreferences
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.components.SelectDialog
 import com.par9uet.jm.ui.components.SelectOption
-import org.koin.compose.getKoin
+import com.par9uet.jm.ui.viewModel.AppLockSettingViewModel
+import org.koin.compose.viewmodel.koinViewModel
 
 private val unlockModeTextMap = mapOf(
     APP_LOCK_UNLOCK_MODE_PASSWORD to "仅密码",
@@ -62,11 +60,9 @@ private val unlockModeTextMap = mapOf(
 
 @Composable
 fun AppLockSettingScreen(
-    appSecurityPreferences: AppSecurityPreferences = getKoin().get(),
-    appSecurityEditor: AppSecurityEditor = getKoin().get(),
-    toastManager: ToastManager = getKoin().get(),
+    viewModel: AppLockSettingViewModel = koinViewModel(),
 ) {
-    val appLock by appSecurityPreferences.appLock.collectAsState()
+    val appLock by viewModel.appLock.collectAsState()
 
     val hasPassword = appLock.hasPassword
     val hasPattern = appLock.hasPattern
@@ -75,7 +71,6 @@ fun AppLockSettingScreen(
     var showPasswordLengthDialog by remember { mutableStateOf(false) }
     var showSetPasswordDialog by remember { mutableStateOf(false) }
     var showSetPatternDialog by remember { mutableStateOf(false) }
-    // 设置密码时的临时长度（仅在选择完长度后弹出输入框时使用）
     var pendingPasswordLength by remember { mutableIntStateOf(appLock.passwordLength) }
 
     CommonScaffold(
@@ -104,11 +99,8 @@ fun AppLockSettingScreen(
                 lockType = APP_LOCK_TYPE_PASSWORD,
                 passwordLength = pendingPasswordLength,
                 onConfirm = { pwd ->
-                    // 一次完整状态迁移：密码、长度、解锁模式在同一更新内生效
-                    if (appSecurityEditor.setPassword(pwd, pendingPasswordLength)) {
+                    if (viewModel.setPassword(pwd, pendingPasswordLength)) {
                         showSetPasswordDialog = false
-                    } else {
-                        toastManager.showAsync("应用锁设置保存失败，请重试")
                     }
                 },
                 onDismiss = { showSetPasswordDialog = false },
@@ -118,10 +110,8 @@ fun AppLockSettingScreen(
                 visible = showSetPatternDialog,
                 lockType = APP_LOCK_TYPE_PATTERN,
                 onConfirm = { pattern ->
-                    if (appSecurityEditor.setPattern(pattern)) {
+                    if (viewModel.setPattern(pattern)) {
                         showSetPatternDialog = false
-                    } else {
-                        toastManager.showAsync("应用锁设置保存失败，请重试")
                     }
                 },
                 onDismiss = { showSetPatternDialog = false },
@@ -132,8 +122,8 @@ fun AppLockSettingScreen(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
                 start = 16.dp,
-                end = 16.dp,
                 top = topContentPadding + 16.dp,
+                end = 16.dp,
                 bottom = bottomContentPadding + 16.dp,
             ),
             verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -149,10 +139,7 @@ fun AppLockSettingScreen(
                                 pendingPasswordLength = appLock.passwordLength
                                 showPasswordLengthDialog = true
                             } else {
-                                // 移除最后一种凭据时由编辑器关闭应用锁并修正解锁模式
-                                if (!appSecurityEditor.removePassword()) {
-                                    toastManager.showAsync("应用锁设置保存失败，请重试")
-                                }
+                                viewModel.removePassword()
                             }
                         }
                     )
@@ -174,16 +161,13 @@ fun AppLockSettingScreen(
                             if (enabled) {
                                 showSetPatternDialog = true
                             } else {
-                                if (!appSecurityEditor.removePattern()) {
-                                    toastManager.showAsync("应用锁设置保存失败，请重试")
-                                }
+                                viewModel.removePattern()
                             }
                         }
                     )
                 }
             }
 
-            // 解锁模式仅在两种凭据都存在时可选；BOTH 与单方式之间的切换由编辑器校验
             if (hasPassword && hasPattern) {
                 item {
                     SettingsSection(title = "解锁模式") {
@@ -193,22 +177,14 @@ fun AppLockSettingScreen(
                                     .fillMaxWidth()
                                     .selectable(
                                         selected = appLock.unlockMode == mode,
-                                        onClick = {
-                                            if (!appSecurityEditor.selectUnlockMode(mode)) {
-                                                toastManager.showAsync("应用锁设置保存失败，请重试")
-                                            }
-                                        }
+                                        onClick = { viewModel.selectUnlockMode(mode) }
                                     )
                                     .padding(horizontal = 16.dp, vertical = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 RadioButton(
                                     selected = appLock.unlockMode == mode,
-                                    onClick = {
-                                        if (!appSecurityEditor.selectUnlockMode(mode)) {
-                                            toastManager.showAsync("应用锁设置保存失败，请重试")
-                                        }
-                                    }
+                                    onClick = { viewModel.selectUnlockMode(mode) }
                                 )
                                 Text(
                                     text = label,
@@ -228,10 +204,7 @@ fun AppLockSettingScreen(
                         title = "启用应用锁",
                         value = appLock.enabled,
                         onCheckedChange = { enabled ->
-                            // 没有任何解锁方式时编辑器保持关闭，UI 只负责提示
-                            if (!appSecurityEditor.setAppLockEnabled(enabled)) {
-                                toastManager.showAsync("应用锁设置保存失败，请重试")
-                            }
+                            viewModel.setAppLockEnabled(enabled)
                         }
                     )
                     if (!hasAnyMethod) {
@@ -251,23 +224,40 @@ fun AppLockSettingScreen(
 @Composable
 private fun SettingsSection(
     title: String,
-    content: @Composable ColumnScope.() -> Unit
+    content: @Composable ColumnScope.() -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            modifier = Modifier.padding(horizontal = 4.dp),
-            text = title,
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary
-        )
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-        ) {
-            Column(content = content)
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    ) {
+        Column(modifier = Modifier.padding(vertical = 8.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+            content()
         }
+    }
+}
+
+@Composable
+private fun SettingsSwitchRow(
+    icon: ImageVector,
+    title: String,
+    value: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
+        Text(title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        Switch(checked = value, onCheckedChange = onCheckedChange)
     }
 }
 
@@ -276,85 +266,19 @@ private fun SettingsRow(
     icon: ImageVector,
     title: String,
     value: String,
-    onClick: () -> Unit
-) {
-    SettingsBaseRow(
-        icon = icon,
-        title = title,
-        value = value,
-        onClick = onClick,
-        trailingContent = {
-            Icon(
-                imageVector = Icons.Rounded.ChevronRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    )
-}
-
-@Composable
-private fun SettingsSwitchRow(
-    icon: ImageVector,
-    title: String,
-    value: Boolean,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    SettingsBaseRow(
-        icon = icon,
-        title = title,
-        value = if (value) "已设置" else "未设置",
-        onClick = { onCheckedChange(!value) },
-        trailingContent = {
-            Switch(
-                checked = value,
-                onCheckedChange = onCheckedChange
-            )
-        }
-    )
-}
-
-@Composable
-private fun SettingsBaseRow(
-    icon: ImageVector,
-    title: String,
-    value: String,
     onClick: () -> Unit,
-    trailingContent: @Composable () -> Unit
 ) {
-    ListItem(
-        modifier = Modifier.clickable(onClick = onClick),
-        leadingContent = {
-            Surface(
-                modifier = Modifier.size(40.dp),
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.secondaryContainer,
-                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        modifier = Modifier.size(22.dp),
-                        imageVector = icon,
-                        contentDescription = null
-                    )
-                }
-            }
-        },
-        headlineContent = { Text(text = title, style = MaterialTheme.typography.bodyLarge) },
-        supportingContent = {
-            Text(
-                text = value,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        },
-        trailingContent = trailingContent,
-        colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
-    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
+        Text(title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        Text(value, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
 }

@@ -53,7 +53,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.par9uet.jm.storage.LocalSettingManager
 import com.par9uet.jm.ui.components.Comic
 import com.par9uet.jm.ui.components.ComicSkeleton
 import com.par9uet.jm.ui.components.TabletComicGridMinCellSize
@@ -68,7 +67,6 @@ import com.par9uet.jm.ui.interaction.rememberPullDownActionState
 import com.par9uet.jm.ui.viewModel.HomeViewModel
 import com.par9uet.jm.contentfilter.filterBlockedTags
 import kotlinx.coroutines.flow.distinctUntilChanged
-import org.koin.compose.getKoin
 import org.koin.compose.viewmodel.koinActivityViewModel
 
 private const val TEXT_SEARCH = "\u641c\u7d22"
@@ -85,63 +83,6 @@ internal fun resolveHomeCategoryTitle(
     return categories.firstOrNull { it.id == selectedCategoryId }?.title ?: "首页"
 }
 
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-internal fun HomeMaterialCategoryTitleSelector(
-    title: String,
-    categories: List<HomeViewModel.HomeCategoryInfo>,
-    selectedCategoryId: String?,
-    onCategorySelected: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    var menuExpanded by remember { mutableStateOf(false) }
-    val hapticFeedback = LocalHapticFeedback.current
-    val density = LocalDensity.current
-    val menuMaxHeight = with(density) {
-        LocalWindowInfo.current.containerSize.height.toDp() * 0.56f
-    }
-
-    Box(
-        modifier = modifier.combinedClickable(
-            onClick = {},
-            onLongClick = {
-                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                menuExpanded = true
-            },
-        ),
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        Text(
-            text = title,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            fontSize = 18.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        DropdownMenu(
-            expanded = menuExpanded,
-            onDismissRequest = { menuExpanded = false },
-            modifier = Modifier.heightIn(max = menuMaxHeight),
-        ) {
-            categories.forEach { category ->
-                val selected = category.id == selectedCategoryId
-                DropdownMenuItem(
-                    text = { Text(category.title) },
-                    leadingIcon = if (selected) {
-                        { Icon(Icons.Rounded.Check, contentDescription = null) }
-                    } else {
-                        null
-                    },
-                    onClick = {
-                        menuExpanded = false
-                        onCategorySelected(category.id)
-                    },
-                )
-            }
-        }
-    }
-}
 
 @Composable
 private fun HomeSkeleton(
@@ -173,16 +114,15 @@ private fun HomeSkeleton(
 @Composable
 internal fun HomeScreen(
     homeViewModel: HomeViewModel = koinActivityViewModel(),
-    localSettingManager: LocalSettingManager = getKoin().get(),
     topContentPadding: Dp = 0.dp,
     bottomContentPadding: Dp = 0.dp,
     pullDownState: PullDownActionState = rememberPullDownActionState(),
     onPullDownSearch: () -> Unit = {},
 ) {
     val homeState by homeViewModel.homeState.collectAsState()
-    val preferenceRecommendEnabled by localSettingManager.preferenceRecommendEnabled.collectAsState()
-    val blockedTags by localSettingManager.blockedTags.collectAsState()
-    val miscSettings by localSettingManager.misc.collectAsState()
+    val preferenceRecommendEnabled by homeViewModel.preferenceRecommendEnabled.collectAsState()
+    val blockedTags by homeViewModel.blockedTags.collectAsState()
+    val miscSettings by homeViewModel.misc.collectAsState()
     val pullRevealPadding = 36.dp * pullDownState.progress
     val gridState = rememberLazyGridState()
     var isGridScrolling by remember { mutableStateOf(false) }
@@ -304,56 +244,6 @@ internal fun HomeScreen(
         }
 }
 
-@Composable
-internal fun HomeMaterialTopBarActions(
-    onSearch: () -> Unit,
-    onDownload: () -> Unit,
-    onWeekly: () -> Unit,
-    onExtract: () -> Unit,
-    onSign: () -> Unit,
-) {
-    IconButton(onClick = onSearch) {
-        Icon(Icons.Rounded.Search, contentDescription = TEXT_SEARCH)
-    }
-    IconButton(onClick = onDownload) {
-        Icon(Icons.Rounded.Download, contentDescription = TEXT_DOWNLOAD)
-    }
-    Box {
-        var menuExpanded by remember { mutableStateOf(false) }
-        IconButton(onClick = { menuExpanded = true }) {
-            Icon(Icons.Rounded.MoreVert, contentDescription = "更多")
-        }
-        DropdownMenu(
-            expanded = menuExpanded,
-            onDismissRequest = { menuExpanded = false },
-        ) {
-            DropdownMenuItem(
-                text = { Text(TEXT_WEEKLY) },
-                leadingIcon = { Icon(Icons.Default.Star, contentDescription = null) },
-                onClick = {
-                    menuExpanded = false
-                    onWeekly()
-                },
-            )
-            DropdownMenuItem(
-                text = { Text(TEXT_EXTRACT) },
-                leadingIcon = { Icon(Icons.Default.Password, contentDescription = null) },
-                onClick = {
-                    menuExpanded = false
-                    onExtract()
-                },
-            )
-            DropdownMenuItem(
-                text = { Text(TEXT_SIGN) },
-                leadingIcon = { Icon(Icons.Default.CalendarMonth, contentDescription = null) },
-                onClick = {
-                    menuExpanded = false
-                    onSign()
-                },
-            )
-        }
-    }
-}
 
 @Composable
 internal fun HomeGlassTopBar(

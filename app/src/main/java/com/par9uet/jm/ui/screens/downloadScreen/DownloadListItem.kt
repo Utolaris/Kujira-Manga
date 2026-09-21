@@ -46,7 +46,6 @@ import coil.compose.AsyncImage
 import com.par9uet.jm.download.model.DownloadItemGroup
 import com.par9uet.jm.download.model.DownloadItemStatus
 import com.par9uet.jm.utils.shimmer
-import org.koin.compose.getKoin
 
 @Composable
 private fun GroupCoverImage(

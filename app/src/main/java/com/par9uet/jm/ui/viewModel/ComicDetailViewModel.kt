@@ -36,7 +36,25 @@ class ComicDetailViewModel(
     private val uncollectFavorites: UncollectFavorites,
     private val observeLocalFavorite: ObserveLocalFavorite,
     private val downloadManager: DownloadManager,
+    private val userManager: com.par9uet.jm.session.UserManager,
+    private val readHistoryManager: com.par9uet.jm.storage.ReadHistoryManager,
+    private val contentPreferences: com.par9uet.jm.storage.ContentPreferences,
 ) : ViewModel() {
+    /** Detail / chapter / relate screens collect auth + history + filters via the VM. */
+    val authState = userManager.authState
+    val readHistoryState = readHistoryManager.readHistoryState
+    val blockedTags = contentPreferences.blockedTags
+
+    fun toast(msg: String) {
+        toastManager.showAsync(msg)
+    }
+
+    fun lastReadChapterId(comic: Comic): Int? =
+        readHistoryManager.lastReadChapterId(comic)
+
+    fun readChapterIdsForComic(comic: Comic): Set<Int> =
+        readHistoryManager.readChapterIds(readHistoryManager.historyKey(comic, comic.id))
+
     private val _comicDetailState = MutableStateFlow<CommonUIState<Comic>>(
         CommonUIState(
             isLoading = true,

@@ -1,6 +1,11 @@
 # Kujira-Manga
 
-[JM](https://jmcomic.plus) 第三方 Android 客户端。基于 [HongShi2333/jmcomic-next](https://github.com/HongShi2333/jmcomic-next) 持续维护，数据解析依赖 [JUKOMU/JMComic-Api-Java](https://github.com/JUKOMU/JMComic-Api-Java)。
+[JM](https://jmcomic.plus) 第三方 Android 客户端。
+
+本项目参考了以下两个开源仓库，并在此基础上进行了**大量魔改**（架构分层、界面、阅读器、下载与缓存、隐私入口等均已大幅重写，功能与行为与上游可能不一致）：
+
+- [HongShi2333/jmcomic-next](https://github.com/HongShi2333/jmcomic-next) — 上游 Android 客户端
+- [JUKOMU/JMComic-Api-Java](https://github.com/JUKOMU/JMComic-Api-Java) — 数据解析与接口
 
 > 本仓库原名 `jmcomic-plus`，自 v1.4.4 起更名为 **Kujira-Manga**：仓库名、应用显示名和安装包名
 > 都已更换。应用标识由 `jmcomic.plus` 变为 `kujira.manga`，签名密钥也已重建，
@@ -90,5 +95,7 @@
 
 ## 致谢
 
-- [HongShi2333/jmcomic-next](https://github.com/HongShi2333/jmcomic-next) — 上游客户端
-- [JUKOMU/JMComic-Api-Java](https://github.com/JUKOMU/JMComic-Api-Java) — 接口与解析
+本项目参考下列开源仓库并在此基础上大量魔改，特此致谢：
+
+- [HongShi2333/jmcomic-next](https://github.com/HongShi2333/jmcomic-next) — 上游 Android 客户端
+- [JUKOMU/JMComic-Api-Java](https://github.com/JUKOMU/JMComic-Api-Java) — 接口与数据解析

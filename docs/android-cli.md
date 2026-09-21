@@ -14,6 +14,10 @@
 
 CLI 会自动探测 SDK（`ANDROID_HOME` → `ANDROID_SDK_ROOT` → 常见路径），并把上述 bin 加入 PATH。
 
+Gradle 构建**不再**向 JVM 传空的 `-Dhttps.proxyPort=` 等参数（那只会打出
+`Invalid https.proxyPort ''` 警告，并不能可靠清代理）。需要代理时配置
+`~/.gradle/gradle.properties` 或环境变量；仓库内 `gradle.properties` 不配代理。
+
 健康检查：
 
 ```bash

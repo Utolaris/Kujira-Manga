@@ -65,10 +65,10 @@ import com.par9uet.jm.data.models.COLOR_PALETTE_PRESET_SUNSET
 import com.par9uet.jm.ui.theme.ColorPreset
 import com.par9uet.jm.ui.theme.toColorOrNull
 import com.par9uet.jm.ui.theme.colorPresets
-import com.par9uet.jm.storage.AppearancePreferences
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.glass.GlassModal
-import org.koin.compose.getKoin
+import com.par9uet.jm.ui.viewModel.SettingsViewModel
+import org.koin.compose.viewmodel.koinViewModel
 
 private enum class ColorSlot(val label: String) {
     Primary("主色"),
@@ -83,9 +83,9 @@ private enum class ColorSlot(val label: String) {
 
 @Composable
 fun ColorPaletteScreen(
-    appearancePreferences: AppearancePreferences = getKoin().get(),
+    settingsViewModel: SettingsViewModel = koinViewModel(),
 ) {
-    val colorPalette by appearancePreferences.colorPalette.collectAsState()
+    val colorPalette by settingsViewModel.colorPalette.collectAsState()
     val context = LocalContext.current
 
     var editingSlot by remember { mutableStateOf<ColorSlot?>(null) }
@@ -127,7 +127,7 @@ fun ColorPaletteScreen(
                 onConfirm = { newColor ->
                     val hex = newColor.toArgbHex()
                     // 一次完整状态迁移：四色与 custom 预设在同一更新内生效
-                    appearancePreferences.editor.applyCustomColors(
+                    settingsViewModel.applyCustomColors(
                         primary = if (pickerSlot == ColorSlot.Primary) hex else colorPalette.customPrimary,
                         secondary = if (pickerSlot == ColorSlot.Secondary) hex else colorPalette.customSecondary,
                         tertiary = if (pickerSlot == ColorSlot.Tertiary) hex else colorPalette.customTertiary,
@@ -160,7 +160,7 @@ fun ColorPaletteScreen(
                         hasCustomOverride = hasCustomOverride,
                         onSelect = { presetId ->
                             // 一次完整状态迁移：切换预设并清空自定义颜色覆盖
-                            appearancePreferences.editor.selectColorPreset(presetId)
+                            settingsViewModel.selectColorPreset(presetId)
                         }
                     )
                 }
@@ -193,7 +193,7 @@ fun ColorPaletteScreen(
                         horizontalArrangement = Arrangement.End
                     ) {
                         TextButton(onClick = {
-                            appearancePreferences.editor.selectColorPreset(COLOR_PALETTE_PRESET_DEFAULT)
+                            settingsViewModel.selectColorPreset(COLOR_PALETTE_PRESET_DEFAULT)
                         }) {
                             Icon(Icons.Rounded.RestartAlt, contentDescription = null)
                             Spacer(Modifier.width(4.dp))

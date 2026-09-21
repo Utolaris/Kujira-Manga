@@ -142,12 +142,9 @@ fun CheckUpdateScreen(
                 )
             }
             item {
-                val localSettingManager: com.par9uet.jm.storage.LocalSettingManager =
-                    org.koin.compose.getKoin().get()
-                val misc by localSettingManager.misc.collectAsState()
                 AutoCheckUpdateCard(
-                    enabled = misc.autoCheckUpdateEnabled,
-                    onEnabledChange = localSettingManager::setAutoCheckUpdateEnabled,
+                    enabled = state.autoCheckUpdateEnabled,
+                    onEnabledChange = viewModel::setAutoCheckUpdateEnabled,
                 )
             }
             if (apkReady) {

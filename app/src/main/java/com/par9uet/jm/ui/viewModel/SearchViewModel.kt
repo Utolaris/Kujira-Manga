@@ -35,7 +35,19 @@ data class SearchViewportState(
 class SearchViewModel(
     private val comicRepository: ComicRepository,
     private val contentPreferences: ContentPreferences,
+    private val historySearchManager: com.par9uet.jm.storage.HistorySearchManager,
+    private val blockedTagTemplatePreferences: com.par9uet.jm.storage.BlockedTagTemplatePreferences,
+    private val miscSettingsPreferences: com.par9uet.jm.storage.MiscSettingsPreferences,
 ) : ViewModel() {
+    /** Search editor / result pages collect prefs + history through the VM. */
+    val historySearchState = historySearchManager.historySearchState
+    val blockedTagTemplates = blockedTagTemplatePreferences.blockedTagTemplates
+    val misc = miscSettingsPreferences.misc
+    val blockedTags = contentPreferences.blockedTags
+
+    fun addHistoryItem(item: String) = historySearchManager.addItem(item)
+    fun clearHistory() = historySearchManager.clear()
+
     private val _searchComicFilterState = MutableStateFlow(SearchComicFilter())
     val searchComicFilterState = _searchComicFilterState.asStateFlow()
     private val _searchComicIdState = MutableStateFlow<Int?>(null)

@@ -53,8 +53,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.par9uet.jm.data.models.BlockedTagTemplate
-import com.par9uet.jm.storage.HistorySearchManager
-import com.par9uet.jm.storage.LocalSettingManager
 import com.par9uet.jm.ui.components.ComicSearchHistoryTag
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.components.SearchExclusionEditor
@@ -68,7 +66,6 @@ import com.par9uet.jm.contentfilter.normalizeSearchExcludedTags
 import com.par9uet.jm.contentfilter.parseSearchSyntax
 import com.par9uet.jm.contentfilter.searchContentWithoutExcludedTags
 import com.par9uet.jm.contentfilter.serializeExcludedTags
-import org.koin.compose.getKoin
 import org.koin.compose.viewmodel.koinActivityViewModel
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -77,8 +74,6 @@ fun ComicSearchScreen(
     initialSearchContent: String = "",
     initialExcludedTags: List<String> = emptyList(),
     searchViewModel: SearchViewModel = koinActivityViewModel(),
-    historySearchManager: HistorySearchManager = getKoin().get(),
-    localSettingManager: LocalSettingManager = getKoin().get(),
 ) {
     val mainNavController = LocalMainNavController.current
     val focusRequester = remember { FocusRequester() }
@@ -98,8 +93,8 @@ fun ComicSearchScreen(
             )
         )
     }
-    val historySearchState by historySearchManager.historySearchState.collectAsState()
-    val blockedTagTemplates by localSettingManager.blockedTagTemplates.collectAsState()
+    val historySearchState by searchViewModel.historySearchState.collectAsState()
+    val blockedTagTemplates by searchViewModel.blockedTagTemplates.collectAsState()
     var showSyntaxHelp by remember { mutableStateOf(false) }
 
     fun addExcludedTag(tag: String) {
@@ -116,7 +111,7 @@ fun ComicSearchScreen(
         val finalExcludedTags = normalizeSearchExcludedTags(excludedTags + inlineExcludedTags)
         if (visibleSearchContent.isBlank()) return
 
-        historySearchManager.addItem(visibleSearchContent)
+        searchViewModel.addHistoryItem(visibleSearchContent)
         // Hand the query to the ViewModel here, on the user's explicit submit, so the result screen
         // always issues a real request even when the query repeats the previous one.
         searchViewModel.submitSearch(visibleSearchContent, finalExcludedTags)
@@ -198,7 +193,7 @@ fun ComicSearchScreen(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     if (historySearchState.isNotEmpty()) {
-                        TextButton(onClick = { historySearchManager.clear() }) {
+                        TextButton(onClick = { searchViewModel.clearHistory() }) {
                             Icon(
                                 Icons.Rounded.DeleteSweep,
                                 contentDescription = null,

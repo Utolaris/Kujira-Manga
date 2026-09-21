@@ -10,22 +10,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
-import com.par9uet.jm.storage.LocalSettingManager
 import com.par9uet.jm.ui.components.Comic
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.components.adaptiveComicGridCells
 import com.par9uet.jm.ui.viewModel.ComicDetailViewModel
 import com.par9uet.jm.contentfilter.filterBlockedTags
-import org.koin.compose.getKoin
 import org.koin.compose.viewmodel.koinActivityViewModel
 
 @Composable
 fun ComicRelateListScreen(
     comicDetailViewModel: ComicDetailViewModel = koinActivityViewModel(),
-    localSettingManager: LocalSettingManager = getKoin().get(),
 ) {
     val comicDetailState by comicDetailViewModel.comicDetailState.collectAsState()
-    val blockedTags by localSettingManager.blockedTags.collectAsState()
+    val blockedTags by comicDetailViewModel.blockedTags.collectAsState()
     CommonScaffold(title = "相关本子") { topContentPadding, bottomContentPadding ->
         if (comicDetailState.data != null) {
             val relateList = remember(comicDetailState.data, blockedTags) {

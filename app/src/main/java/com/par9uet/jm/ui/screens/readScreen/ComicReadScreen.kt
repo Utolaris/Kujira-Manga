@@ -67,11 +67,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.data.models.ComicChapter
-import com.par9uet.jm.storage.LocalSettingManager
-import com.par9uet.jm.storage.ReadHistoryManager
-import com.par9uet.jm.storage.ReaderResumeManager
 import com.par9uet.jm.session.SessionReadiness
-import com.par9uet.jm.session.UserManager
 import com.par9uet.jm.ui.glass.GlassCaptureHost
 import com.par9uet.jm.ui.glass.GlassModal
 import com.par9uet.jm.ui.glass.GlassSurface
@@ -79,7 +75,6 @@ import com.par9uet.jm.ui.glass.GlassSurfaceStyle
 import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.ComicReadViewModel
 import org.koin.androidx.compose.koinViewModel
-import org.koin.compose.getKoin
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -87,22 +82,18 @@ fun ComicReadScreen(
     comicId: Int,
     localOnly: Boolean = false,
     comicReadViewModel: ComicReadViewModel = koinViewModel(),
-    localSettingManager: LocalSettingManager = getKoin().get(),
-    readHistoryManager: ReadHistoryManager = getKoin().get(),
-    userManager: UserManager = getKoin().get(),
-    readerResumeManager: ReaderResumeManager = getKoin().get()
 ) {
     val context = LocalContext.current
     val mainNavController = LocalMainNavController.current
     val isShowToolbar by comicReadViewModel.isShowToolBar
     val size = comicReadViewModel.size
     var currentIndexState by comicReadViewModel.currentIndexState
-    val readMode by localSettingManager.readMode.collectAsState()
-    val authState by userManager.authState.collectAsState()
+    val readMode by comicReadViewModel.readMode.collectAsState()
+    val authState by comicReadViewModel.authState.collectAsState()
     val comicPicState by comicReadViewModel.comicPicState.collectAsState()
     val comicDetailState by comicReadViewModel.comicDetailState.collectAsState()
     val localChapterList by comicReadViewModel.localChapterList.collectAsState()
-    val readHistory by readHistoryManager.readHistoryState.collectAsState()
+    val readHistory by comicReadViewModel.readHistoryState.collectAsState()
     val comic = comicDetailState.data
     val loading = comicPicState.isLoading
     val initialReaderIndex = if (size > 0) currentIndexState.coerceIn(0, size - 1) else 0
@@ -116,7 +107,7 @@ fun ComicReadScreen(
     val readHistoryComicId by comicReadViewModel.readHistoryComicId
     val readChapterIds = remember(readHistory, readHistoryComicId) {
         if (readHistoryComicId > 0) {
-            readHistoryManager.readChapterIds(readHistoryComicId, readHistory)
+            comicReadViewModel.readChapterIds(readHistoryComicId)
         } else {
             emptySet()
         }
@@ -185,12 +176,12 @@ fun ComicReadScreen(
     LaunchedEffect(comicId, size, readHistoryComicId, loading) {
         if (!loading && size > 0 && readHistoryComicId > 0) {
             if (loadedComicId != comicId) {
-                currentIndexState = readHistoryManager.lastReadPageIndex(readHistoryComicId, comicId)
+                currentIndexState = comicReadViewModel.lastReadPageIndex(readHistoryComicId, comicId)
                     .coerceIn(0, size - 1)
                 loadedComicId = comicId
             }
             targetIndex = currentIndexState.coerceIn(0, size - 1)
-            readerResumeManager.beginReading(comicId, localOnly)
+            comicReadViewModel.beginReading(comicId, localOnly)
             zoomState.reset()
             comicReadViewModel.decodeIndex(targetIndex, context)
         }
@@ -201,8 +192,8 @@ fun ComicReadScreen(
     // explicit back cannot be undone by this dispose-time checkpoint.
     val saveProgress by rememberUpdatedState {
         if (size > 0 && readHistoryComicId > 0 && loadedComicId == comicId) {
-            readHistoryManager.saveReadProgress(readHistoryComicId, comicId, currentIndexState, size)
-            readerResumeManager.markReading(comicId, localOnly)
+            comicReadViewModel.saveReadProgress(readHistoryComicId, comicId, currentIndexState, size)
+            comicReadViewModel.markReading(comicId, localOnly)
         }
     }
     DisposableEffect(lifecycleOwner, comicId) {
@@ -268,7 +259,7 @@ fun ComicReadScreen(
     HierarchicalBackHandler {
         controller?.show(WindowInsetsCompat.Type.systemBars())
         // Latch exit BEFORE popBackStack so dispose-time markReading cannot revive it.
-        readerResumeManager.endReading(comicId, localOnly)
+        comicReadViewModel.endReading(comicId, localOnly)
         mainNavController.popBackStack()
     }
 

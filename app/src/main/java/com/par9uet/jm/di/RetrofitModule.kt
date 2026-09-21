@@ -23,7 +23,9 @@ val retrofitModule = module {
             get(),
             get(),
             get(),
-            get<DohManager>()
+            get<DohManager>(),
+            get(),
+            get(),
         )
     } bind ActiveSessionCookieStore::class
     single<ComicService> { get<Retrofit>().createService(ComicService::class.java) }

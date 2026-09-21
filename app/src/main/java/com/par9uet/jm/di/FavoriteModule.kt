@@ -11,7 +11,6 @@ import com.par9uet.jm.favorites.data.FavoriteRemoteQuery
 import com.par9uet.jm.favorites.model.FavoriteLocalQuery
 import com.par9uet.jm.favorites.model.FavoriteSession
 import com.par9uet.jm.favorites.data.FavoriteStore
-import com.par9uet.jm.favorites.data.UserManagerFavoriteSession
 import com.par9uet.jm.favorites.presentation.FavoritesViewModel
 import com.par9uet.jm.favorites.sync.FavoriteSyncController
 import com.par9uet.jm.favorites.sync.FavoriteSyncRequester

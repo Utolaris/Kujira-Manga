@@ -38,10 +38,13 @@ private data class DecodedCacheWrite(
 internal class ReaderImageDiskCache(
     directory: File,
     scope: CoroutineScope,
+    maxBytes: Long = DEFAULT_MAX_DISK_CACHE_BYTES,
 ) {
     private val sourceCacheMutex = Mutex()
     private val decodedCacheMutex = Mutex()
     private val cacheGeneration = AtomicLong(0L)
+    private val maxDiskCacheBytes = maxBytes.coerceAtLeast(32L * 1024L * 1024L)
+    private val targetDiskCacheBytes = (maxDiskCacheBytes * 7L / 8L)
     private val diskCacheDir = directory.apply { mkdirs() }
     private val activeSourceFiles = ConcurrentHashMap<File, AtomicInteger>()
     private val decodedCacheWrites = Channel<DecodedCacheWrite>(
@@ -243,9 +246,9 @@ internal class ReaderImageDiskCache(
                         (file.extension == "source" || file.extension == "webp")
                 }.orEmpty()
                 var total = files.sumOf(File::length)
-                if (total <= MAX_DISK_CACHE_BYTES) return
+                if (total <= maxDiskCacheBytes) return
                 files.sortedBy(File::lastModified).forEach { file ->
-                    if (total <= TARGET_DISK_CACHE_BYTES) return@forEach
+                    if (total <= targetDiskCacheBytes) return@forEach
                     total -= file.length()
                     file.delete()
                 }
@@ -264,7 +267,6 @@ internal class ReaderImageDiskCache(
     }
 
     private companion object {
-        const val MAX_DISK_CACHE_BYTES = 256L * 1024L * 1024L
-        const val TARGET_DISK_CACHE_BYTES = 224L * 1024L * 1024L
+        const val DEFAULT_MAX_DISK_CACHE_BYTES = 256L * 1024L * 1024L
     }
 }

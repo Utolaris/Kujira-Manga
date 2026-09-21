@@ -54,12 +54,10 @@ import com.par9uet.jm.core.model.User
 import com.par9uet.jm.ui.models.LocalRemoteImageHost
 import com.par9uet.jm.ui.screens.tabScreen.TabletFloatingNavDefaults
 import com.par9uet.jm.ui.models.LocalTabletLayoutEnabled
-import com.par9uet.jm.session.UserManager
 import com.par9uet.jm.session.SessionReadiness
 import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.UserViewModel
 import kotlinx.coroutines.launch
-import org.koin.compose.getKoin
 import org.koin.compose.viewmodel.koinActivityViewModel
 
 @Composable
@@ -317,13 +315,12 @@ private fun MenuDivider() {
 
 @Composable
 fun UserScreen(
-    userManager: UserManager = getKoin().get(),
     userViewModel: UserViewModel = koinActivityViewModel(),
     topContentPadding: Dp = 0.dp,
     bottomContentPadding: Dp = 0.dp,
 ) {
-    val userState by userManager.userState.collectAsState()
-    val authState by userManager.authState.collectAsState()
+    val userState by userViewModel.userState.collectAsState()
+    val authState by userViewModel.authState.collectAsState()
     val hasCachedIdentity = authState != SessionReadiness.Unauthenticated &&
         (userState.data?.id ?: 0) > 0
     val remoteImageHost = LocalRemoteImageHost.current

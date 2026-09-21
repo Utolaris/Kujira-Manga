@@ -56,7 +56,7 @@ class HomeViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private class FakeSettings : ContentPreferences, RecommendationPreferences {
+    private class FakeSettings : ContentPreferences, RecommendationPreferences, com.par9uet.jm.storage.MiscSettingsPreferences {
         constructor()
 
         constructor(recommendEnabled: Boolean) {
@@ -71,6 +71,7 @@ class HomeViewModelTest {
         override val blockedTags = _blockedTags.asStateFlow()
         private val _preferenceRecommendEnabled = MutableStateFlow(false)
         override val preferenceRecommendEnabled = _preferenceRecommendEnabled.asStateFlow()
+        override val misc = MutableStateFlow(com.par9uet.jm.storage.MiscSettingsState())
     }
 
     private class FakeComicRepository(
@@ -165,7 +166,7 @@ class HomeViewModelTest {
     fun recommendOffStartupPromotesCurrentSecondPageToFirst() = runTest(scheduler) {
         val repo = FakeComicRepository(embeddedHandler = { embeddedOk(it) })
         val settings = FakeSettings()
-        val vm = HomeViewModel(repo, settings)
+        val vm = HomeViewModel(repo, settings, settings, settings)
 
         vm.refreshHome()
         advanceUntilIdle()
@@ -195,7 +196,7 @@ class HomeViewModelTest {
             },
         )
         val settings = FakeSettings(recommendEnabled = true)
-        val vm = HomeViewModel(repo, settings)
+        val vm = HomeViewModel(repo, settings, settings, settings)
 
         vm.refreshHome()
         advanceUntilIdle()
@@ -234,6 +235,8 @@ class HomeViewModelTest {
         val vm = HomeViewModel(
             repo,
             FakeSettings(recommendEnabled = true),
+            FakeSettings(),
+            FakeSettings(),
         )
 
         vm.refreshHome()
@@ -262,6 +265,8 @@ class HomeViewModelTest {
         val vm = HomeViewModel(
             repo,
             FakeSettings(recommendEnabled = true),
+            FakeSettings(),
+            FakeSettings(),
         )
 
         vm.refreshHome()
@@ -279,7 +284,7 @@ class HomeViewModelTest {
     fun clickingCategoryRequestsItOnceThenUsesCache() = runTest(scheduler) {
         val repo = FakeComicRepository(embeddedHandler = { embeddedOk(it) })
         val settings = FakeSettings()
-        val vm = HomeViewModel(repo, settings)
+        val vm = HomeViewModel(repo, settings, settings, settings)
 
         vm.refreshHome()
         advanceUntilIdle()
@@ -307,7 +312,7 @@ class HomeViewModelTest {
     fun forceRefreshOnlyRefreshesCurrentCategory() = runTest(scheduler) {
         val repo = FakeComicRepository(embeddedHandler = { embeddedOk(it) })
         val settings = FakeSettings()
-        val vm = HomeViewModel(repo, settings)
+        val vm = HomeViewModel(repo, settings, settings, settings)
 
         vm.refreshHome()
         advanceUntilIdle()
@@ -337,7 +342,7 @@ class HomeViewModelTest {
             networkHandler = { NetWorkResult.Success(listOf(page("home", "首页", listOf(item(3))))) },
         )
         val settings = FakeSettings()
-        val vm = HomeViewModel(repo, settings)
+        val vm = HomeViewModel(repo, settings, settings, settings)
 
         vm.refreshHome()
         advanceUntilIdle()
@@ -374,7 +379,7 @@ class HomeViewModelTest {
             },
         )
         val settings = FakeSettings()
-        val vm = HomeViewModel(repo, settings)
+        val vm = HomeViewModel(repo, settings, settings, settings)
 
         vm.refreshHome()
         advanceUntilIdle()
@@ -406,7 +411,7 @@ class HomeViewModelTest {
             },
         )
         val settings = FakeSettings()
-        val vm = HomeViewModel(repo, settings)
+        val vm = HomeViewModel(repo, settings, settings, settings)
 
         // 默认只加载交换后的 Embedded 第 1 页。
         vm.refreshHome()
@@ -457,7 +462,7 @@ class HomeViewModelTest {
             },
         )
         val settings = FakeSettings()
-        val vm = HomeViewModel(repo, settings)
+        val vm = HomeViewModel(repo, settings, settings, settings)
 
         vm.refreshHome()
         advanceUntilIdle()
@@ -490,7 +495,7 @@ class HomeViewModelTest {
                 if (categoryId == "builtin_week_hot") aGate.await() else embeddedOk(categoryId)
             },
         )
-        val vm = HomeViewModel(repo, FakeSettings())
+        val vm = HomeViewModel(repo, FakeSettings(), FakeSettings(), FakeSettings())
         vm.refreshHome()
         advanceUntilIdle()
 
@@ -524,7 +529,7 @@ class HomeViewModelTest {
                 }
             },
         )
-        val vm = HomeViewModel(repo, FakeSettings())
+        val vm = HomeViewModel(repo, FakeSettings(), FakeSettings(), FakeSettings())
         vm.refreshHome()
         advanceUntilIdle()
 

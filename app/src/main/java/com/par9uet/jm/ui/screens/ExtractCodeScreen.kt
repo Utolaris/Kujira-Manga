@@ -44,7 +44,6 @@ import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.ImageLoader
-import com.par9uet.jm.core.ToastManager
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.components.JmCoverImage
 import com.par9uet.jm.ui.glass.GlassModal
@@ -53,7 +52,6 @@ import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.ExtractCodeViewModel
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
-import org.koin.compose.getKoin
 
 /**
  * 提取编码页面
@@ -67,7 +65,6 @@ import org.koin.compose.getKoin
 @Composable
 fun ExtractCodeScreen(
     viewModel: ExtractCodeViewModel = koinViewModel(),
-    toastManager: ToastManager = getKoin().get(),
     imageLoader: ImageLoader = com.par9uet.jm.coil.currentCoverImageLoader(),
 ) {
     val mainNavController = LocalMainNavController.current
@@ -215,7 +212,7 @@ fun ExtractCodeScreen(
                                 inputText = clipText
                                 viewModel.extractAndFetch(clipText)
                             } else {
-                                toastManager.showAsync("剪切板为空")
+                                viewModel.toast("剪切板为空")
                             }
                         }
                     },

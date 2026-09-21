@@ -71,7 +71,7 @@ val databaseModule = module {
     }
     single<DownloadFeedback> { DeviceDownloadFeedback(androidContext(), get(), get()) }
     single { DownloadComicCoordinator(get(), get(), get(), get()) } bind com.par9uet.jm.download.coordinator.DownloadExecutionControl::class
-    viewModel { DownloadViewModel(get(), get()) }
+    viewModel { DownloadViewModel(get(), get(), get()) }
     viewModel { DownloadComicDetailViewModel(get(), get()) }
     single<com.par9uet.jm.download.export.DownloadExportOperations> {
         com.par9uet.jm.download.export.DeviceDownloadExportOperations(androidContext())

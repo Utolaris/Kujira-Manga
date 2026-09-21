@@ -20,9 +20,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -33,6 +30,7 @@ class ReaderImagePipeline internal constructor(
     private val readerPreferences: ReaderPreferences,
     imageHostHealthManager: JmImageHostHealthManager,
     dohManager: DohManager,
+    connectionPool: okhttp3.ConnectionPool,
 ) {
     private val appContext = context.applicationContext
     private val activityManager = appContext.getSystemService(ActivityManager::class.java)
@@ -40,14 +38,8 @@ class ReaderImagePipeline internal constructor(
     private val lowRamDevice = activityManager?.isLowRamDevice ?: false
     private val imageWorkConcurrency =
         ReaderConcurrencyPolicy.imageWorkConcurrency(lowRamDevice, memoryClassMb)
-    private val maxDecodeConcurrency =
-        ReaderConcurrencyPolicy.maxDecodeConcurrency(lowRamDevice, memoryClassMb)
-    private val initialDecodeConcurrency = ReaderConcurrencyPolicy.effectiveDecodeConcurrency(
-        memoryOptEnabled = readerPreferences.memoryOptEnabled.value,
-        userConcurrency = readerPreferences.decodeConcurrency.value,
-        lowRamDevice = lowRamDevice,
-        memoryClassMb = memoryClassMb,
-    )
+    private val decodeConcurrency =
+        ReaderConcurrencyPolicy.effectiveDecodeConcurrency(lowRamDevice, memoryClassMb)
     private val networkConcurrency = if (imageWorkConcurrency > 1 && memoryClassMb >= 512) {
         3
     } else {
@@ -62,9 +54,9 @@ class ReaderImagePipeline internal constructor(
             networkConcurrency >= 3 && readerPreferences.prefetchCount.value >= 5
         ) 2 else 1,
     )
-    private val decodeLimiter = ReaderDynamicLimiter(initialDecodeConcurrency)
-    private val backgroundDecodeLimiter = if (maxDecodeConcurrency > 1) {
-        ReaderDynamicLimiter(initialDecodeConcurrency - 1)
+    private val decodeLimiter = ReaderDynamicLimiter(decodeConcurrency)
+    private val backgroundDecodeLimiter = if (decodeConcurrency > 1) {
+        ReaderDynamicLimiter(decodeConcurrency - 1)
     } else {
         null
     }
@@ -72,6 +64,13 @@ class ReaderImagePipeline internal constructor(
     private val diskCache = ReaderImageDiskCache(
         directory = File(appContext.cacheDir, "reader_pages"),
         scope = scope,
+        maxBytes = com.par9uet.jm.cache.CacheBudget.readerDiskCacheBytes(
+            readerPreferences.let {
+                // 读一次当前总预算；后续预算变更在设置里重建 Coil，阅读磁盘下次写入时按新值 trim。
+                // 这里用默认总额即可避免构造期依赖尚未加载的 LocalSetting。
+                com.par9uet.jm.cache.CacheBudget.DEFAULT_TOTAL_MB
+            }
+        ),
     )
     private val visibleRequestTracker = ReaderVisibleRequestTracker()
     private val requests = ReaderInFlightRegistry<ReaderInFlightKey, ReaderDecodedPage>(
@@ -82,8 +81,10 @@ class ReaderImagePipeline internal constructor(
     // DoH is shared by the HTTP client; CDN ordering remains in the source molecule.
     private val httpClient = OkHttpClient.Builder()
         .dns(dohManager)
+        .connectionPool(connectionPool)
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
         .callTimeout(40, TimeUnit.SECONDS)
         .followRedirects(true)
         .build()
@@ -106,7 +107,6 @@ class ReaderImagePipeline internal constructor(
 
     init {
         appContext.registerComponentCallbacks(bitmapCache)
-        observeDecodeConcurrency()
         observePrefetchConcurrency()
     }
 
@@ -186,28 +186,6 @@ class ReaderImagePipeline internal constructor(
         imageHostManager.close()
         httpClient.dispatcher.cancelAll()
         httpClient.connectionPool.evictAll()
-    }
-
-    private fun observeDecodeConcurrency() {
-        scope.launch {
-            combine(
-                readerPreferences.memoryOptEnabled,
-                readerPreferences.decodeConcurrency,
-            ) { memoryOpt, userConcurrency -> memoryOpt to userConcurrency }
-                .map { (memoryOpt, userConcurrency) ->
-                    ReaderConcurrencyPolicy.effectiveDecodeConcurrency(
-                        memoryOptEnabled = memoryOpt,
-                        userConcurrency = userConcurrency,
-                        lowRamDevice = lowRamDevice,
-                        memoryClassMb = memoryClassMb,
-                    )
-                }
-                .distinctUntilChanged()
-                .collect { concurrency ->
-                    decodeLimiter.updateLimit(concurrency)
-                    backgroundDecodeLimiter?.updateLimit((concurrency - 1).coerceAtLeast(0))
-                }
-        }
     }
 
     private fun observePrefetchConcurrency() {
@@ -408,12 +386,7 @@ class ReaderImagePipeline internal constructor(
     private fun canonicalPageKey(pageKey: ReaderPageKey): ReaderPageKey =
         pageKey.copy(sourceIdentity = readerLogicalSourceIdentity(pageKey.sourceIdentity))
 
-    private fun currentProfile(): ReaderDecodeProfile =
-        if (readerPreferences.memoryOptEnabled.value) {
-            ReaderDecodeProfile.LOW
-        } else {
-            ReaderDecodeProfile.HIGH
-        }
+    private fun currentProfile(): ReaderDecodeProfile = ReaderDecodeProfile.HIGH
 
     private fun shouldInvalidateSourceAfterDecodeFailure(error: Throwable): Boolean =
         error !is CancellationException && error !is OutOfMemoryError

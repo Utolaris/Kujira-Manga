@@ -1,17 +1,20 @@
 package com.par9uet.jm.retrofit
 
+import com.par9uet.jm.network.applyAppHttpDefaults
+import com.par9uet.jm.network.applyHttpLogging
 import com.par9uet.jm.retrofit.converter.PrimitiveToRequestBodyConverterFactory
 import com.par9uet.jm.retrofit.converter.ResponseConverterFactory
 import com.par9uet.jm.retrofit.interceptor.BaseUrlInterceptor
 import com.par9uet.jm.retrofit.interceptor.ToastInterceptor
 import com.par9uet.jm.retrofit.interceptor.TokenInterceptor
+import java.util.concurrent.TimeUnit
+import okhttp3.Cache
+import okhttp3.ConnectionPool
 import okhttp3.CookieJar
 import okhttp3.Dns
 import okhttp3.OkHttpClient
-import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.scalars.ScalarsConverterFactory
-import java.util.concurrent.TimeUnit
 
 /**
  * 活动网络会话 cookie 的清除入口。Retrofit 客户端使用 CookieJar.NO_COOKIES，
@@ -31,19 +34,24 @@ class Retrofit(
     // OkHttp's Dns interface keeps this layer free of the network package; the
     // composition root supplies the app-wide DoH resolver.
     dns: Dns,
+    connectionPool: ConnectionPool = ConnectionPool(5, 5, TimeUnit.MINUTES),
+    httpCache: Cache? = null,
 ) : ActiveSessionCookieStore {
     internal val okHttpClient by lazy {
         OkHttpClient.Builder()
-            .dns(dns)
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(15, TimeUnit.SECONDS)
-            .writeTimeout(15, TimeUnit.SECONDS)
+            .applyAppHttpDefaults(
+                dns = dns,
+                connectionPool = connectionPool,
+                cache = httpCache,
+                connectSeconds = 10,
+                readSeconds = 15,
+                writeSeconds = 15,
+                callSeconds = 20,
+            )
             .addInterceptor(baseUrlInterceptor)
             .addInterceptor(tokenInterceptor)
             .addInterceptor(toastInterceptor)
-            .addInterceptor(HttpLoggingInterceptor().apply {
-                level = HttpLoggingInterceptor.Level.BASIC
-            })
+            .applyHttpLogging()
             .cookieJar(CookieJar.NO_COOKIES)
             .build()
     }

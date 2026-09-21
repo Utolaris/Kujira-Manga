@@ -3,6 +3,7 @@ package com.par9uet.jm.ui.screens
 import android.net.Uri
 import com.par9uet.jm.ui.navigation.HierarchicalBackHandler
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -54,9 +55,10 @@ import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.ComicDetailViewModel
 import com.par9uet.jm.ui.viewModel.SearchViewModel
 import com.par9uet.jm.contentfilter.serializeExcludedTags
-import com.par9uet.jm.storage.LocalSettingManager
+import com.par9uet.jm.utils.log
+import com.par9uet.jm.utils.logError
 import kotlinx.coroutines.flow.distinctUntilChanged
-import org.koin.compose.getKoin
+import kotlinx.coroutines.flow.filterIsInstance
 import org.koin.compose.viewmodel.koinActivityViewModel
 
 internal enum class SearchResultBackTarget {
@@ -70,6 +72,39 @@ internal fun searchResultBackTarget(previousRoute: String?): SearchResultBackTar
     } else {
         SearchResultBackTarget.PREVIOUS_SCREEN
     }
+
+/** 视口管道日志标签；筛日志时用这个。 */
+internal const val SEARCH_VIEWPORT_TAG = "SearchViewport"
+
+/** 连续「塌回顶部」修复尝试上限，避免在无法到达的位置上与布局互相拉扯。 */
+internal const val MAX_SEARCH_VIEWPORT_COLLAPSE_RECOVERIES = 8
+
+/**
+ * 网格是否「塌回顶部」：当前位置在顶部，而保存的目标并不在顶部。
+ *
+ * 这是「从详情返回搜索页偶发回到顶部」的可观测形态 —— `LazyGridState` 的索引会被
+ * 一次布局夹进 `0 until itemCount`，只要在结果页就位之前网格曾被以 0 项（或更少的项）
+ * 布局过一次，40 就会被夹成 0；而原来的恢复流程是**一次性 + 等一帧就收工**，
+ * 收工之后再没有任何机制把位置修回来。
+ *
+ * 只在「顶部」这一种形态上干预，是为了不跟用户在列表中间的正常滚动抢位置：
+ * 用户拖动会先一步把整个机制关掉（见 `DragInteraction`）。
+ */
+internal fun isSearchViewportCollapsed(
+    savedIndex: Int,
+    savedOffset: Int,
+    currentIndex: Int,
+    currentOffset: Int,
+): Boolean = currentIndex == 0 && currentOffset == 0 && (savedIndex > 0 || savedOffset > 0)
+
+/**
+ * 塌回顶部后的修复目标索引；`null` 表示当前没有可修的位置（无内容 / 只有一项）。
+ * 目标一律夹进 `1 until itemCount`：只夹到有效范围内，绝不等价于「当作目标不存在」。
+ */
+internal fun searchViewportCollapseRecoveryIndex(savedIndex: Int, itemCount: Int): Int? {
+    if (itemCount <= 1) return null
+    return savedIndex.coerceIn(1, itemCount - 1)
+}
 
 @Composable
 private fun ComicSearchResultSkeleton(
@@ -147,10 +182,9 @@ internal fun SearchResultRefreshContent(
 fun ComicSearchResultScreen(
     searchViewModel: SearchViewModel = koinActivityViewModel(),
     comicDetailViewModel: ComicDetailViewModel = koinActivityViewModel(),
-    localSettingManager: LocalSettingManager = getKoin().get(),
 ) {
     val mainNavController = LocalMainNavController.current
-    val miscSettings by localSettingManager.misc.collectAsState()
+    val miscSettings by searchViewModel.misc.collectAsState()
     val comicSearchFilterState by searchViewModel.searchComicFilterState.collectAsState()
     // 按 revision 重新收集：新查询立刻丢掉上一次的 PagingData 展示，
     // 避免 cachedIn 在加载中/失败时把旧列表留在屏幕上。
@@ -175,24 +209,99 @@ fun ComicSearchResultScreen(
     val initialResetGeneration = remember { savedViewport.resetGeneration }
     var initialViewportRestorePending by remember { mutableStateOf(true) }
     var suppressViewportPersistence by remember { mutableStateOf(false) }
+    /**
+     * 用户是否已经主动拖动过。
+     *
+     * 拖动 = 接管视口：此后既不再自动恢复，也不再由本屏决定位置。
+     * 只有真实手势会产生 `DragInteraction`，程序化的 `scrollToItem` 不会，
+     * 所以这个判定不会被我们自己的恢复动作误触发。
+     */
+    var viewportTakenOverByUser by remember { mutableStateOf(false) }
+    var viewportCollapseRecoveries by remember { mutableStateOf(0) }
+
+    LaunchedEffect(gridState) {
+        gridState.interactionSource.interactions
+            .filterIsInstance<DragInteraction.Start>()
+            .collect {
+                if (!viewportTakenOverByUser) {
+                    log(SEARCH_VIEWPORT_TAG, "用户开始拖动，视口控制权交还用户")
+                }
+                viewportTakenOverByUser = true
+            }
+    }
 
     LaunchedEffect(savedViewport.resetGeneration, searchItemCount, searchAppendComplete) {
-        if (!initialViewportRestorePending || searchItemCount <= 0) return@LaunchedEffect
+        if (!initialViewportRestorePending || searchItemCount <= 0 || viewportTakenOverByUser) {
+            return@LaunchedEffect
+        }
         val savedIndex = savedViewport.firstVisibleItemIndex
-        if (!searchAppendComplete && searchItemCount <= savedIndex) return@LaunchedEffect
+        val savedOffset = savedViewport.firstVisibleItemScrollOffset
+        if (!searchAppendComplete && searchItemCount <= savedIndex) {
+            log(
+                SEARCH_VIEWPORT_TAG,
+                "等待目标页就位：savedIndex=$savedIndex count=$searchItemCount appendComplete=false",
+            )
+            return@LaunchedEffect
+        }
 
         val targetIndex = savedIndex.coerceAtMost(searchItemCount - 1)
         if (gridState.firstVisibleItemIndex != targetIndex ||
-            gridState.firstVisibleItemScrollOffset != savedViewport.firstVisibleItemScrollOffset
+            gridState.firstVisibleItemScrollOffset != savedOffset
         ) {
-            gridState.scrollToItem(targetIndex, savedViewport.firstVisibleItemScrollOffset)
+            log(
+                SEARCH_VIEWPORT_TAG,
+                "首次恢复视口 → index=$targetIndex offset=$savedOffset" +
+                    "（当前 index=${gridState.firstVisibleItemIndex} count=$searchItemCount）",
+            )
+            gridState.scrollToItem(targetIndex, savedOffset)
         }
         androidx.compose.runtime.withFrameNanos { }
         initialViewportRestorePending = false
     }
 
+    /**
+     * 塌回顶部的看门狗。
+     *
+     * 一次性恢复收工之后，**布局仍可能把索引夹回 0**（例如目标页就位前网格先以 0 项布局过一帧，
+     * 或刷新期间列表短暂清空）。原实现收工即失能，于是这一次夹取就永久生效 ——
+     * 表现就是「偶发直接回到顶部」。这里只在「观测到顶部、而保存的目标不是顶部」时补一次，
+     * 因此不会与用户在列表中间的滚动抢位置。
+     */
+    LaunchedEffect(gridState, savedViewport.resetGeneration, viewportTakenOverByUser) {
+        if (viewportTakenOverByUser) return@LaunchedEffect
+        val savedIndex = savedViewport.firstVisibleItemIndex
+        val savedOffset = savedViewport.firstVisibleItemScrollOffset
+        if (savedIndex == 0 && savedOffset == 0) return@LaunchedEffect
+        snapshotFlow { gridState.firstVisibleItemIndex to gridState.firstVisibleItemScrollOffset }
+            .distinctUntilChanged()
+            .collect { (index, offset) ->
+                if (viewportTakenOverByUser || suppressViewportPersistence) return@collect
+                if (!isSearchViewportCollapsed(savedIndex, savedOffset, index, offset)) return@collect
+                // 必须实时读：进入本屏时 itemCount 还是 0，用组合期的快照会让看门狗直接失效。
+                val liveItemCount = comicSearchLazyPagingItems.itemCount
+                val target = searchViewportCollapseRecoveryIndex(savedIndex, liveItemCount) ?: return@collect
+                if (viewportCollapseRecoveries >= MAX_SEARCH_VIEWPORT_COLLAPSE_RECOVERIES) {
+                    logError(
+                        SEARCH_VIEWPORT_TAG,
+                        "网格反复塌回顶部，已重试 $viewportCollapseRecoveries 次仍失败，放弃" +
+                            "（savedIndex=$savedIndex count=$liveItemCount）",
+                    )
+                    viewportTakenOverByUser = true
+                    return@collect
+                }
+                viewportCollapseRecoveries++
+                logError(
+                    SEARCH_VIEWPORT_TAG,
+                    "网格塌回顶部（期望 index=$savedIndex），第 $viewportCollapseRecoveries 次修回 index=$target" +
+                        "（count=$liveItemCount）",
+                )
+                gridState.scrollToItem(target, savedOffset)
+            }
+    }
+
     LaunchedEffect(savedViewport.resetGeneration) {
         if (savedViewport.resetGeneration == initialResetGeneration) return@LaunchedEffect
+        log(SEARCH_VIEWPORT_TAG, "查询换代（gen=${savedViewport.resetGeneration}），视口归零")
         suppressViewportPersistence = true
         try {
             gridState.scrollToItem(0, 0)
@@ -205,6 +314,7 @@ fun ComicSearchResultScreen(
 
     LaunchedEffect(gridState, savedViewport.resetGeneration, initialViewportRestorePending) {
         val resetGeneration = savedViewport.resetGeneration
+        var firstSaveLogged = false
         snapshotFlow {
             Triple(
                 comicSearchLazyPagingItems.itemCount,
@@ -212,7 +322,13 @@ fun ComicSearchResultScreen(
                 gridState.firstVisibleItemScrollOffset,
             )
         }.distinctUntilChanged().collect { (itemCount, index, offset) ->
-            if (itemCount > 0 && !initialViewportRestorePending && !suppressViewportPersistence) {
+            // 恢复期间不落盘（避免把中间态写成用户位置）；用户一旦接管就立刻恢复持久化。
+            val persistenceAllowed = !initialViewportRestorePending || viewportTakenOverByUser
+            if (itemCount > 0 && persistenceAllowed && !suppressViewportPersistence) {
+                if (!firstSaveLogged) {
+                    firstSaveLogged = true
+                    log(SEARCH_VIEWPORT_TAG, "视口恢复完成，交回持久化：index=$index offset=$offset")
+                }
                 searchViewModel.saveSearchViewport(index, offset, resetGeneration)
             }
         }

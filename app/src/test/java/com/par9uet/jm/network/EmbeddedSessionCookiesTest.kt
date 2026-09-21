@@ -61,4 +61,28 @@ class EmbeddedSessionCookiesTest {
         assertEquals(listOf(updated), mergeEmbeddedCookies(listOf(avs), listOf(updated)))
         assertNotEquals(avs, updated)
     }
+
+    /**
+     * 会话令牌的单写者不变量：**只有登录流程能写 AVS**。
+     *
+     * 原实现把任意同域响应的 `Set-Cookie` 直接并回持久化快照，等于让公开 API 响应也能
+     * 改写（或新增一个同名不同域的）会话令牌；而请求侧在同名 AVS 之间按列表顺序取第一个，
+     * 选到旧值就表现为「登录成功、几秒后所有认证请求 401」。
+     */
+    @Test fun responseSetCookieCanNeverRewriteOrDeleteTheSessionToken() {
+        val theme = Cookie.Builder().name("theme").value("dark").hostOnlyDomain(trusted[0]).build()
+        val stored = listOf(avs, theme)
+
+        val rotated = Cookie.Builder().name("AVS").value("rotated-by-response").hostOnlyDomain(trusted[0]).secure().build()
+        assertEquals("响应不得改写会话令牌", stored, mergeEmbeddedResponseCookies(stored, listOf(rotated)))
+
+        val deletion = Cookie.Builder().name("AVS").value("").hostOnlyDomain(trusted[0]).expiresAt(1).build()
+        assertEquals("响应也不得删除会话令牌", stored, mergeEmbeddedResponseCookies(stored, listOf(deletion)))
+
+        val rotatedTheme = Cookie.Builder().name("theme").value("light").hostOnlyDomain(trusted[0]).build()
+        val merged = mergeEmbeddedResponseCookies(stored, listOf(rotatedTheme, rotated))
+        assertEquals(2, merged.size)
+        assertTrue("非会话 cookie 照常更新", merged.any { it.name == "theme" && it.value == "light" })
+        assertTrue("会话令牌保持登录写入的值", merged.any { it.name == "AVS" && it.value == "session" })
+    }
 }

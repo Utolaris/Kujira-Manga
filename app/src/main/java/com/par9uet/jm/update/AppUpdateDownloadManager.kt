@@ -3,6 +3,7 @@ package com.par9uet.jm.update
 import android.content.Context
 import com.par9uet.jm.cache.getCommonCacheDir
 import com.par9uet.jm.core.ToastManager
+import com.par9uet.jm.network.applyAppHttpDefaults
 import com.par9uet.jm.utils.APP_UPDATE_NOTIFICATION_ID
 import com.par9uet.jm.utils.cancelProgressNotification
 import com.par9uet.jm.utils.formatBytes
@@ -23,6 +24,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -68,8 +70,19 @@ class AppUpdateDownloadManager(
     private val scope: CoroutineScope,
     private val toastManager: ToastManager,
     private val dohManager: com.par9uet.jm.network.DohManager,
+    connectionPool: ConnectionPool,
 ) : AppUpdateDownloads {
-    private val client = OkHttpClient.Builder().dns(dohManager).build()
+    // APK 大包给更长 callTimeout；readTimeout 负责卡死检测。
+    private val client = OkHttpClient.Builder()
+        .applyAppHttpDefaults(
+            dns = dohManager,
+            connectionPool = connectionPool,
+            connectSeconds = 15,
+            readSeconds = 60,
+            writeSeconds = 30,
+            callSeconds = 600,
+        )
+        .build()
     private val jobs = UpdateDownloadJobGate()
     private val activeCall = java.util.concurrent.atomic.AtomicReference<okhttp3.Call?>(null)
 
@@ -81,7 +94,6 @@ class AppUpdateDownloadManager(
             toastManager.showAsync("未找到 APK 下载链接")
             return
         }
-        // New download intent: stop the current writer; pause issued while waiting must stick.
         jobs.paused = false
         activeCall.getAndSet(null)?.cancel()
         jobs.start(scope) {
@@ -118,10 +130,12 @@ class AppUpdateDownloadManager(
     }
 
     override fun cancel() {
-        // Cancel the Call first so a writer blocked in InputStream.read() unblocks immediately;
-        // job.cancel alone only runs invokeOnCompletion after the task finishes.
         activeCall.getAndSet(null)?.cancel()
         jobs.cancel()
+        val path = _state.value.savedPath.ifBlank {
+            File(getCommonCacheDir(context), "updates/${safeUpdateFileName(_state.value.fileName)}").absolutePath
+        }
+        runCatching { File(path).takeIf { it.isFile }?.delete() }
         _state.update { it.copy(status = AppUpdateDownloadStatus.Canceled, speedBytesPerSecond = 0L) }
         cancelProgressNotification(context, APP_UPDATE_NOTIFICATION_ID)
     }
@@ -133,14 +147,16 @@ class AppUpdateDownloadManager(
 
     private suspend fun download(request: AppUpdateDownloadRequest) = withContext(Dispatchers.IO) {
         val file = File(getCommonCacheDir(context), "updates/${safeUpdateFileName(request.fileName)}")
-        val call = client.newCall(
-            Request.Builder()
-                .url(request.downloadUrl)
-                .header("User-Agent", "kujira-manga-android")
-                .build()
-        )
+        file.parentFile?.mkdirs()
+        val existing = if (file.isFile && file.length() > 0L) file.length() else 0L
+        val requestBuilder = Request.Builder()
+            .url(request.downloadUrl)
+            .header("User-Agent", "kujira-manga-android")
+        if (existing > 0L) {
+            requestBuilder.header("Range", "bytes=$existing-")
+        }
+        val call = client.newCall(requestBuilder.build())
         activeCall.set(call)
-        // Safety net if the job ends without going through cancel().
         currentCoroutineContext().job.invokeOnCompletion { cause ->
             if (cause != null) {
                 call.cancel()
@@ -149,23 +165,38 @@ class AppUpdateDownloadManager(
         }
         try {
             call.execute().use { response ->
+                if (response.code == 416) {
+                    file.delete()
+                    throw IllegalStateException("断点无效，已清除后请重试")
+                }
                 if (!response.isSuccessful) {
                     error("下载失败：HTTP ${response.code}")
                 }
                 val body = response.body ?: error("下载失败：响应体为空")
-                val totalBytes = body.contentLength().takeIf { it > 0L } ?: 0L
-                file.parentFile?.mkdirs()
-                var downloaded = 0L
+                val isPartial = response.code == 206
+                if (!isPartial && existing > 0L) {
+                    // 服务器不支持 Range，从头下载。
+                    file.delete()
+                }
+                val resumeFrom = if (isPartial) existing else 0L
+                val totalBytes = if (isPartial) {
+                    body.contentLength().takeIf { it > 0L }?.plus(resumeFrom) ?: 0L
+                } else {
+                    body.contentLength().takeIf { it > 0L } ?: 0L
+                }
+                var downloaded = resumeFrom
                 var windowBytes = 0L
                 var lastTick = System.currentTimeMillis()
                 body.byteStream().use { input ->
-                    FileOutputStream(file).use { output ->
+                    FileOutputStream(file, resumeFrom > 0L).use { output ->
                         val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                         while (true) {
                             while (jobs.paused && !jobs.canceled) {
                                 delay(250)
                             }
                             if (jobs.canceled) {
+                                // 保留半截文件供 Range 续传由 cancel() 统一删除策略；
+                                // 这里主动删除避免脏包。
                                 file.delete()
                                 return@withContext
                             }
@@ -192,7 +223,6 @@ class AppUpdateDownloadManager(
                         }
                     }
                 }
-                // Cancel near EOF must not be overwritten by Completed.
                 if (jobs.canceled) {
                     file.delete()
                     return@withContext
@@ -214,7 +244,7 @@ class AppUpdateDownloadManager(
                 )
             }
         } catch (cancelled: CancellationException) {
-            file.delete()
+            // 进程/任务取消：保留半截文件，便于下次 Range 续传。
             throw cancelled
         } catch (error: Exception) {
             if (!jobs.canceled) {
@@ -243,14 +273,6 @@ class AppUpdateDownloadManager(
     }
 }
 
-/**
- * Single-writer gate: at most one download block holds the mutex.
- *
- * start() flags canceled and cancels the active job so a writer blocked in IO can leave,
- * then the new block waits on the mutex until that writer fully exits.
- * cancel() cancels the active job without dropping the mutex — a later start still
- * serializes behind the old writer.
- */
 internal class UpdateDownloadJobGate {
     @Volatile
     var canceled = false
@@ -267,7 +289,6 @@ internal class UpdateDownloadJobGate {
         val job = scope.launch {
             writerMutex.withLock {
                 canceled = false
-                // Keep paused as-is: a pause issued while waiting must stick.
                 block()
             }
         }

@@ -46,19 +46,16 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.par9uet.jm.R
-import com.par9uet.jm.session.UserManager
 import com.par9uet.jm.session.SessionReadiness
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.UserViewModel
-import org.koin.compose.getKoin
 import org.koin.compose.viewmodel.koinActivityViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LoginScreen(
     reauthenticate: Boolean = false,
-    userManager: UserManager = getKoin().get(),
     userViewModel: UserViewModel = koinActivityViewModel(),
 ) {
     val focusManager = LocalFocusManager.current
@@ -66,7 +63,7 @@ fun LoginScreen(
     var username by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
     var loginSubmitted by rememberSaveable { mutableStateOf(false) }
-    val authState by userManager.authState.collectAsState()
+    val authState by userViewModel.authState.collectAsState()
     val loginState by userViewModel.loginState.collectAsState()
 
     // 返回：若无可返回的页面则退回主页 tab

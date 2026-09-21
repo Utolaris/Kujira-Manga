@@ -14,7 +14,7 @@ import com.par9uet.jm.data.models.LocalSetting
 import com.par9uet.jm.contentfilter.flattenBlockedTagTemplates
 import com.par9uet.jm.contentfilter.normalizeBlockedTagList
 import com.par9uet.jm.contentfilter.normalizeBlockedTagTemplates
-import com.par9uet.jm.coil.coerceCoverDiskCacheMb
+import com.par9uet.jm.data.models.coerceAppLanguage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 
@@ -139,7 +139,13 @@ internal fun normalizePersisted(savedJson: String, saved: LocalSetting): LocalSe
             dohCustomServerUrl = saved.dohCustomServerUrl,
             dohUseDeviceCertificates = saved.dohUseDeviceCertificates,
             dohPreferIpv6 = saved.dohPreferIpv6,
-            coverDiskCacheMb = coerceCoverDiskCacheMb(saved.coverDiskCacheMb),
+            // 历史字段仅随备份透传，不再驱动 Coil；活路径是 cacheBudgetMb。
+            coverDiskCacheMb = saved.coverDiskCacheMb,
+            cacheBudgetMb = com.par9uet.jm.cache.CacheBudget.coerceTotalMb(saved.cacheBudgetMb),
+            downloadExemptFromCacheLimit = saved.downloadExemptFromCacheLimit,
+            // 存量 JSON 没有 appLanguage：全默认参数会生成无参构造，缺失取默认值；
+            // 但显式 `"appLanguage":null` 会绕过默认值，这里统一收口到简体。
+            appLanguage = coerceAppLanguage(saved.appLanguage),
         )
 }
 private fun nullableString(json: String, field: String, value: String?): String? =

@@ -5,34 +5,28 @@
 
 > 本文描述的是**当前代码的真实状态**，不是目标状态。文中出现的每个类名、路径和数字都应能在
 > `app/src/main/java/com/par9uet/jm` 下找到；与代码不符的措辞视为文档缺陷，应直接修正。
-> 最近一次核对：v1.4.7（`VERSION_CODE=147`），主源码 **364** 个 Kotlin 文件 / **45,507** 行
-> （`find app/src/main/java -name '*.kt' | wc -l` + `wc -l` 口径；`scripts/check-coupling.py` 同日合计约 45,544 行，差在脚本对空行/注释的计入方式）。
-> 本轮迁移（store 清空 + 依赖环消除）后的全量核对：2026-09-12；
-> 工具链与 hygiene 对齐后的再次核对：2026-09-12（Java 21 / OpenJDK 21 构建，详见文末）；
-> 表现层解耦（`ui/components` 收窄 + 仓库返回领域类型 + `ui/screens` 领域直连下沉）后的核对：2026-09-13；
-> 安全写确认 / 备份 v4 / 组提交串行 / DoH 客户端清单 / 历史会话绑定落地后的核对：2026-09-13（v1.4.3）；
-> 平板模式（CompositionLocal + 悬浮导航 + GlassModal 3/4）落地后的核对：2026-09-15；
-> 玻璃弹窗全量对齐 + 列表 Paging 共享约定（内层 `cachedIn` + 外层 `stateIn(Eagerly)`）+ 死路由
-> `userCollectComic` 移除后的再次核对：v1.4.6；
-> 搜索排除改为纯服务端 `-tag`、封面滚动延迟上屏/专用并发、设置隐私分区落地后的核对：v1.4.7。
+> 最近一次核对：分层债 + ui/screens getKoin 清零后（2026-09-19，canary WIP）——主源码 **366** 个 Kotlin 文件 / 约 **46.5k** 行
+> （`find` + `wc -l` / coupling 同日）。`ui/viewModel` **18** + FavoritesViewModel = **19**。
+> v1.4.7 旧口径 364 / 45,507 已过期。此前核对：架构审计与缓存控制 UI（同日）；v1.4.7 搜索/封面/隐私分区；
+> v1.4.6 玻璃弹窗与 Paging；2026-09-15 平板；2026-09-13 表现层与安全写/会话；2026-09-12 store 清空与依赖环。
 >
 > 模块耦合表可用 `python3 scripts/check-coupling.py` 复现（细分口径，见该脚本头部说明）；
 > 该口径与下方「耦合热点」表的粗口径不同，两者不可直接对比。
-> **ArchitectureBoundaryTest 全绿**（最近一次与本次核对同日）。
+> **ArchitectureBoundaryTest 全绿**（2026-09-19 扩：FQN 扫描、`ui/screens`→`cache.`、`favorites/data`→`session.`）。
 
 ## 层级
 
 | 层 | 职责 | 主要落点 |
 | --- | --- | --- |
-| L1 Entry | 只接收事件并交给 L2，不做业务判断 | `ui/screens`（`*Screen.kt`）、`ui/navigation`（含 `LocalMainNavController`）、`ui/components`（只收参数、只读 `ui/models` 的环境值）、`MainActivity`、`App`（UI 组合根：提供环境值）、`worker/DownloadComicWorker`、`worker/CacheMigrationWorker`；平板布局 CompositionLocal 定义在 `ui/models/TabletLayout.kt`，由 `App` 调用的 `ui/screens/TabletLayout.kt` 的 `ProvideTabletLayout` 注入 |
-| L2 Coordinator | 集中保存流程顺序、分支和跨边界协调 | `ui/viewModel`（15 个，加上 `favorites/presentation/FavoritesViewModel` 共 16 个）、`reader/ReaderImagePipeline`、`reader/coordinator`、`download/coordinator`（含 `DownloadManager`）、`cache/migration` 的协调器与通知适配、`favorites/sync`、`session`（`UserManager`、`UserRepository`、`AuthenticatedRequestRecovery`、`SessionReadinessHolder`）、`startup/PostStartupCoordinator` |
+| L1 Entry | 只接收事件并交给 L2，不做业务判断 | `ui/screens`（`*Screen.kt`）、`ui/navigation`（含 `LocalMainNavController`）、`ui/components`（只收参数、只读 `ui/models` 环境值）、`ui/haptics`、`ui/interaction`、`MainActivity`、`App`（UI 组合根：提供环境值）、`worker/DownloadComicWorker`、`worker/CacheMigrationWorker`；平板布局 CompositionLocal 定义在 `ui/models/TabletLayout.kt`，由 `App` 调用的 `ui/screens/TabletLayout.kt` 的 `ProvideTabletLayout` 注入 |
+| L2 Coordinator | 集中保存流程顺序、分支和跨边界协调 | `ui/viewModel`（**18** 个，加上 `favorites/presentation/FavoritesViewModel` 共 **19** 个：含 DohSetting / AppLockSetting / Onboarding / AppUpdate 等）、`reader/ReaderImagePipeline`、`reader/coordinator`、`download/coordinator`（含 `DownloadManager`）、`cache/migration` 的协调器与通知适配、`favorites/sync`、`session`（`UserManager`、`UserRepository`、`AuthenticatedRequestRecovery`、`SessionReadinessHolder`）、`startup/PostStartupCoordinator` |
 | L3 Molecule | 组合多个原子能力，完成一个完整业务动作 | `reader/molecule`、`download/molecule`（含 `DownloadLibraryQueries`）、`cache/migration` 的操作端口与实现、`favorites/usecase`、`backup/BackupRestoreOperations`、`download/export/DownloadExportOperations`、`repository/impl`（组合网络服务、内置客户端与领域映射） |
-| L4 Atom | 每个原子只负责一个底层契约 | `database`、`storage`、`retrofit`、`data`、`network`（含内置 API 客户端三件套）、`image`、`coil`、`cache/atom`、`reader/atom`、`download/atom`、`download/export/PdfExport`、`favorites/data`（含 `FavoriteStore`）、`update`（含 `AppUpdateDownloadManager` 下载适配）、`contentfilter`、`launcher`、`utils` |
-| Shared Contract | 不含行为的稳定 DTO，可被各层依赖 | `core/model`（`CommonUIState`、`User`、`RemoteSetting`、`SignInData`）、`core/network`（`NetWorkResult` / `ResponseWrapper` / `AuthFailure`）、`data/models`（`Comic` / `Comment` / `WeekData` / `ComicPage` / `CommentPage` / `ComicSearchPage` / `ComicPageList` / `ActionResult` / `HomeComicSwiperItem`；零出度）、`favorites/model/FavoritesModels`、`reader/ReaderImageModels`、`download/model/DownloadLibraryModels` |
+| L4 Atom | 每个原子只负责一个底层契约 | `database`、`storage`、`retrofit`、`data`、`network`（含内置 API 客户端三件套）、`image`、`coil`、`cache/atom`、`cache/CacheBudget`、`reader/atom`、`download/atom`、`download/export/PdfExport`、`favorites/data`（含 `FavoriteStore`）、`update`（含 `AppUpdateDownloadManager` 下载适配）、`contentfilter`、`launcher`、`utils` |
+| Shared Contract | 不含行为的稳定 DTO，可被各层依赖 | `core/model`（`CommonUIState`、`User`、`RemoteSetting`、`SignInData`）、`core/network`（`NetWorkResult` / `ResponseWrapper` / `AuthFailure` / `AuthenticatedSessionRequiredException` / `AuthAttemptOrigin` / `CredentialRejection` / `FormBodyNullParameter`）、`data/models`（`Comic` / `Comment` / `WeekData` / `ComicPage` / `CommentPage` / `ComicSearchPage` / `ComicPageList` / `ActionResult` / `HomeComicSwiperItem`；零出度）、`favorites/model/FavoritesModels`、`reader/ReaderImageModels`、`download/model/DownloadLibraryModels` |
 
 依赖方向为 `L1 -> L2 -> L3 -> L4`。L3 之间、L4 之间不得为了方便横向调用；
 需要组合时提升到 L3，需要决定顺序时提升到 L2。`di` 是组合根，可以引用所有层，
-但不得承载业务判断。
+但不得承载业务判断。跨域适配器（如 `di/UserManagerFavoriteSession`）归 `di`，领域包只依赖 model 端口。
 
 `store` 包已**整体清空并删除**（2026-09-12），原混合包按真实层级拆分：
 `UserManager` / `UserRepository` / `AuthenticatedRequestRecovery` / `SessionReadinessHolder` →
@@ -76,6 +70,7 @@ favorites/                   已迁移，但用词不同
 
 cache/                       部分迁移
 ├── atom/CacheFiles.kt             L4
+├── CacheBudget.kt                 L4 额度份额/离散档/无限制哨兵（纯字节/份额；档位中文文案在 ui/viewModel）
 ├── migration/                    L2 + L3
 │   ├── CacheMigrationCoordinator.kt         L2 迁移顺序、失败分支、提交
 │   ├── CacheMigrationWork.kt                L2 与 Worker 共用的 WorkManager 键与任务名
@@ -87,10 +82,16 @@ cache/                       部分迁移
 └── CacheModels / ComicDownloadCache / CacheDocumentPaths / CacheDocumentIo /
     CacheMigrationPaths / Config   未归位的 L4（DocumentCacheStorage 已按路径/IO 拆开）
 
+ui/                          除 screens 外：components、glass、navigation、theme、
+                             models（CompositionLocal）、haptics、interaction、state
+                             （`CommentSubmissionGate`）、pagingSource、viewModel
+                             （已删除零引用包 ui/composable 与 ui/state/TabIndexState）
+
 update/ backup/ contentfilter/ launcher/ startup/   扁平包，按类判断层级
 update/AppUpdateDownloadManager  已从 store 迁入 update（L2 下载协调 + 状态契约）
 core/                        共享契约与基础类型：core/model（User / RemoteSetting / SignInData /
-                             CommonUIState）、core/network（NetWorkResult / ResponseWrapper）、
+                             CommonUIState）、core/network（NetWorkResult / ResponseWrapper /
+                             AuthAttemptOrigin / CredentialRejection / FormBodyNullParameter）、
                              core/BaseRepository、core/ToastManager
 session/                     L2 会话协调（UserManager / UserRepository /
                              AuthenticatedRequestRecovery / SessionReadinessHolder）
@@ -205,17 +206,17 @@ data/ repository/ retrofit/  历史命名保留；本轮列出的历史依赖环
   已完成章节和 `reader/atom/LocalChapterFiles`（实现 `DeviceLocalChapterFiles`）；
   目录查找、自然排序及旧 ZIP 解压均在文件适配器内。ZIP 先解压到临时目录，成功后提交；
   ViewModel 以请求代次隔离迟到结果，收藏复用现有收藏用例。
-- `CacheCleanupViewModel` 持有扫描、选择、清理状态，决定何时停止下载以及清理阅读器缓存；
-  `cache/atom/CacheFiles` 只负责普通缓存目录的扫描与删除。阅读器目录必须经过原缓存代次/租约协议，
-  不能被"全部清理"的普通文件删除绕过。`CacheCleanupScreen` 仅渲染与提交事件。
+- `CacheCleanupViewModel` 持有扫描、额度档位、清理状态；`cache/atom/CacheFiles` 只负责普通缓存目录的扫描与删除。
+  阅读器目录必须经过原缓存代次/租约协议，不能被"全部清理"的普通文件删除绕过。
+  `CacheCleanupScreen` **不 import `cache.*`**：档位与明细由 VM 以 `budgetStops` / `pieSlices` 注入。
 - `DownloadExportViewModel` 持有导出选择、文件选择器前的章节/模式快照、导出任务及文件统计请求代次；
   `download/export/DownloadExportOperations` 负责文档授权、PDF 写入和文件统计，复用现有 PDF 格式与命名。
   `DownloadComicDetailScreen` 仅保留展示、导航、对话框和系统文件选择器。
 - 首页、搜索、周推荐分别由 `HomeViewModel`、`SearchViewModel`、`WeekViewModel` 持有独立状态与任务。
   搜索入口、编辑页和结果页仍使用同一个 Activity 范围的 `SearchViewModel`（`AppScreen`、
   `ComicSearchScreen`、`ComicSearchResultScreen`），保持条件与滚动恢复；
-  首页与工具栏共享 `HomeViewModel`（`HomeScreen`、`TabScreen` 的 glass chrome；旧 Material
-  `TopBarComponent` 路径仅作备用，主 Tab 不走它）。
+  首页与工具栏共享 `HomeViewModel`（`HomeScreen`、`TabScreen` 的 glass chrome；原 Material
+  `TopBarComponent` 及 `HomeMaterial*` / `FavoritesMaterial*` 已删除，无备用路径）。
   原 `ComicViewModel` 已移除，不保留转发型兼容外壳。
 - **列表 Paging 共享约定**（搜索 / 收藏 / 历史 / 周推荐，2026-09 对齐）：
   `cachedIn(viewModelScope)` 必须写在 `flatMapLatest` **内**（单 key 一代缓存，换
@@ -232,8 +233,11 @@ data/ repository/ retrofit/  历史命名保留；本轮列出的历史依赖环
   滚动中网络/磁盘结果延迟上屏：`PullRefreshAndLoadMoreGrid` 经 `LocalComicGridScrolling`
   写入，首页另可显式传 `isScrolling`；memory 命中仍立即上屏。
   封面专用 OkHttp：`Dispatcher` 全局 12 / 每 host 4，与下载、阅读连接池隔离。
-  磁盘缓存上限由设置 `coverDiskCacheMb`（默认 256MB）决定；`CoverImageLoaderHolder`
-  在变更后重建 `ImageLoader` 并 shutdown 旧实例，注入方一律经 Holder 取当前实例。
+  磁盘缓存上限跟「缓存控制」总预算 `cacheBudgetMb`（离散档 + 无限制哨兵 `-1`，
+  见 `cache/CacheBudget`）：`CoverImageLoaderHolder` 取 `coverDiskCacheMb(totalBudgetMb, downloadExempt)`
+  （组件份额 MB），`coil/Config` 用 `componentMbToBytes` 换算字节，**不得**再把组件 MB
+  当总额度二次分享额。变更后重建 `ImageLoader` 并 shutdown 旧实例。历史字段
+  `LocalSetting.coverDiskCacheMb` 仅备份透传，不再驱动 Coil。
 - 更新入口拆为 `AboutScreen` 和 `CheckUpdateScreen`；`AppUpdateViewModel` 管理检查、弹窗、下载和安装决策，
   `update` 提供版本解析（`GithubReleaseSource`）、发布模型（`AppRelease`）、系统安装适配器（`ApkInstaller`）
   与 APK 下载协调（`AppUpdateDownloadManager`）。
@@ -248,26 +252,26 @@ data/ repository/ retrofit/  历史命名保留；本轮列出的历史依赖环
 - `ArchitectureBoundaryTest` 固定以下边界，防止后续补丁重新引入反向依赖。
   当前生效的断言（以测试代码为准）：
 
-  | 受约束位置 | 禁止 import |
+  | 受约束位置 | 禁止 import / 引用 |
   | --- | --- |
   | `ui`（整体） | `database.`、`retrofit.model.`（含全限定引用；映射归 `repository/impl`）、`favorites.data.`（含全限定） |
   | `App.kt` | `retrofit.model.`（含全限定引用） |
   | `core` | `ui.` |
-  | `ui/components` | `storage.`、`repository.`、`database.`、`session.`、`cache.`、`download.`、`backup.`、`update.`、`network.`、`reader.`、`favorites.`、`ui.viewModel.` |
+  | `ui/components` | `storage.`、`repository.`、`database.`、`session.`、`cache.`、`download.`、`backup.`、`update.`、`network.`、`reader.`、`favorites.`、`ui.viewModel.`（import + 全限定） |
   | `ui/components`、`ui/glass` | `ui.screens.`（含全限定引用） |
-  | `ui/screens`（整体） | `cache.atom.` |
+  | `ui/screens`（整体） | `com.par9uet.jm.cache.`（import + FQN）；**`org.koin.compose.getKoin` / `org.koin.androidx.compose.getKoin`**（import + FQN）——依赖只能来自 Feature ViewModel 或 App 组合根参数 |
   | `ui/viewModel/ComicReadViewModel.kt` | `java.io.`、`java.util.zip.`、`database.`、`cache.` |
-  | `ui/screens/CacheCleanupScreen.kt`、`ui/screens/downloadScreen/DownloadComicDetailScreen.kt` | `java.io.`、`kotlinx.coroutines.`、`download.coordinator.DownloadManager`、`reader.ReaderImagePipeline`、`database.`、`download.export.export`、`download.export.getCachedComicInfo`、`cache.atom.` |
-  | `ui/screens/ComicDetailScreen.kt`、`ui/screens/readScreen/ComicReadScreen.kt` | `download.coordinator.DownloadManager`（含全限定） |
+  | `ui/screens/CacheCleanupScreen.kt`、`DownloadComicDetailScreen.kt` | `java.io.`、`kotlinx.coroutines.`、`download.coordinator.DownloadManager`、`reader.ReaderImagePipeline`、`database.`、`download.export.*`、`cache.atom.` |
+  | `ui/screens/ComicDetailScreen.kt`、`readScreen/ComicReadScreen.kt` | `download.coordinator.DownloadManager`（含全限定） |
   | `ui/screens/ExtractCodeScreen.kt` | `repository.`（含全限定） |
-  | `ui/screens/AboutScreen.kt`、`CheckUpdateScreen.kt`、`BackupRestoreScreen.kt` | `okhttp3.`、`gson`、`java.io.File`、`FileProvider`、`database.`、`backup.BackupManager`、`download.coordinator.DownloadManager`、`storage.LocalSettingManager`、`update.AppUpdateDownloadManager` |
+  | `DohSettingScreen` / `AppLockSettingScreen` / `WelcomeScreen` / `CheckUpdateScreen` / `AboutScreen` / `BackupRestoreScreen` | `network.`、`storage.`、`session.UserManager`、`org.koin.compose.getKoin`（import + 全限定）；About/CheckUpdate/Backup 另禁 okhttp/gson/FileProvider/database/BackupManager/DownloadManager/AppUpdateDownloadManager |
   | `cache/atom` | `ui.`、`store.`、`reader.` |
   | `data`（整体） | `repository.`、`session.`、`reader.` |
-  | `retrofit`（整体） | `data.`、`store.`、`session.`、`network.` |
+  | `retrofit`（整体） | `data.`、`store.`、`session.`、`network.`（**例外**：`network.applyAppHttpDefaults` / `applyHttpLogging` 等 OkHttp 工厂） |
   | `network`（整体） | `repository.`、`data.`、`session.`、`retrofit.` |
-  | `session`（整体） | `ui.`、`data.`（`data.models.` 除外：`ComicPage` / `CommentPage` / `ActionResult` 是零出度的共享契约）、`repository.` |
+  | `session`（整体） | `ui.`、`data.`（`data.models.` 除外）、`repository.` |
   | `favorites`（整体） | `ui.` |
-  | `favorites/data` | `download.coordinator.`、`repository.` |
+  | `favorites/data` | `download.coordinator.`、`repository.`、`session.`（import + 全限定；会话适配器在 `di/`） |
   | `favorites/model`、`favorites/presentation` | `database.`（含全限定） |
   | `backup` | `ui.`、`download.coordinator.` |
   | `update`（整体） | `ui.` |
@@ -479,7 +483,8 @@ L4 设施，或反向依赖上层；`data.models` 是共享契约，不算违规
    - 边界由 `ArchitectureBoundaryTest` 对三处 Screen 的 import + 全限定引用钉住。
 
 剩余的 `ui/screens`（最大的一块，~16.1k 行）仍按页面推进，主要两个收口点：
-`LocalSettingManager`（18 个 Screen）与 `UserManager` / `SessionReadiness`（7 个 Screen）。
+（2026-09-19）`ui/screens` 已清空 `getKoin` 服务定位：`LocalSettingManager` / `UserManager` / 阅读历史 / 外观等一律经 Feature ViewModel 暴露；
+`ProvideTabletLayout` 由 App 组合根注入状态回调。全包 `getKoin` 禁令见 ArchitectureBoundaryTest。
 `favorites/presentation.FavoritesViewModel` 是 L2，Screen 直接持有属合法 L1→L2。
 
 注意 `ui/viewModel` 仍有 `cache.atom` 1 处（`CacheCleanupViewModel`）与 `cache/migration` 2 处，
@@ -532,6 +537,19 @@ L4 设施，或反向依赖上层；`data.models` 是共享契约，不算违规
    且先发布 `resolverKey` 再构造 TLS 客户端；读者必须取同一把锁，否则会拿到新 key
    配旧（可能为 `null`）的 resolver。`init()` 复用首屏已建 resolver（`ensureResolver()`），
    不要用 `rebuildResolver()`——那会关掉正在恢复阅读器的连接。
+10. **登录态因 401 登出必须先确认**（`session/UserManager.refreshRejectedSession` +
+    `core/network/CredentialRejection`）：服务端把「真的凭据错误」与「对高频 `/login` 的
+    软拒绝 / 风控」压在同一个 401 里（报文同为 `無效的用戶名和\/或密碼！`），所以
+    `AuthFailure.InvalidCredentials` **不等于**凭据失效。只有「明确文案命中」且连续
+    `CREDENTIAL_REJECTION_CONFIRMATIONS`（3）次才 `clearIdentityWhileLocked`；未确认时保留身份，
+    把错误降级成 `kind = Network` + `AuthFailure.TemporaryFailure`，提示「稍后重试」。
+    `AuthAttemptOrigin` 只进日志与登录密度计数（`EmbeddedClientManager.recordLoginAttempt`）；
+    官方 app 的对应设计是**完全不因 401 改登录态**（JWT 客户端 1 小时到期才静默重登）。
+11. **会话令牌单写者**（`network/EmbeddedSessionCookies`）：`AVS` 只允许由登录流程
+    （`EmbeddedClientManager.activateCandidateSession`）写入持久化快照。响应侧合并必须走
+    `mergeEmbeddedResponseCookies`（剥离 AVS），因为请求侧 `embeddedCookiesForRequest`
+    在多个同名 AVS 之间按列表顺序取第一个，被公开响应污染过一次就会持续 401。
+    官方实现同样只发登录响应里的 `s`，从不合并 CookieJar。
 
 ## 构建与密钥（2026-09-12 核对）
 

@@ -83,10 +83,7 @@ import androidx.compose.ui.unit.em
 import com.par9uet.jm.ui.components.BackIconButton
 import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.data.models.Comment
-import com.par9uet.jm.storage.ComicReadHistory
-import com.par9uet.jm.storage.ReadHistoryManager
 import com.par9uet.jm.session.SessionReadiness
-import com.par9uet.jm.session.UserManager
 import com.par9uet.jm.ui.components.ChapterMultiSelectDialog
 import com.par9uet.jm.ui.components.ComicContentTag
 import com.par9uet.jm.ui.components.ComicCoverImage
@@ -107,7 +104,6 @@ import com.par9uet.jm.utils.formatAlbumAddTimeDisplay
 import com.par9uet.jm.utils.shimmer
 import androidx.paging.compose.collectAsLazyPagingItems
 import kotlinx.coroutines.launch
-import org.koin.compose.getKoin
 import org.koin.compose.viewmodel.koinActivityViewModel
 
 internal val ComicDetailHorizontalPadding = 10.dp
@@ -297,9 +293,6 @@ private fun ComicMetadataContent(
 fun ComicDetailScreen(
     id: Int,
     comicDetailViewModel: ComicDetailViewModel = koinActivityViewModel(),
-    readHistoryManager: ReadHistoryManager = getKoin().get(),
-    userManager: UserManager = getKoin().get(),
-    toastManager: com.par9uet.jm.core.ToastManager = getKoin().get(),
 ) {
     val mainNavController = LocalMainNavController.current
     val focusManager = LocalFocusManager.current
@@ -311,8 +304,7 @@ fun ComicDetailScreen(
     // The activity-scoped ViewModel can still hold another comic for one composition frame while
     // a direct route change is starting. Never render a seed or toolbar title for that old id.
     val requestedComic = comicDetailState.data?.takeIf { it.id == id }
-    val readHistory by readHistoryManager.readHistoryState.collectAsState()
-    val authState by userManager.authState.collectAsState()
+    val authState by comicDetailViewModel.authState.collectAsState()
     val commentLazyPagingItems = remember(id, comicDetailViewModel) {
         comicDetailViewModel.commentPager(id)
     }.collectAsLazyPagingItems()
@@ -573,8 +565,7 @@ fun ComicDetailScreen(
                                         comic = comic,
                                         collectEnabled = !collectState.isLoading &&
                                             authState != SessionReadiness.Restoring && authState != SessionReadiness.Unknown,
-                                        readHistoryManager = readHistoryManager,
-                                        readHistory = readHistory,
+                                        lastReadChapterId = comicDetailViewModel.lastReadChapterId(comic),
                                         onCollect = {
                                             requireLogin {
                                                 if (comic.isCollect) {
@@ -597,7 +588,7 @@ fun ComicDetailScreen(
                                         onRead = { targetId -> mainNavController.navigate("comicRead/$targetId") },
                                         onChapters = {
                                             val currentChapterId =
-                                                readHistoryManager.lastReadChapterId(comic, readHistory) ?: -1
+                                                comicDetailViewModel.lastReadChapterId(comic) ?: -1
                                             mainNavController.navigate(
                                                 "comicChapter?currentChapterId=$currentChapterId"
                                             )
@@ -613,8 +604,7 @@ fun ComicDetailScreen(
                                         comic = comic,
                                         collectEnabled = !collectState.isLoading &&
                                             authState != SessionReadiness.Restoring && authState != SessionReadiness.Unknown,
-                                        readHistoryManager = readHistoryManager,
-                                        readHistory = readHistory,
+                                        lastReadChapterId = comicDetailViewModel.lastReadChapterId(comic),
                                         onCollect = {
                                             requireLogin {
                                                 if (comic.isCollect) {
@@ -637,7 +627,7 @@ fun ComicDetailScreen(
                                         onRead = { targetId -> mainNavController.navigate("comicRead/$targetId") },
                                         onChapters = {
                                             val currentChapterId =
-                                                readHistoryManager.lastReadChapterId(comic, readHistory) ?: -1
+                                                comicDetailViewModel.lastReadChapterId(comic) ?: -1
                                             mainNavController.navigate(
                                                 "comicChapter?currentChapterId=$currentChapterId"
                                             )
@@ -720,7 +710,7 @@ fun ComicDetailScreen(
                                 clipboard.setClipEntry(
                                     ClipEntry(ClipData.newPlainText("text", coverDetailInfoText))
                                 )
-                                toastManager.showAsync("已复制详情信息")
+                                comicDetailViewModel.toast("已复制详情信息")
                             }
                         }) { Text("复制") }
                     }
@@ -740,8 +730,7 @@ private fun ComicDetailTabletBottomBar(
     modifier: Modifier = Modifier,
     barHeight: Dp,
     comic: Comic,
-    readHistoryManager: ReadHistoryManager,
-    readHistory: Map<Int, ComicReadHistory>,
+    lastReadChapterId: Int?,
     collectEnabled: Boolean,
     onCollect: () -> Unit,
     onRelated: () -> Unit,
@@ -749,7 +738,6 @@ private fun ComicDetailTabletBottomBar(
     onRead: (Int) -> Unit,
     onChapters: () -> Unit,
 ) {
-    val lastReadChapterId = readHistoryManager.lastReadChapterId(comic, readHistory)
     val hasChapters = comic.comicChapterList.isNotEmpty()
     val readTargetId = lastReadChapterId
         ?: comic.comicChapterList.firstOrNull()?.id
@@ -825,8 +813,7 @@ private fun ComicDetailTabletBottomBar(
 private fun ComicDetailBottomBar(
     modifier: Modifier = Modifier,
     comic: Comic,
-    readHistoryManager: ReadHistoryManager,
-    readHistory: Map<Int, ComicReadHistory>,
+    lastReadChapterId: Int?,
     collectEnabled: Boolean,
     onCollect: () -> Unit,
     onRelated: () -> Unit,
@@ -834,7 +821,6 @@ private fun ComicDetailBottomBar(
     onRead: (Int) -> Unit,
     onChapters: () -> Unit,
 ) {
-    val lastReadChapterId = readHistoryManager.lastReadChapterId(comic, readHistory)
     val hasChapters = comic.comicChapterList.isNotEmpty()
     val readTargetId = lastReadChapterId
         ?: comic.comicChapterList.firstOrNull()?.id

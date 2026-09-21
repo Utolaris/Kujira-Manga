@@ -1,4 +1,6 @@
 package com.par9uet.jm.storage
+import com.par9uet.jm.data.models.APP_LANGUAGE_SIMPLIFIED
+import com.par9uet.jm.data.models.APP_LANGUAGE_TRADITIONAL
 import com.par9uet.jm.data.models.APP_LOCK_TYPE_PASSWORD
 import com.par9uet.jm.data.models.BlockedTagTemplate
 import com.par9uet.jm.data.models.LocalSetting
@@ -20,6 +22,15 @@ interface BlockedTagTemplatePreferences {
     val blockedTagTemplates: StateFlow<List<BlockedTagTemplate>>
 }
 
+/**
+ * 内置 API 请求带的 `lang` 参数取值（[APP_LANGUAGE_SIMPLIFIED] / [APP_LANGUAGE_TRADITIONAL]）。
+ *
+ * 注意这是**服务端内容语言**，不是 UI 文案语言：它决定官方返回的标题 / 标签 / 分类文案。
+ */
+interface ContentLanguagePreferences {
+    val appLanguage: StateFlow<String>
+}
+
 /** Whether the logged-in account's personalized network recommendations feed the Home page. */
 interface RecommendationPreferences {
     val preferenceRecommendEnabled: StateFlow<Boolean>
@@ -32,8 +43,6 @@ interface ReaderPreferences {
     /** default | side */
     val readTapMode: StateFlow<String>
     val prefetchCount: StateFlow<Int>
-    val memoryOptEnabled: StateFlow<Boolean>
-    val decodeConcurrency: StateFlow<Int>
 }
 
 interface AppExperiencePreferences {

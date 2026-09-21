@@ -37,37 +37,30 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.par9uet.jm.network.DOH_SERVER_CUSTOM
-import com.par9uet.jm.network.DohLatencyResult
-import com.par9uet.jm.network.DohManager
-import com.par9uet.jm.network.DohServer
-import com.par9uet.jm.network.builtinDohServers
-import com.par9uet.jm.network.isValidDohUrl
-import com.par9uet.jm.network.mergeDohServers
-import com.par9uet.jm.storage.DohPreferences
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.glass.GlassModal
+import com.par9uet.jm.ui.viewModel.DohLatencyUi
+import com.par9uet.jm.ui.viewModel.DohServerUi
+import com.par9uet.jm.ui.viewModel.DohSettingViewModel
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.height
-import kotlinx.coroutines.launch
-import org.koin.compose.getKoin
+import org.koin.compose.viewmodel.koinViewModel
+
+private const val DOH_CUSTOM_SERVER_ID = "custom"
 
 @Composable
 fun DohSettingScreen(
-    dohPreferences: DohPreferences = getKoin().get(),
-    dohManager: DohManager = getKoin().get(),
+    viewModel: DohSettingViewModel = koinViewModel(),
 ) {
-    val doh by dohPreferences.doh.collectAsState()
-    val status by dohManager.status.collectAsState()
-    val latency by dohManager.latencyState.collectAsState()
-    val scope = rememberCoroutineScope()
-    var testingAll by remember { mutableStateOf(false) }
+    val doh by viewModel.doh.collectAsState()
+    val status by viewModel.status.collectAsState()
+    val latency by viewModel.latency.collectAsState()
+    val testingAll by viewModel.testingAll.collectAsState()
     var showCustomDialog by remember { mutableStateOf(false) }
     var customName by remember { mutableStateOf(doh.customServerName) }
     var customUrl by remember { mutableStateOf(doh.customServerUrl) }
@@ -81,15 +74,9 @@ fun DohSettingScreen(
         }
     }
 
-    val customServer = remember(doh.customServerName, doh.customServerUrl) {
-        DohServer(
-            id = DOH_SERVER_CUSTOM,
-            name = doh.customServerName.ifBlank { "自定义 DoH" },
-            displayUrl = doh.customServerUrl,
-        )
+    val servers = remember(doh.customServerName, doh.customServerUrl) {
+        viewModel.serversFor(doh)
     }
-    // 同一 id 出现两次会让下面 `items(key = { it.id })` 直接抛异常；收口规则见 mergeDohServers。
-    val servers = remember(customServer) { mergeDohServers(builtinDohServers, customServer) }
 
     CommonScaffold(
         title = "DoH",
@@ -124,13 +111,12 @@ fun DohSettingScreen(
                     ) {
                         TextButton(onClick = { showCustomDialog = false }) { Text("取消") }
                         TextButton(onClick = {
-                            if (!isValidDohUrl(customUrl)) {
-                                customError = "请输入有效的 HTTPS DoH 地址"
-                            } else if (!dohManager.saveCustomServer(customName, customUrl)) {
-                                customError = "设置保存失败，请重试"
-                            } else {
+                            val error = viewModel.saveCustomServer(customName, customUrl)
+                            if (error == null) {
                                 customError = ""
                                 showCustomDialog = false
+                            } else {
+                                customError = error
                             }
                         }) { Text("保存") }
                     }
@@ -162,33 +148,33 @@ fun DohSettingScreen(
                             title = "启用 DoH",
                             summary = if (status.active) "应用网络请求均使用 ${status.serverName} 解析" else "关闭时使用系统 DNS",
                             checked = doh.enabled,
-                            onCheckedChange = dohManager::setEnabled,
+                            onCheckedChange = viewModel::setEnabled,
                         )
                         DohSwitchRow(
                             title = "启动时自动启用",
                             summary = "打开应用后自动恢复 DoH；关闭时可在本页手动开启",
                             checked = doh.autoStart,
-                            onCheckedChange = dohManager::setAutoStart,
+                            onCheckedChange = viewModel::setAutoStart,
                         )
                         DohSwitchRow(
                             title = "自动选择最低延迟",
                             summary = "启动后在后台测速，自动切到最快的内置线路；关闭后固定使用你选的线路",
                             checked = doh.autoSelectFastest,
-                            onCheckedChange = dohManager::setAutoSelectFastest,
+                            onCheckedChange = viewModel::setAutoSelectFastest,
                             icon = Icons.Rounded.Sync,
                         )
                         DohSwitchRow(
                             title = "使用设备证书",
                             summary = "允许 Android 系统及用户安装的证书验证 DoH 连接",
                             checked = doh.useDeviceCertificates,
-                            onCheckedChange = dohManager::setUseDeviceCertificates,
+                            onCheckedChange = viewModel::setUseDeviceCertificates,
                             icon = Icons.Rounded.Security,
                         )
                         DohSwitchRow(
                             title = "优先尝试 IPv6",
                             summary = "关闭时只使用 IPv4，适合没有 IPv6 路由的设备",
                             checked = doh.preferIpv6,
-                            onCheckedChange = dohManager::setPreferIpv6,
+                            onCheckedChange = viewModel::setPreferIpv6,
                         )
                         Surface(
                             shape = MaterialTheme.shapes.large,
@@ -227,13 +213,7 @@ fun DohSettingScreen(
                     }
                     FilledTonalButton(
                         enabled = !testingAll,
-                        onClick = {
-                            testingAll = true
-                            scope.launch {
-                                servers.forEach { dohManager.testServer(it) }
-                                testingAll = false
-                            }
-                        },
+                        onClick = { viewModel.testAllServers(servers.map { it.id }) },
                     ) {
                         if (testingAll) {
                             CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
@@ -250,20 +230,18 @@ fun DohSettingScreen(
                     selected = doh.serverId == server.id,
                     result = latency[server.id],
                     onSelect = {
-                        if (server.id == DOH_SERVER_CUSTOM && !isValidDohUrl(doh.customServerUrl)) {
+                        if (!viewModel.selectServerOrPromptCustom(server.id, doh.customServerUrl)) {
                             showCustomDialog = true
-                        } else {
-                            dohManager.selectServer(server.id)
                         }
                     },
-                    onTest = { scope.launch { dohManager.testServer(server) } },
-                    onEdit = if (server.id == DOH_SERVER_CUSTOM) {{ showCustomDialog = true }} else null,
+                    onTest = { viewModel.testServer(server.id) },
+                    onEdit = if (server.id == DOH_CUSTOM_SERVER_ID || server.id == "custom") {{ showCustomDialog = true }} else null,
                 )
             }
             item {
                 OutlinedButton(
                     modifier = Modifier.fillMaxWidth(),
-                    onClick = { dohManager.clearCache() },
+                    onClick = { viewModel.clearCache() },
                     enabled = status.cacheEntryCount > 0,
                 ) {
                     Icon(Icons.Rounded.Refresh, contentDescription = null)
@@ -272,7 +250,6 @@ fun DohSettingScreen(
             }
         }
     }
-
 }
 
 @Composable
@@ -299,9 +276,9 @@ private fun DohSwitchRow(
 
 @Composable
 private fun DohServerRow(
-    server: DohServer,
+    server: DohServerUi,
     selected: Boolean,
-    result: DohLatencyResult?,
+    result: DohLatencyUi?,
     onSelect: () -> Unit,
     onTest: () -> Unit,
     onEdit: (() -> Unit)?,
@@ -346,12 +323,12 @@ private fun DohServerRow(
                 if (result != null) {
                     Surface(
                         shape = MaterialTheme.shapes.small,
-                        color = if (result.elapsedMs != null) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.errorContainer,
+                        color = if (!result.failed) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.errorContainer,
                     ) {
                         Text(
                             result.elapsedMs?.let { "$it ms" } ?: "测速失败",
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                            color = if (result.elapsedMs != null) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onErrorContainer,
+                            color = if (!result.failed) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onErrorContainer,
                             style = MaterialTheme.typography.labelSmall,
                         )
                     }

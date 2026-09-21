@@ -28,6 +28,8 @@ import com.par9uet.jm.core.ToastManager
 import com.par9uet.jm.core.model.CommonUIState
 import com.par9uet.jm.ui.haptics.AppHaptics
 import com.par9uet.jm.utils.log
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -36,6 +38,12 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+
+/** UI-facing decode result; screens never touch ReaderImagePipeline. */
+data class LoadedPageImage(
+    val bitmap: ImageBitmap,
+    val aspectRatio: Float,
+)
 
 class ComicReadViewModel(
     private val comicRepository: ComicRepository,
@@ -49,7 +57,43 @@ class ComicReadViewModel(
     private val collectFavorite: CollectFavorite,
     private val uncollectFavorites: UncollectFavorites,
     private val downloadManager: DownloadManager,
+    private val userManager: com.par9uet.jm.session.UserManager,
+    private val readerResumeManager: com.par9uet.jm.storage.ReaderResumeManager,
 ) : ViewModel() {
+    /** Reader screen collects prefs/auth/history through the VM instead of getKoin. */
+    val readMode = readerPreferences.readMode
+    val readTapMode = readerPreferences.readTapMode
+    val authState = userManager.authState
+    val readHistoryState = readHistoryManager.readHistoryState
+
+    fun historyKey(comic: Comic?, fallbackId: Int): Int =
+        readHistoryManager.historyKey(comic, fallbackId)
+
+    fun lastReadPageIndex(comicKey: Int, chapterId: Int): Int =
+        readHistoryManager.lastReadPageIndex(comicKey, chapterId)
+
+    fun saveReadProgress(comicKey: Int, chapterId: Int, pageIndex: Int, pageCount: Int) =
+        readHistoryManager.saveReadProgress(comicKey, chapterId, pageIndex, pageCount)
+
+    fun readChapterIds(comicKey: Int): Set<Int> =
+        readHistoryManager.readChapterIds(comicKey)
+
+    fun beginReading(chapterId: Int, localOnly: Boolean) =
+        readerResumeManager.beginReading(chapterId, localOnly)
+
+    fun markReading(chapterId: Int, localOnly: Boolean) =
+        readerResumeManager.markReading(chapterId, localOnly)
+
+    fun endReading(chapterId: Int, localOnly: Boolean) =
+        readerResumeManager.endReading(chapterId, localOnly)
+
+    /** Foreground visible-page decode for ComicPicImage; parent passes this as a lambda. */
+    suspend fun loadPageImage(state: ComicPicImageState): LoadedPageImage {
+        val loaded = readerImagePipeline.loadVisiblePage(state.toReaderPage())
+        state.updateAspectRatio(loaded.aspectRatio)
+        return LoadedPageImage(loaded.bitmap.asImageBitmap(), loaded.aspectRatio)
+    }
+
     var isShowToolBar = mutableStateOf(false)
     var currentIndexState = mutableIntStateOf(0)
     var loadedComicId = mutableIntStateOf(-1)

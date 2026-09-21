@@ -24,7 +24,11 @@ data class DownloadEditState(
 class DownloadViewModel(
     private val queries: DownloadLibraryQueries,
     private val downloadManager: DownloadManager,
+    private val miscSettingsPreferences: com.par9uet.jm.storage.MiscSettingsPreferences,
 ) : ViewModel() {
+    /** Download grid columns come from misc settings via the VM, not getKoin. */
+    val misc = miscSettingsPreferences.misc
+
     private val _editState = MutableStateFlow(DownloadEditState())
     val editState = _editState.asStateFlow()
 

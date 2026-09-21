@@ -27,6 +27,7 @@ import com.par9uet.jm.storage.AppearanceEditor
 import com.par9uet.jm.storage.AppearancePreferences
 import com.par9uet.jm.storage.CacheNotificationPreferences
 import com.par9uet.jm.storage.BlockedTagTemplatePreferences
+import com.par9uet.jm.storage.ContentLanguagePreferences
 import com.par9uet.jm.storage.ContentPreferences
 import com.par9uet.jm.storage.DohPreferences
 import com.par9uet.jm.storage.DohPreferencesEditor
@@ -80,6 +81,7 @@ val LOCAL_SETTING_MANAGER_ALIASES = arrayOf(
     AppearancePreferences::class,
     AppearanceEditor::class,
     ApiEndpointPreference::class,
+    ContentLanguagePreferences::class,
     MiscSettingsPreferences::class,
     AppExperiencePreferences::class,
     LocalSettingSnapshotProvider::class,
@@ -93,11 +95,12 @@ val LOCAL_SETTING_MANAGER_ALIASES = arrayOf(
  *
  * | Site (file) | DNS | Cookies | Notes |
  * |---|---|---|---|
- * | retrofit/Retrofit.kt | injected DohManager | NO_COOKIES | promote/settings API |
- * | data/comic/EmbeddedComicDataSource.kt | dohManager | default | image fallback |
- * | reader/ReaderImagePipeline.kt | dohManager | default | reader pages |
- * | coil/Config.kt | dohManager | default | cover loader；专用 Dispatcher（全局 12 / 每 host 4） |
- * | update/AppUpdateDownloadManager.kt | dohManager | default | APK download |
+ * | retrofit/Retrofit.kt | injected DohManager + shared pool + http cache | NO_COOKIES | promote/settings API |
+ * | network/OkHttpShared.kt createSharedCookielessDohClient | DohManager + shared pool + http cache | NO_COOKIES | 元数据/探针基座工厂 |
+ * | data/comic/EmbeddedComicDataSource.kt | dohManager + shared pool | default | image fallback |
+ * | reader/ReaderImagePipeline.kt | dohManager + shared pool | default | reader pages |
+ * | coil/Config.kt | dohManager + shared pool + http cache | default | cover loader；专用 Dispatcher（全局 12 / 每 host 4） |
+ * | update/AppUpdateDownloadManager.kt | dohManager + shared pool | default | APK download；callTimeout 600s + Range 续传 |
  * | di/AppModule.kt GithubReleaseSource | DohManager | default | release metadata |
  * | di/AppModule.kt JmImageHostHealthManager baseHttpClient | DohManager | NO_COOKIES | CDN HEAD probe |
  * | network/EmbeddedClientManager.kt domainProbeClient | baseHttpClient (DoH) | NO_COOKIES | 域名重赛探针；由注入的共享基座 `newBuilder()` 派生，不新造客户端 |
@@ -106,13 +109,23 @@ val LOCAL_SETTING_MANAGER_ALIASES = arrayOf(
  *
  * System DNS is therefore only used by the DoH bootstrap path listed above.
  */
-internal fun createSharedCookielessDohClient(dns: Dns): OkHttpClient = OkHttpClient.Builder()
-    .dns(dns)
-    .cookieJar(CookieJar.NO_COOKIES)
-    .build()
-
 val appModule = module {
     single { DohManager(get(), get()) }
+    single { com.par9uet.jm.network.createCdnConnectionPool() }
+    single {
+        val context = get<android.content.Context>()
+        com.par9uet.jm.network.createHttpCache(
+            directory = java.io.File(context.cacheDir, "http_cache"),
+            maxBytes = 20L * 1024L * 1024L,
+        )
+    }
+    single {
+        com.par9uet.jm.network.createSharedCookielessDohClient(
+            dns = get<DohManager>(),
+            connectionPool = get(),
+            cache = get(),
+        )
+    }
 
     single {
         CoroutineScope(SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, throwable ->
@@ -134,7 +147,7 @@ val appModule = module {
             configuredHostFlow = get<RemoteConfigPreferences>().remoteImageHost,
             // Probes must share the app-wide DoH resolver; a bare OkHttpClient would
             // leak CDN hostnames through system DNS on every init/network change.
-            baseHttpClient = createSharedCookielessDohClient(get<DohManager>()),
+            baseHttpClient = get(),
         )
     }
     single { CoverImageHostResolver(get<JmImageHostHealthManager>()) }
@@ -170,19 +183,25 @@ val appModule = module {
     viewModel {
         val reader = get<com.par9uet.jm.reader.ReaderImagePipeline>()
         val downloads = get<com.par9uet.jm.download.coordinator.DownloadManager>()
-        com.par9uet.jm.ui.viewModel.CacheCleanupViewModel(get(), reader::clearDiskCache, downloads::clearDownloadedCache)
+        com.par9uet.jm.ui.viewModel.CacheCleanupViewModel(
+            get(),
+            get(),
+            reader::clearDiskCache,
+            downloads::clearDownloadedCache,
+        )
     }
     single { DownloadToastAggregator(get()) }
     single { PostStartupCoordinator(get(), GlobalContext.get()) }
-    single { AppUpdateDownloadManager(get(), get(), get(), get()) } bind com.par9uet.jm.update.AppUpdateDownloads::class
+    single { AppUpdateDownloadManager(get(), get(), get(), get(), get()) } bind com.par9uet.jm.update.AppUpdateDownloads::class
     single {
-        com.par9uet.jm.update.GithubReleaseSource(
-            createSharedCookielessDohClient(get<DohManager>()),
-        )
+        com.par9uet.jm.update.GithubReleaseSource(get())
     } bind com.par9uet.jm.update.ReleaseSource::class
     single { com.par9uet.jm.update.ApkInstaller(get()) } bind com.par9uet.jm.update.AppUpdateInstaller::class
     single { com.par9uet.jm.update.AutoUpdateChecker(get(), get()) }
-    viewModel { com.par9uet.jm.ui.viewModel.AppUpdateViewModel(get(), get(), get(), get()) }
+    viewModel { com.par9uet.jm.ui.viewModel.AppUpdateViewModel(get(), get(), get(), get(), get()) }
+    viewModel { com.par9uet.jm.ui.viewModel.DohSettingViewModel(get(), get()) }
+    viewModel { com.par9uet.jm.ui.viewModel.AppLockSettingViewModel(get(), get(), get()) }
+    viewModel { com.par9uet.jm.ui.viewModel.OnboardingViewModel(get(), get(), get(), get(), get()) }
     single { com.par9uet.jm.backup.BackupManager() }
     single<com.par9uet.jm.backup.BackupTaskScheduler> {
         val downloadManager = get<com.par9uet.jm.download.coordinator.DownloadManager>()
@@ -203,7 +222,9 @@ val appModule = module {
         com.par9uet.jm.backup.DeviceBackupRestoreOperations(get(), get(), get(), get(), get())
     }
     viewModel { com.par9uet.jm.ui.viewModel.BackupRestoreViewModel(get(), get(), get()) }
-    viewModel { com.par9uet.jm.ui.viewModel.SettingsViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    // SettingsViewModel 依赖多且全是同包同类型的窄偏好接口，靠位置传参容易错位 ——
+    // 增删依赖时务必同步这里，并跑 SettingsViewModelTest / CatalogViewModelWiringTest。
+    viewModel { com.par9uet.jm.ui.viewModel.SettingsViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
 
     single<Gson> { GsonBuilder().setStrictness(Strictness.LENIENT).serializeNulls().create() }
 }

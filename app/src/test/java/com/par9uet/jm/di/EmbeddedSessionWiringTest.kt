@@ -34,6 +34,14 @@ class EmbeddedSessionWiringTest {
                     single<UserStorage> { InMemoryUserStorage() }
                     single { com.par9uet.jm.session.SessionReadinessHolder() }
                     single { DohManager(NoOpDohPreferences(), NoOpDohPreferencesEditor()) }
+                    single { okhttp3.ConnectionPool() }
+                    single {
+                        val dir = java.nio.file.Files.createTempDirectory("http-cache").toFile()
+                        okhttp3.Cache(dir, 1024L * 1024L)
+                    }
+                    single<com.par9uet.jm.network.EmbeddedRequestLanguageProvider> {
+                        com.par9uet.jm.network.EmbeddedRequestLanguageProvider { "CN" }
+                    }
                     // The home-recommendation service is not under test here; a lazy proxy
                     // only satisfies the RetrofitNetworkHomeDataSource constructor.
                     single<com.par9uet.jm.retrofit.service.ComicService> {

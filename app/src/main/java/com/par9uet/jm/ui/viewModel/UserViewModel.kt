@@ -48,7 +48,18 @@ class UserViewModel(
     private val toastManager: ToastManager,
     private val contentPreferences: ContentPreferences,
     private val downloadManager: DownloadManager,
+    private val miscSettingsPreferences: com.par9uet.jm.storage.MiscSettingsPreferences,
 ) : ViewModel() {
+    /** Screens collect auth/user through the VM instead of service-locating UserManager. */
+    val authState = userManager.authState
+    val userState = userManager.userState
+    val blockedTags = contentPreferences.blockedTags
+    val misc = miscSettingsPreferences.misc
+
+    fun toast(msg: String) {
+        toastManager.showAsync(msg)
+    }
+
     private val _loginState = MutableStateFlow(CommonUIState(data = null))
     val loginState = _loginState.asStateFlow()
     fun login(username: String, password: String) {

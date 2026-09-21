@@ -1,6 +1,7 @@
 package com.par9uet.jm.store
 import com.par9uet.jm.session.AuthenticatedSessionGate
 import com.par9uet.jm.core.network.AuthenticatedSessionRequiredException
+import com.par9uet.jm.session.CREDENTIAL_REJECTION_CONFIRMATIONS
 import com.par9uet.jm.session.SessionReadiness
 import com.par9uet.jm.session.SessionReadinessHolder
 import com.par9uet.jm.core.SessionRecoveryException
@@ -12,6 +13,7 @@ import com.par9uet.jm.favorites.sync.FavoriteSyncReport
 import com.par9uet.jm.core.model.User
 import com.par9uet.jm.session.CandidateSession
 import com.par9uet.jm.session.UserRepository
+import com.par9uet.jm.core.network.AuthAttemptOrigin
 import com.par9uet.jm.core.network.AuthFailure
 import com.par9uet.jm.retrofit.model.LoginResponse
 import com.par9uet.jm.core.model.SignInData
@@ -53,8 +55,24 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
+ * 服务端真实报文形状（`/login` 被拒时）。注意 JSON 会把 `/` 转义成 `\/`，
+ * 所以匹配规则只靠转义点之前的中文片段 —— 见 `isExplicitCredentialRejection`。
+ */
+private const val EXPLICIT_CREDENTIAL_REJECTION_MESSAGE =
+    "内置API登录失败：Request failed with code: 401, error message: " +
+        "{\"code\":401,\"data\":[],\"errorMsg\":\"無效的用戶名和\\/或密碼！\"}"
+
+/** 单步跨过恢复冷却窗口（最坏 120s）所需的可注入时钟步进。 */
+private const val SESSION_RECOVERY_WINDOW_STEP_MS = 10 * 60 * 1000L
+
+/**
  * UserManager 会话状态机测试：验证 generation + 身份校验边界下，
  * 陈旧验证结果不能覆盖更新的登录/登出，临时失败保留身份，InvalidCredentials 才清除。
+ *
+ * 「掉登录态」的语义在 2026-09-20 收窄过：服务端把「真的凭据错误」和「对高频 /login 的
+ * 软拒绝」压在同一个 401 里，所以改为**连续 [CREDENTIAL_REJECTION_CONFIRMATIONS] 次
+ * 明确拒绝**才注销本地身份。见 `failedRecoveryPreservesNetworkError...`
+ * 与 `repeatedExplicitCredentialRejectionClearsIdentityOnlyAfterConfirmationThreshold`。
  */
 class UserManagerSessionTest {
     @Test
@@ -117,11 +135,19 @@ class UserManagerSessionTest {
     }
 
     @Test
-    fun failedRecoveryPreservesNetworkErrorAndOnlyInvalidCredentialsClearIdentity() = runBlocking {
-        for (failure in listOf(AuthFailure.TemporaryFailure, AuthFailure.InvalidCredentials)) {
+    fun failedRecoveryPreservesIdentityUntilExplicitRejectionIsConfirmed() = runBlocking {
+        val failures = listOf(
+            NetWorkResult.Error("offline", authFailure = AuthFailure.TemporaryFailure),
+            NetWorkResult.Error(
+                EXPLICIT_CREDENTIAL_REJECTION_MESSAGE,
+                code = 401,
+                authFailure = AuthFailure.InvalidCredentials,
+            ),
+        )
+        for (failure in failures) {
             val cookies = FakeCookieStorage(listOf(avsCookie("expired")))
             val repository = GateUserRepository(cookies)
-            repository.completeVerify(NetWorkResult.Error("offline", authFailure = failure))
+            repository.completeVerify(failure)
             val readiness = SessionReadinessHolder()
             val manager = manager(FakeUserStorage(user(1, "accountA")), cookies, repository, readiness)
             var calls = 0
@@ -133,16 +159,15 @@ class UserManagerSessionTest {
                 error("Expected recovery error")
             } catch (error: SessionRecoveryException) { error.error }
             assertEquals(1, calls)
-            if (failure == AuthFailure.TemporaryFailure) {
-                assertEquals("offline", error.message)
-                assertEquals(com.par9uet.jm.core.network.NetworkErrorKind.Network, error.kind)
-                assertEquals(1, manager.currentSessionSnapshot().accountId)
-                assertEquals("expired", cookies.get().single().value)
-            } else {
-                assertTrue(error.message.contains("请重新登录"))
-                assertEquals(SessionReadiness.Unauthenticated, readiness.state.value)
-                assertEquals(0, manager.currentSessionSnapshot().accountId)
-            }
+            // 认证失败不再直接登出：一次拒绝只代表「未确认」。
+            assertFalse(error.message.contains("请重新登录"))
+            assertEquals(NetworkErrorKind.Network, error.kind)
+            assertEquals(1, manager.currentSessionSnapshot().accountId)
+            assertEquals("expired", cookies.get().single().value)
+            assertEquals(SessionReadiness.Authenticated, readiness.state.value)
+            assertEquals(SessionReadiness.Authenticated, manager.authState.value)
+            // 恢复请求确实带着来源标注（日志与登录密度统计依赖它）。
+            assertEquals(listOf(AuthAttemptOrigin.REQUEST_RECOVERY), repository.verifyOrigins)
         }
     }
 
@@ -258,13 +283,31 @@ class UserManagerSessionTest {
     }
 
     @Test
-    fun expiredSessionRecoveryRejectsWrongAccountAndPreservesLocalIdentityOnNetworkFailure() = runBlocking {
-        val results = listOf(
-            NetWorkResult.Success(CandidateSession(loginResponse(2, "accountB"), listOf(avsCookie("B")))),
-            NetWorkResult.Error("offline", authFailure = AuthFailure.TemporaryFailure),
-            NetWorkResult.Error("invalid", authFailure = AuthFailure.InvalidCredentials),
-        )
-        for (result in results) {
+    fun expiredSessionRecoveryNeverLogsOutWithoutConfirmedRejection() = runBlocking {
+        val cases: List<Triple<NetWorkResult<CandidateSession>, com.par9uet.jm.core.network.NetworkErrorKind, Boolean>> =
+            listOf(
+                // 恢复出来的是另一个账号：拒绝提升，身份保留。
+                Triple(
+                    NetWorkResult.Success(
+                        CandidateSession(loginResponse(2, "accountB"), listOf(avsCookie("B"))),
+                    ),
+                    NetworkErrorKind.Authentication,
+                    false,
+                ),
+                // 网络临时失败：保留身份与已持久化会话。
+                Triple(
+                    NetWorkResult.Error("offline", authFailure = AuthFailure.TemporaryFailure),
+                    NetworkErrorKind.Network,
+                    false,
+                ),
+                // 没有明确文案的 401：算「未确认」，同样保留身份。
+                Triple(
+                    NetWorkResult.Error("invalid", authFailure = AuthFailure.InvalidCredentials),
+                    NetworkErrorKind.Network,
+                    true,
+                ),
+            )
+        for ((result, expectedKind, expectUnconfirmedMessage) in cases) {
             val cookies = FakeCookieStorage(listOf(avsCookie("expired")))
             val repository = GateUserRepository(cookies)
             repository.completeVerify(result)
@@ -272,23 +315,71 @@ class UserManagerSessionTest {
             val snapshot = manager.currentSessionSnapshot()
             val recovered = manager.recoverExpiredSession(snapshot.accountId, snapshot.generation)
             assertTrue(recovered is NetWorkResult.Error)
-            assertEquals(
-                if (result is NetWorkResult.Error && result.authFailure == AuthFailure.TemporaryFailure)
-                    com.par9uet.jm.core.network.NetworkErrorKind.Network
-                else com.par9uet.jm.core.network.NetworkErrorKind.Authentication,
-                (recovered as NetWorkResult.Error).kind,
-            )
+            assertEquals(expectedKind, (recovered as NetWorkResult.Error).kind)
             assertTrue(repository.activated.isEmpty())
-            if (result is NetWorkResult.Error && result.authFailure == AuthFailure.InvalidCredentials) {
-                assertTrue(cookies.get().isEmpty())
-                assertEquals(UserSessionSnapshot(0, snapshot.generation), manager.currentSessionSnapshot())
-                assertEquals(SessionReadiness.Unauthenticated, manager.authState.value)
-            } else {
-                assertEquals("expired", cookies.get().single().value)
-                assertEquals(snapshot, manager.currentSessionSnapshot())
-                assertEquals(SessionReadiness.Authenticated, manager.authState.value)
+            assertEquals("身份必须保留", "expired", cookies.get().single().value)
+            assertEquals(snapshot, manager.currentSessionSnapshot())
+            assertEquals(SessionReadiness.Authenticated, manager.authState.value)
+            if (expectUnconfirmedMessage) {
+                assertTrue(recovered.message.contains("无法确认"))
             }
         }
+    }
+
+    /**
+     * 「连续明确拒绝」的确认阈值：`CREDENTIAL_REJECTION_CONFIRMATIONS` 次之内一律保留身份，
+     * 达到阈值才注销。冷却窗口用可注入时钟跨过，避免测试真的等 5s + 10s。
+     *
+     * 这条测试是「已登录的 app 自动掉登录态」的回归防线：
+     * 服务端对高频 `/login` 的软拒绝报文与真的凭据错误完全一致，
+     * 若把一次拒绝当成凭据失效，用户就会在限流时段被反复踢下线。
+     */
+    @Test
+    fun repeatedExplicitCredentialRejectionClearsIdentityOnlyAfterConfirmationThreshold() = runBlocking {
+        val cookies = FakeCookieStorage(listOf(avsCookie("expired")))
+        val repository = GateUserRepository(cookies)
+        val readiness = SessionReadinessHolder()
+        var clock = 0L
+        val manager = UserManager(
+            FakeUserStorage(user(1, "accountA")),
+            cookies,
+            repository,
+            readiness,
+            { clock },
+        )
+        val snapshot = manager.currentSessionSnapshot()
+        repository.completeVerify(
+            NetWorkResult.Error(
+                EXPLICIT_CREDENTIAL_REJECTION_MESSAGE,
+                code = 401,
+                authFailure = AuthFailure.InvalidCredentials,
+            ),
+        )
+
+        repeat(CREDENTIAL_REJECTION_CONFIRMATIONS - 1) { index ->
+            val rejected = manager.recoverExpiredSession(snapshot.accountId, snapshot.generation)
+            assertTrue(rejected is NetWorkResult.Error)
+            assertEquals(
+                "第 ${index + 1} 次明确拒绝不得登出",
+                1,
+                manager.currentSessionSnapshot().accountId,
+            )
+            assertEquals("expired", cookies.get().single().value)
+            assertEquals(SessionReadiness.Authenticated, manager.authState.value)
+            assertFalse((rejected as NetWorkResult.Error).message.contains("请重新登录"))
+            clock += SESSION_RECOVERY_WINDOW_STEP_MS
+        }
+        assertEquals(CREDENTIAL_REJECTION_CONFIRMATIONS - 1, repository.verifyCalls)
+
+        // 第 CREDENTIAL_REJECTION_CONFIRMATIONS 次：达到阈值，注销本地身份。
+        val confirmed = manager.recoverExpiredSession(snapshot.accountId, snapshot.generation)
+        assertEquals(CREDENTIAL_REJECTION_CONFIRMATIONS, repository.verifyCalls)
+        assertTrue(confirmed is NetWorkResult.Error)
+        assertTrue((confirmed as NetWorkResult.Error).message.contains("请重新登录"))
+        assertEquals(UserSessionSnapshot(0, snapshot.generation), manager.currentSessionSnapshot())
+        assertTrue(cookies.get().isEmpty())
+        assertEquals(User.create(), manager.userState.value.data)
+        assertEquals(SessionReadiness.Unauthenticated, manager.authState.value)
     }
 
 
@@ -352,7 +443,7 @@ class UserManagerSessionTest {
         var calls = 0
         try {
             val controller = com.par9uet.jm.favorites.sync.FavoriteSyncController(
-                com.par9uet.jm.favorites.data.UserManagerFavoriteSession(manager),
+                com.par9uet.jm.di.UserManagerFavoriteSession(manager),
                 { _, _, _, _ ->
                     calls++
                     if (cookies.get().single().value == "expired") {
@@ -496,6 +587,9 @@ class UserManagerSessionTest {
         var verifyCalls = 0
             private set
 
+        /** 每次凭据登录带的来源标注，用于断言 origin 确实传到了仓库层。 */
+        val verifyOrigins = mutableListOf<AuthAttemptOrigin>()
+
         val verifyStarted = CompletableDeferred<Unit>()
         private val verifyGate = CompletableDeferred<NetWorkResult<CandidateSession>>()
         val activated = mutableListOf<CandidateSession>()
@@ -518,9 +612,11 @@ class UserManagerSessionTest {
 
         override suspend fun verifyLogin(
             username: String,
-            password: String
+            password: String,
+            origin: AuthAttemptOrigin,
         ): NetWorkResult<CandidateSession> {
             verifyCalls++
+            verifyOrigins += origin
             verifyStarted.complete(Unit)
             return withContext(Dispatchers.Default + NonCancellable) {
                 verifyGate.await()
@@ -697,12 +793,14 @@ class UserManagerSessionTest {
     }
 
     @Test
-    fun expiredSessionFallsBackToCredentialLoginAndClearsOnInvalidCredentials() = runBlocking {
+    fun expiredSessionFallsBackToCredentialLoginAndClearsOnlyAfterRepeatedRejection() = runBlocking {
         val userStorage = FakeUserStorage(user(1, "accountA"))
         val cookieStorage = FakeCookieStorage(listOf(avsCookie("session-A")))
         val repository = GateUserRepository(cookieStorage)
         val readiness = SessionReadinessHolder()
-        val manager = manager(userStorage, cookieStorage, repository, readiness)
+        var clock = 0L
+        val manager = UserManager(userStorage, cookieStorage, repository, readiness) { clock }
+        val snapshot = manager.currentSessionSnapshot()
 
         val verifier = launch { manager.verifyStoredLogin() }
         repository.probeStarted.await()
@@ -713,13 +811,30 @@ class UserManagerSessionTest {
         repository.verifyStarted.await()
         repository.completeVerify(
             NetWorkResult.Error(
-                "账号或密码错误",
+                EXPLICIT_CREDENTIAL_REJECTION_MESSAGE,
                 code = 401,
-                authFailure = AuthFailure.InvalidCredentials
+                authFailure = AuthFailure.InvalidCredentials,
             )
         )
         verifier.join()
 
+        // 冷启动这条路径确实动了凭据，并标了来源。
+        assertEquals(1, repository.verifyCalls)
+        assertEquals(listOf(AuthAttemptOrigin.COLD_START_PROBE), repository.verifyOrigins)
+        // 一次明确拒绝不足以登出：身份、持久化会话、readiness 全部保住。
+        assertEquals(1, manager.userState.value.data?.id)
+        assertEquals("session-A", cookieStorage.get().single().value)
+        assertEquals(SessionReadiness.Authenticated, readiness.state.value)
+        assertTrue(
+            "应提示「稍后重试」而不是要求重新登录",
+            manager.userState.value.errorMsg.orEmpty().contains("无法确认"),
+        )
+
+        // 继续被拒，达到确认阈值后才注销。
+        repeat(CREDENTIAL_REJECTION_CONFIRMATIONS - 1) {
+            clock += SESSION_RECOVERY_WINDOW_STEP_MS
+            manager.recoverExpiredSession(snapshot.accountId, snapshot.generation)
+        }
         assertEquals(0, manager.userState.value.data?.id)
         assertEquals(User.create(), userStorage.get())
         assertTrue(cookieStorage.get().isEmpty())

@@ -9,7 +9,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 APK_DIR="$PROJECT_DIR/app/build/outputs/apk"
-GRADLE_FLAGS="-Dhttp.proxyHost= -Dhttp.proxyPort= -Dhttps.proxyHost= -Dhttps.proxyPort="
+# 与 scripts/android 一致：不传空 proxy 系统属性，避免 JVM 无效 proxyPort 警告。
+GRADLE_FLAGS=""
 
 # Gradle JDK 守卫：严格锁定非 GraalVM 的 OpenJDK 21，见该文件头部的说明。
 # 与 scripts/android 共用同一份实现，避免两处规则各自漂移。

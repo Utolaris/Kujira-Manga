@@ -16,6 +16,7 @@ import com.par9uet.jm.storage.AppearanceEditor
 import com.par9uet.jm.storage.AppearancePreferences
 import com.par9uet.jm.storage.CacheNotificationPreferences
 import com.par9uet.jm.storage.BlockedTagTemplatePreferences
+import com.par9uet.jm.storage.ContentLanguagePreferences
 import com.par9uet.jm.storage.ContentPreferences
 import com.par9uet.jm.storage.DohPreferences
 import com.par9uet.jm.storage.DohPreferencesEditor
@@ -86,6 +87,7 @@ class SettingsKoinWiringTest {
             assertSame(manager, koin.get<AppearancePreferences>())
             assertSame(manager, koin.get<AppearanceEditor>())
             assertSame(manager, koin.get<ApiEndpointPreference>())
+            assertSame(manager, koin.get<ContentLanguagePreferences>())
             assertSame(manager, koin.get<MiscSettingsPreferences>())
             assertSame(manager, koin.get<AppExperiencePreferences>())
             assertSame(manager, koin.get<LocalSettingSnapshotProvider>())

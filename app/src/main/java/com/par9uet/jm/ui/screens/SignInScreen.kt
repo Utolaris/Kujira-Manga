@@ -59,12 +59,10 @@ import com.kizitonwose.calendar.core.DayPosition
 import com.kizitonwose.calendar.core.OutDateStyle
 import com.kizitonwose.calendar.core.daysOfWeek
 import com.kizitonwose.calendar.core.yearMonth
-import com.par9uet.jm.session.UserManager
 import com.par9uet.jm.session.SessionReadiness
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.UserViewModel
-import org.koin.compose.getKoin
 import kotlinx.coroutines.flow.filter
 import org.koin.compose.viewmodel.koinActivityViewModel
 import java.time.LocalDate
@@ -95,10 +93,9 @@ fun rememberFirstVisibleMonthAfterScroll(state: CalendarState): CalendarMonth {
 @Composable
 fun SignInScreen(
     userViewModel: UserViewModel = koinActivityViewModel(),
-    userManager: UserManager = getKoin().get()
 ) {
     val mainNavController = LocalMainNavController.current
-    val authState by userManager.authState.collectAsState()
+    val authState by userViewModel.authState.collectAsState()
     val today = remember { LocalDate.now() }
     val daysOfWeek = remember { daysOfWeek() }
     val currentMonth = remember(today) { today.yearMonth }

@@ -79,6 +79,7 @@ class EmbeddedComicDataSource(
     private val embeddedClientManager: EmbeddedClientManager,
     private val authenticatedEmbeddedClient: AuthenticatedEmbeddedClient,
     private val dohManager: com.par9uet.jm.network.DohManager,
+    private val connectionPool: okhttp3.ConnectionPool,
 ) : BaseRepository(), ComicEmbeddedDataSource {
     companion object {
         private const val IMAGE_CACHE_MAX = 32
@@ -94,8 +95,11 @@ class EmbeddedComicDataSource(
     private val cleanHttpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .dns(dohManager)
+            .connectionPool(connectionPool)
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .callTimeout(40, TimeUnit.SECONDS)
             .followRedirects(true)
             .build()
     }

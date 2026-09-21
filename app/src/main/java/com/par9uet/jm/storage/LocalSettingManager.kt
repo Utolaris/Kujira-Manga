@@ -6,13 +6,13 @@ import com.par9uet.jm.data.models.BlockedTagTemplate
 import com.par9uet.jm.data.models.COLOR_PALETTE_PRESET_CUSTOM
 import com.par9uet.jm.data.models.LauncherDisguise
 import com.par9uet.jm.data.models.LocalSetting
+import com.par9uet.jm.data.models.coerceAppLanguage
 import com.par9uet.jm.storage.LocalSettingPersistence
 import com.par9uet.jm.contentfilter.flattenBlockedTagTemplates
 import com.par9uet.jm.launcher.LauncherIdentityApplier
 import com.par9uet.jm.utils.log
 import com.par9uet.jm.contentfilter.normalizeBlockedTagList
 import com.par9uet.jm.contentfilter.normalizeBlockedTagTemplates
-import com.par9uet.jm.coil.coerceCoverDiskCacheMb
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -39,7 +39,8 @@ class LocalSettingManager(
     DohPreferencesEditor,
     AppearancePreferences,
     AppearanceEditor,
-    ApiEndpointPreference {
+    ApiEndpointPreference,
+    ContentLanguagePreferences {
     private val _localSettingState = MutableStateFlow(LocalSetting())
     private val _securityLoadBlocked = MutableStateFlow(false)
     val securityLoadBlocked = _securityLoadBlocked.asStateFlow()
@@ -51,8 +52,6 @@ class LocalSettingManager(
     override val readMode = _projectingState { it.readMode }
     override val readTapMode = _projectingState { it.readTapMode }
     override val prefetchCount = _projectingState { it.prefetchCount }
-    override val memoryOptEnabled = _projectingState { it.readMemoryOptEnabled }
-    override val decodeConcurrency = _projectingState { it.readDecodeConcurrency }
     override val onboardingCompleted = _projectingState { it.onboardingCompleted }
     override val nsfwWarningDismissed = _projectingState { it.nsfwWarningDismissed }
     override val cacheNotification = _projectingState(::toCacheNotificationSetting)
@@ -65,7 +64,7 @@ class LocalSettingManager(
     override val colorPalette = _projectingState(::toColorPaletteState)
     override val editor: AppearanceEditor get() = this
     override val apiEndpoint = _projectingState { it.api }
-    val coverDiskCacheMb = _projectingState { it.coverDiskCacheMb }
+    override val appLanguage = _projectingState { coerceAppLanguage(it.appLanguage) }
 
     private fun <T> _projectingState(selector: (LocalSetting) -> T): MutableStateFlow<T> {
         val flow = MutableStateFlow(selector(_localSettingState.value))
@@ -104,6 +103,17 @@ class LocalSettingManager(
     fun setPreferenceRecommendEnabled(enabled: Boolean) =
         updateSetting { it.copy(preferenceRecommendEnabled = enabled) }
     fun setApiEndpoint(url: String) = updateSetting { it.copy(api = url) }
+
+    /**
+     * 服务端内容语言（内置 API 的 `lang` 参数）。写前先收口到合法取值，
+     * 非法值直接落成默认而不是写坏。
+     *
+     * 注意：**不会影响已经加载过的列表** —— 服务端返回的内容文案按请求时刻的 `lang` 决定，
+     * 已是旧语言的数据仍留在内存 / 分页缓存里，直到页面重建。这一点与官方不同：
+     * 官方切换语言时会 `CLEAR_MAIN_LIST` 并重拉，本项目暂未接这套失效逻辑。
+     */
+    fun updateAppLanguage(language: String) =
+        updateSetting { it.copy(appLanguage = coerceAppLanguage(language)) }
 
     /** 用户在设置里显式切换平板布局；切换后不再随窗口宽度变化。 */
     fun setTabletLayoutEnabled(enabled: Boolean) =
@@ -148,15 +158,19 @@ class LocalSettingManager(
     fun setReadMode(mode: String) =
         updateSetting { it.copy(readMode = mode) }
 
-    fun setDecodeConcurrency(concurrency: Int) =
-        updateSetting { it.copy(readDecodeConcurrency = concurrency.coerceIn(1, 4)) }
+    /** 缓存控制：总预算（MB）。 */
+    val cacheBudgetMb = _projectingState {
+        com.par9uet.jm.cache.CacheBudget.coerceTotalMb(it.cacheBudgetMb)
+    }
 
-    fun setMemoryOptEnabled(enabled: Boolean) =
-        updateSetting { it.copy(readMemoryOptEnabled = enabled) }
+    /** 下载漫画是否不受缓存总配额限制。 */
+    val downloadExemptFromCacheLimit = _projectingState { it.downloadExemptFromCacheLimit }
 
-    /** 封面磁盘缓存上限（MB）；Coil 在 ImageLoader 构建时固定，变更后由 Holder 重建。 */
-    fun setCoverDiskCacheMb(mb: Int) =
-        updateSetting { it.copy(coverDiskCacheMb = coerceCoverDiskCacheMb(mb)) }
+    fun setCacheBudgetMb(mb: Int) =
+        updateSetting { it.copy(cacheBudgetMb = com.par9uet.jm.cache.CacheBudget.coerceTotalMb(mb)) }
+
+    fun setDownloadExemptFromCacheLimit(exempt: Boolean) =
+        updateSetting { it.copy(downloadExemptFromCacheLimit = exempt) }
 
     // ---- Content preferences (blocked tags / templates / home exclusions) ----
 

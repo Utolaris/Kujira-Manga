@@ -39,15 +39,31 @@ class CatalogViewModelWiringTest {
                 else -> error("Unexpected request ${method.name}")
             }
         } as ComicRepository
-        val settings = object : ContentPreferences, RecommendationPreferences {
+        val settings = object : ContentPreferences, RecommendationPreferences,
+            com.par9uet.jm.storage.BlockedTagTemplatePreferences,
+            com.par9uet.jm.storage.MiscSettingsPreferences {
             override val blockedTags = MutableStateFlow(emptyList<String>())
             override val preferenceRecommendEnabled = MutableStateFlow(false)
+            override val blockedTagTemplates =
+                MutableStateFlow(emptyList<com.par9uet.jm.data.models.BlockedTagTemplate>())
+            override val misc = MutableStateFlow(com.par9uet.jm.storage.MiscSettingsState())
         }
+        val historySearchManager = com.par9uet.jm.storage.HistorySearchManager(
+            object : com.par9uet.jm.storage.HistorySearchStore {
+                private var items: List<String>? = emptyList()
+                override fun getOrNull(): List<String>? = items
+                override fun set(list: List<String>) { items = list }
+                override fun remove() { items = emptyList() }
+            }
+        )
         val app = koinApplication {
             modules(comicModule, module {
                 single<ComicRepository> { repository }
                 single<ContentPreferences> { settings }
                 single<RecommendationPreferences> { settings }
+                single<com.par9uet.jm.storage.BlockedTagTemplatePreferences> { settings }
+                single<com.par9uet.jm.storage.MiscSettingsPreferences> { settings }
+                single { historySearchManager }
             })
         }
         try {

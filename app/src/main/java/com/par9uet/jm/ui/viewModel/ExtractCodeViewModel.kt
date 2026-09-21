@@ -33,6 +33,10 @@ class ExtractCodeViewModel(
     private val _uiState = MutableStateFlow(ExtractCodeUiState())
     val uiState = _uiState.asStateFlow()
 
+    fun toast(msg: String) {
+        toastManager.showAsync(msg)
+    }
+
     private var fetchJob: Job? = null
 
     fun extractAndFetch(text: String) {

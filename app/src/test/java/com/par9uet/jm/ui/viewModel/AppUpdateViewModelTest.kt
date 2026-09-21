@@ -6,6 +6,13 @@ import com.par9uet.jm.update.AppUpdateDownloadRequest
 import com.par9uet.jm.update.AppUpdateDownloadState
 import com.par9uet.jm.update.AppUpdateDownloadStatus
 import com.par9uet.jm.core.ToastManager
+import com.par9uet.jm.data.models.LauncherDisguise
+import com.par9uet.jm.data.models.LocalSetting
+import com.par9uet.jm.launcher.LauncherIdentityApplier
+import com.par9uet.jm.storage.LocalSettingLoadResult
+import com.par9uet.jm.storage.LocalSettingManager
+import com.par9uet.jm.storage.LocalSettingPersistence
+import com.par9uet.jm.storage.StorageWriteResult
 import com.par9uet.jm.update.AppUpdateDownloads
 import com.par9uet.jm.update.AppUpdateInstaller
 import com.par9uet.jm.update.GithubRelease
@@ -61,10 +68,24 @@ class AppUpdateViewModelTest {
         }
     }
 
+    private fun manager(): LocalSettingManager {
+        val persistence = object : LocalSettingPersistence {
+            override fun load() = LocalSettingLoadResult.Missing
+            override fun persist(localSetting: LocalSetting) = StorageWriteResult.Success
+        }
+        val applier = object : LauncherIdentityApplier {
+            override fun apply(disguise: LauncherDisguise) = true
+        }
+        return LocalSettingManager(persistence, applier)
+    }
+
+    private fun vm(source: ReleaseSource) =
+        AppUpdateViewModel(source, downloads, installer, toast, manager())
+
     @Test fun `check is deduplicated and newer release opens dialog`() = runTest {
         val response = CompletableDeferred<GithubRelease>()
         var calls = 0
-        val vm = AppUpdateViewModel(ReleaseSource { calls++; response.await() }, downloads, installer, toast)
+        val vm = vm(ReleaseSource { calls++; response.await() })
         vm.checkUpdate(); runCurrent()
         assertEquals(1, calls)
         assertEquals(UpdateState.Checking, vm.state.value.updateState)
@@ -79,10 +100,10 @@ class AppUpdateViewModelTest {
 
     @Test fun `current version stays closed and a failed check can retry`() = runTest {
         var fail = true
-        val vm = AppUpdateViewModel(ReleaseSource {
+        val vm = vm(ReleaseSource {
             if (fail) error("offline")
             release.copy(version = BuildConfig.VERSION_NAME)
-        }, downloads, installer, toast)
+        })
         runCurrent()
         assertEquals(UpdateState.Error("offline"), vm.state.value.updateState)
         fail = false
@@ -92,7 +113,7 @@ class AppUpdateViewModelTest {
     }
 
     @Test fun `release download controls retain pause resume background and cancel behavior`() = runTest {
-        val vm = AppUpdateViewModel(ReleaseSource { release }, downloads, installer, toast)
+        val vm = vm(ReleaseSource { release })
         runCurrent()
         vm.downloadRelease()
         assertEquals(release.downloadUrl, downloads.request!!.downloadUrl)
@@ -112,7 +133,7 @@ class AppUpdateViewModelTest {
     @Test fun `installation requires an available completed download and reports failure`() = runTest {
         val messages = mutableListOf<String>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { toast.message.collect { messages += it } }
-        val vm = AppUpdateViewModel(ReleaseSource { release }, downloads, installer, toast)
+        val vm = vm(ReleaseSource { release })
         runCurrent()
         assertFalse(vm.isApkReady(downloads.state.value))
         downloads.state.value = AppUpdateDownloadState(status = AppUpdateDownloadStatus.Completed, savedPath = "/tmp/app.apk")
@@ -127,7 +148,7 @@ class AppUpdateViewModelTest {
 
     @Test fun `leaving screen cancels check without publishing a false error`() = runTest {
         val response = CompletableDeferred<GithubRelease>()
-        val vm = AppUpdateViewModel(ReleaseSource { response.await() }, downloads, installer, toast)
+        val vm = vm(ReleaseSource { response.await() })
         val store = ViewModelStore().apply { put("update", vm) }
         runCurrent()
         store.clear()

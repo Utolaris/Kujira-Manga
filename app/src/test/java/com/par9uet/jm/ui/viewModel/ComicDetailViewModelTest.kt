@@ -291,6 +291,19 @@ class ComicDetailViewModelTest {
                 uncollectFavorites = UncollectFavorites(remote, local, session),
                 observeLocalFavorite = ObserveLocalFavorite(local, session),
                 downloadManager = downloadManager,
+                userManager = testUserManager(),
+                readHistoryManager = com.par9uet.jm.storage.ReadHistoryManager(
+                    object : com.par9uet.jm.storage.ReadHistoryStore {
+                        private var data: Map<Int, com.par9uet.jm.storage.ComicReadHistory>? = emptyMap()
+                        override fun getOrNull() = data
+                        override fun set(history: Map<Int, com.par9uet.jm.storage.ComicReadHistory>) {
+                            data = history
+                        }
+                    }
+                ),
+                contentPreferences = object : com.par9uet.jm.storage.ContentPreferences {
+                    override val blockedTags = MutableStateFlow(emptyList<String>())
+                },
             ),
             toastManager = toastManager,
             local = local,
@@ -301,6 +314,55 @@ class ComicDetailViewModelTest {
             enqueuedBatches = enqueuedBatches,
         )
         return environment
+    }
+
+    private fun testUserManager(): com.par9uet.jm.session.UserManager {
+        val readiness = com.par9uet.jm.session.SessionReadinessHolder()
+        readiness.set(com.par9uet.jm.session.SessionReadiness.Authenticated)
+        val repository = object : com.par9uet.jm.session.UserRepository {
+            override suspend fun login(username: String, password: String) =
+                com.par9uet.jm.core.network.NetWorkResult.Error("unused")
+
+            override suspend fun probeActiveSession() =
+                com.par9uet.jm.core.network.NetWorkResult.Error("unused")
+
+            override fun activateVerifiedSession(verified: com.par9uet.jm.session.CandidateSession) = false
+            override fun clearSession() = Unit
+            override suspend fun getHistoryComicList(page: Int) =
+                com.par9uet.jm.core.network.NetWorkResult.Error("unused")
+
+            override suspend fun deleteHistoryComic(id: Int) =
+                com.par9uet.jm.core.network.NetWorkResult.Error("unused")
+
+            override suspend fun getHistoryCommentList(page: Int, userId: Int) =
+                com.par9uet.jm.core.network.NetWorkResult.Error("unused")
+
+            override suspend fun getSignData(userId: Int) =
+                com.par9uet.jm.core.network.NetWorkResult.Error("unused")
+
+            override suspend fun signIn(userId: Int, dailyId: Int) =
+                com.par9uet.jm.core.network.NetWorkResult.Error("unused")
+        }
+        return com.par9uet.jm.session.UserManager(
+            object : com.par9uet.jm.storage.UserStorage {
+                private var stored: com.par9uet.jm.core.model.User = com.par9uet.jm.core.model.User.create()
+                override fun get() = stored
+                override fun set(user: com.par9uet.jm.core.model.User) { stored = user }
+                override fun remove() { stored = com.par9uet.jm.core.model.User.create() }
+            },
+            object : com.par9uet.jm.storage.CookieStorage {
+                override val state = MutableStateFlow<List<okhttp3.Cookie>?>(null)
+                private var cookies: List<okhttp3.Cookie> = emptyList()
+                override fun set(cookieStore: List<okhttp3.Cookie>): Boolean {
+                    cookies = cookieStore
+                    return true
+                }
+                override fun get(): List<okhttp3.Cookie> = cookies
+                override fun remove() { cookies = emptyList() }
+            },
+            repository,
+            readiness,
+        )
     }
 
     private data class TestEnvironment(

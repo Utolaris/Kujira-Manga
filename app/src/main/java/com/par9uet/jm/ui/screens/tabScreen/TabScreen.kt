@@ -54,7 +54,6 @@ import com.par9uet.jm.favorites.presentation.FavoritesViewModel
 import com.par9uet.jm.ui.interaction.ScrollAwareNavigationState
 import com.par9uet.jm.ui.interaction.PullDownSearchIndicator
 import com.par9uet.jm.ui.interaction.rememberPullDownActionState
-import com.par9uet.jm.session.UserManager
 import com.par9uet.jm.session.SessionReadiness
 import com.par9uet.jm.ui.navigation.MainTab
 import com.par9uet.jm.ui.navigation.NavigationMotion
@@ -68,20 +67,20 @@ import com.par9uet.jm.ui.screens.resolveHomeCategoryTitle
 import com.par9uet.jm.ui.screens.UserCollectComicScreen
 import com.par9uet.jm.ui.screens.UserScreen
 import com.par9uet.jm.ui.viewModel.HomeViewModel
+import com.par9uet.jm.ui.viewModel.UserViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import org.koin.compose.getKoin
 import org.koin.compose.viewmodel.koinActivityViewModel
 
 @Composable
 fun TabScreen(
     tabName: String,
-    userManager: UserManager = getKoin().get(),
     homeViewModel: HomeViewModel = koinActivityViewModel(),
     favoritesViewModel: FavoritesViewModel = koinActivityViewModel(),
+    userViewModel: UserViewModel = koinActivityViewModel(),
 ) {
     val mainNavController = LocalMainNavController.current
-    val authState by userManager.authState.collectAsState()
+    val authState by userViewModel.authState.collectAsState()
     val isAuthenticated = authState == SessionReadiness.Authenticated
     val canShowAuthenticatedUi = authState != SessionReadiness.Unauthenticated
     val homeState by homeViewModel.homeState.collectAsState()

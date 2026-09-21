@@ -45,17 +45,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.par9uet.jm.data.models.BlockedTagTemplate
-import com.par9uet.jm.storage.LocalSettingManager
 import com.par9uet.jm.ui.components.CommonScaffold
+import com.par9uet.jm.ui.viewModel.SettingsViewModel
 import com.par9uet.jm.contentfilter.normalizeBlockedTagList
-import org.koin.compose.getKoin
+import org.koin.compose.viewmodel.koinViewModel
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun BlockedTagsScreen(
-    localSettingManager: LocalSettingManager = getKoin().get(),
+    settingsViewModel: SettingsViewModel = koinViewModel(),
 ) {
-    val templates by localSettingManager.blockedTagTemplates.collectAsState()
+    val templates by settingsViewModel.blockedTagTemplates.collectAsState()
     var editingIndex by remember { mutableStateOf<Int?>(null) }
     var templateName by remember { mutableStateOf("") }
     var tagInput by remember { mutableStateOf("") }
@@ -79,7 +79,7 @@ fun BlockedTagsScreen(
         val tags = normalizeBlockedTagList(draftTags)
         if (tags.isEmpty()) return
         val fallbackName = "排除模板 ${templates.size + 1}"
-        localSettingManager.saveBlockedTagTemplate(
+        settingsViewModel.saveBlockedTagTemplate(
             index = editingIndex,
             name = templateName.ifBlank { fallbackName },
             tags = tags
@@ -187,7 +187,7 @@ fun BlockedTagsScreen(
                             tagInput = ""
                         },
                         onDelete = {
-                            localSettingManager.removeBlockedTagTemplate(index)
+                            settingsViewModel.removeBlockedTagTemplate(index)
                             if (editingIndex == index) {
                                 resetEditor()
                             }
