@@ -16,9 +16,15 @@ import com.par9uet.jm.favorites.usecase.ObserveLocalFavorite
 import com.par9uet.jm.favorites.usecase.UncollectFavorites
 import com.par9uet.jm.reader.ReaderImagePipeline
 import com.par9uet.jm.repository.ComicRepository
+import com.par9uet.jm.session.SessionReadinessHolder
+import com.par9uet.jm.session.UserManager
+import com.par9uet.jm.session.UserRepository
 import com.par9uet.jm.core.network.NetWorkResult
+import com.par9uet.jm.storage.CookieStorage
 import com.par9uet.jm.storage.ReadHistoryStorage
+import com.par9uet.jm.storage.ReaderResumeManager
 import com.par9uet.jm.storage.SecureStorage
+import com.par9uet.jm.storage.UserStorage
 import com.par9uet.jm.storage.ReadHistoryManager
 import com.par9uet.jm.storage.ReaderPreferences
 import com.par9uet.jm.core.ToastManager
@@ -85,16 +91,26 @@ class ReaderFavoriteMutationTest {
             override fun getSharedPreferences(name: String, mode: Int) = super.getSharedPreferences("reader-mutation-test-$name", mode)
         }
         val koin = GlobalContext.get()
+        // 阅读器只订阅 authState 与续读标记，两者都在收藏用例的链路之外：给最小实现，
+        // 任何一次真实访问都会直接失败，避免测试悄悄依赖网络或 SharedPreferences。
+        val secureStorage = SecureStorage(context)
+        val userManager = UserManager(
+            proxy<UserStorage> { _, _ -> error("No user storage expected") },
+            proxy<CookieStorage> { _, _ -> error("No cookie storage expected") },
+            proxy<UserRepository> { _, _ -> error("No user repository expected") },
+            SessionReadinessHolder(),
+        )
         val viewModel = ComicReadViewModel(
             repository, koin.get<ReaderImagePipeline>(), koin.get<ReaderPreferences>(),
             com.par9uet.jm.reader.molecule.LoadLocalChapter(
                 proxy<DownloadComicDao> { _, _ -> error("No download query expected") },
                 com.par9uet.jm.reader.atom.LocalChapterFiles { _, _ -> error("No local read expected") },
             ),
-            ToastManager(), ReadHistoryManager(ReadHistoryStorage(SecureStorage(context))),
+            ToastManager(), ReadHistoryManager(ReadHistoryStorage(secureStorage)),
             session, ObserveLocalFavorite(localQuery, session),
             CollectFavorite(remote, mutations, session), UncollectFavorites(remote, mutations, session),
             koin.get<DownloadManager>(),
+            userManager, ReaderResumeManager(secureStorage),
         )
         withContext(Dispatchers.Main) {
             viewModel.getComicDetail(11)
