@@ -29,6 +29,8 @@ internal class GlassCaptureSource(
     private var failureStreak = 0
     private var retryNotBeforeUptimeMs = 0L
     private var reportedDegraded = false
+    // [GlassDiag] 临时诊断：跳过录制的日志节流时间戳。
+    private var lastSkipLogUptimeMs = 0L
 
     @get:RequiresApi(31)
     val renderNode: RenderNode
@@ -39,6 +41,13 @@ internal class GlassCaptureSource(
 
     val generation: Int get() = generationValue
 
+    // [GlassDiag] 临时诊断用。
+    internal val isDirtyForDiagnostics: Boolean get() = dirty
+
+    // [GlassDiag] 临时诊断：自行做版本判断，避免调用点需要 @RequiresApi。
+    internal fun sharedHasDisplayList(): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) renderNode.hasDisplayList() else false
+
     /**
      * False while a failed record is waiting out its backoff. Surfaces must then fall back to the
      * plain tint instead of blurring a stale display list.
@@ -47,13 +56,28 @@ internal class GlassCaptureSource(
         get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
             SystemClock.uptimeMillis() >= retryNotBeforeUptimeMs
 
-    fun markDirty() {
+    fun markDirty(reason: String = "") {
+        // [GlassDiag] 临时诊断：只在 false→true 跳变时记一行，便于看出"谁要求重录"。
+        if (!dirty) {
+            log("GlassDiag", "[capture] 需要重录 ← $reason")
+        }
         dirty = true
     }
 
     @RequiresApi(31)
     fun recordIfNeeded() {
         if (!nativeCaptureAvailable || !dirty || sourceView.width <= 0 || sourceView.height <= 0) {
+            // [GlassDiag] 临时诊断：跳过录制的原因（500ms 节流，避免逐帧刷屏）。
+            val now = SystemClock.uptimeMillis()
+            if (now - lastSkipLogUptimeMs >= 500L) {
+                lastSkipLogUptimeMs = now
+                log(
+                    "GlassDiag",
+                    "[capture] 跳过录制：available=$nativeCaptureAvailable dirty=$dirty " +
+                        "sourceSize=${sourceView.width}x${sourceView.height} " +
+                        "gen=$generationValue 退避剩余=${(retryNotBeforeUptimeMs - now).coerceAtLeast(0)}ms",
+                )
+            }
             return
         }
 
@@ -69,6 +93,12 @@ internal class GlassCaptureSource(
             }
             dirty = false
             generationValue++
+            // [GlassDiag] 临时诊断：录制成功后的关键事实——共享底图此刻是否有真实显示列表。
+            log(
+                "GlassDiag",
+                "[capture] 录制成功 gen=$generationValue size=${sourceView.width}x" +
+                    "${sourceView.height} sharedHasDisplayList=${renderNode.hasDisplayList()}",
+            )
             if (failureStreak > 0) {
                 failureStreak = 0
                 if (reportedDegraded) {

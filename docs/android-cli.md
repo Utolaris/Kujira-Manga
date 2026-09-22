@@ -48,6 +48,7 @@ Gradle 构建**不再**向 JVM 传空的 `-Dhttps.proxyPort=` 等参数（那只
 
 # 调试
 ./scripts/android logcat
+./scripts/android exported-logs         # 读取 debug 应用内导出的最近日志及安装信息 → build/device-logs/
 ./scripts/android logcat -c              # 先清空再跟
 ./scripts/android screenshot             # → build/screenshot.png
 ./scripts/android screenrecord 15        # → build/screen.mp4

@@ -1,7 +1,6 @@
 package com.par9uet.jm.store
 import com.par9uet.jm.session.AuthenticatedSessionGate
 import com.par9uet.jm.core.network.AuthenticatedSessionRequiredException
-import com.par9uet.jm.session.CREDENTIAL_REJECTION_CONFIRMATIONS
 import com.par9uet.jm.session.SessionReadiness
 import com.par9uet.jm.session.SessionReadinessHolder
 import com.par9uet.jm.core.SessionRecoveryException
@@ -65,15 +64,7 @@ private const val EXPLICIT_CREDENTIAL_REJECTION_MESSAGE =
 /** 单步跨过恢复冷却窗口（最坏 120s）所需的可注入时钟步进。 */
 private const val SESSION_RECOVERY_WINDOW_STEP_MS = 10 * 60 * 1000L
 
-/**
- * UserManager 会话状态机测试：验证 generation + 身份校验边界下，
- * 陈旧验证结果不能覆盖更新的登录/登出，临时失败保留身份，InvalidCredentials 才清除。
- *
- * 「掉登录态」的语义在 2026-09-20 收窄过：服务端把「真的凭据错误」和「对高频 /login 的
- * 软拒绝」压在同一个 401 里，所以改为**连续 [CREDENTIAL_REJECTION_CONFIRMATIONS] 次
- * 明确拒绝**才注销本地身份。见 `failedRecoveryPreservesNetworkError...`
- * 与 `repeatedExplicitCredentialRejectionClearsIdentityOnlyAfterConfirmationThreshold`。
- */
+/** Automatic recovery errors must never remove an existing local identity. */
 class UserManagerSessionTest {
     @Test
     fun identityWithoutCredentialsRequiresLoginInsteadOfCancellingRequest() = runBlocking {
@@ -291,7 +282,7 @@ class UserManagerSessionTest {
                     NetWorkResult.Success(
                         CandidateSession(loginResponse(2, "accountB"), listOf(avsCookie("B"))),
                     ),
-                    NetworkErrorKind.Authentication,
+                    NetworkErrorKind.Network,
                     false,
                 ),
                 // 网络临时失败：保留身份与已持久化会话。
@@ -326,62 +317,101 @@ class UserManagerSessionTest {
         }
     }
 
-    /**
-     * 「连续明确拒绝」的确认阈值：`CREDENTIAL_REJECTION_CONFIRMATIONS` 次之内一律保留身份，
-     * 达到阈值才注销。冷却窗口用可注入时钟跨过，避免测试真的等 5s + 10s。
-     *
-     * 这条测试是「已登录的 app 自动掉登录态」的回归防线：
-     * 服务端对高频 `/login` 的软拒绝报文与真的凭据错误完全一致，
-     * 若把一次拒绝当成凭据失效，用户就会在限流时段被反复踢下线。
-     */
     @Test
-    fun repeatedExplicitCredentialRejectionClearsIdentityOnlyAfterConfirmationThreshold() = runBlocking {
+    fun repeatedCredentialRejectionsThroughoutPeakHoursPreserveIdentityAndCookies() = runBlocking {
         val cookies = FakeCookieStorage(listOf(avsCookie("expired")))
+        val storage = FakeUserStorage(user(1, "accountA"))
         val repository = GateUserRepository(cookies)
         val readiness = SessionReadinessHolder()
         var clock = 0L
-        val manager = UserManager(
-            FakeUserStorage(user(1, "accountA")),
-            cookies,
-            repository,
-            readiness,
-            { clock },
-        )
+        val manager = UserManager(storage, cookies, repository, readiness) { clock }
         val snapshot = manager.currentSessionSnapshot()
-        repository.completeVerify(
-            NetWorkResult.Error(
-                EXPLICIT_CREDENTIAL_REJECTION_MESSAGE,
-                code = 401,
-                authFailure = AuthFailure.InvalidCredentials,
-            ),
-        )
-
-        repeat(CREDENTIAL_REJECTION_CONFIRMATIONS - 1) { index ->
-            val rejected = manager.recoverExpiredSession(snapshot.accountId, snapshot.generation)
-            assertTrue(rejected is NetWorkResult.Error)
-            assertEquals(
-                "第 ${index + 1} 次明确拒绝不得登出",
-                1,
-                manager.currentSessionSnapshot().accountId,
-            )
+        repository.completeVerify(NetWorkResult.Error(
+            EXPLICIT_CREDENTIAL_REJECTION_MESSAGE, code = 401,
+            authFailure = AuthFailure.InvalidCredentials,
+        ))
+        repeat(24) {
+            val failure = manager.recoverExpiredSession(snapshot.accountId, snapshot.generation)
+            assertEquals(NetworkErrorKind.Network, (failure as NetWorkResult.Error).kind)
+            assertEquals(snapshot, manager.currentSessionSnapshot())
+            assertEquals(1, storage.get().id)
             assertEquals("expired", cookies.get().single().value)
-            assertEquals(SessionReadiness.Authenticated, manager.authState.value)
-            assertFalse((rejected as NetWorkResult.Error).message.contains("请重新登录"))
-            clock += SESSION_RECOVERY_WINDOW_STEP_MS
+            assertEquals(SessionReadiness.Authenticated, readiness.state.value)
+            clock += 5 * 60_000L
         }
-        assertEquals(CREDENTIAL_REJECTION_CONFIRMATIONS - 1, repository.verifyCalls)
-
-        // 第 CREDENTIAL_REJECTION_CONFIRMATIONS 次：达到阈值，注销本地身份。
-        val confirmed = manager.recoverExpiredSession(snapshot.accountId, snapshot.generation)
-        assertEquals(CREDENTIAL_REJECTION_CONFIRMATIONS, repository.verifyCalls)
-        assertTrue(confirmed is NetWorkResult.Error)
-        assertTrue((confirmed as NetWorkResult.Error).message.contains("请重新登录"))
-        assertEquals(UserSessionSnapshot(0, snapshot.generation), manager.currentSessionSnapshot())
-        assertTrue(cookies.get().isEmpty())
-        assertEquals(User.create(), manager.userState.value.data)
-        assertEquals(SessionReadiness.Unauthenticated, manager.authState.value)
+        assertEquals(24, repository.verifyCalls)
     }
 
+    @Test
+    fun cooldownBlocksBusinessRequestsAndManualLoginBypassesIt() = runBlocking {
+        val cookies = FakeCookieStorage(listOf(avsCookie("old")))
+        val repository = GateUserRepository(cookies)
+        repository.completeVerify(NetWorkResult.Error("busy", authFailure = AuthFailure.TemporaryFailure))
+        repository.loginHandler = { _, _ -> NetWorkResult.Success(
+            CandidateSession(loginResponse(1, "accountA"), listOf(avsCookie("manual"))),
+        ) }
+        val readiness = SessionReadinessHolder()
+        var clock = 0L
+        val manager = UserManager(FakeUserStorage(user(1, "accountA")), cookies, repository, readiness) { clock }
+        val gate = AuthenticatedSessionGate(readiness)
+        var calls = 0
+        suspend fun rejectedRequest() {
+            try {
+                gate.run<Unit> { calls++; throw AuthenticatedSessionRequiredException("busy") }
+                error("Expected paused session")
+            } catch (failure: SessionRecoveryException) {
+                assertEquals(NetworkErrorKind.Network, failure.error.kind)
+            }
+        }
+        rejectedRequest()
+        repeat(10) { rejectedRequest() }
+        assertEquals(1, calls)
+        assertEquals(1, repository.verifyCalls)
+        clock = 30_000L
+        rejectedRequest()
+        assertEquals(2, calls)
+        assertEquals(2, repository.verifyCalls)
+        clock += 59_999L
+        rejectedRequest()
+        assertEquals(2, calls)
+        manager.login("accountA", "pwd")
+        assertEquals("ok", gate.run { "ok" })
+        assertEquals("manual", cookies.get().single().value)
+    }
+
+    @Test
+    fun loginSuccessFollowedByAnotherRejectionPausesBothRequestPaths() = runBlocking {
+        val cookies = FakeCookieStorage(listOf(avsCookie("old")))
+        val repository = GateUserRepository(cookies)
+        repository.completeVerify(NetWorkResult.Success(
+            CandidateSession(loginResponse(1, "accountA"), listOf(avsCookie("new"))),
+        ))
+        val readiness = SessionReadinessHolder()
+        var clock = 0L
+        val manager = UserManager(FakeUserStorage(user(1, "accountA")), cookies, repository, readiness) { clock }
+        val snapshot = manager.currentSessionSnapshot()
+        var calls = 0
+        try {
+            AuthenticatedSessionGate(readiness).run<Unit> {
+                calls++
+                throw AuthenticatedSessionRequiredException("still busy")
+            }
+            error("Expected cooldown")
+        } catch (failure: SessionRecoveryException) {
+            assertEquals(NetworkErrorKind.Network, failure.error.kind)
+        }
+        assertEquals(2, calls)
+        assertEquals(1, repository.verifyCalls)
+        try {
+            manager.withBoundRemoteSession(snapshot.accountId, snapshot.generation) { calls++ }
+            error("Bound favorite request must also pause")
+        } catch (_: SessionRecoveryException) { }
+        assertEquals(2, calls)
+        clock = 30_000L
+        assertEquals("recovered", manager.withBoundRemoteSession(snapshot.accountId, snapshot.generation) { "recovered" })
+        assertEquals(snapshot, manager.currentSessionSnapshot())
+        assertEquals(1, repository.verifyCalls)
+    }
 
     @Test
     fun concurrentExpiredRequestsShareOneRecoveryLogin() = runBlocking {
@@ -793,7 +823,7 @@ class UserManagerSessionTest {
     }
 
     @Test
-    fun expiredSessionFallsBackToCredentialLoginAndClearsOnlyAfterRepeatedRejection() = runBlocking {
+    fun coldStartRecoveryRejectionsAlwaysPreserveSavedSession() = runBlocking {
         val userStorage = FakeUserStorage(user(1, "accountA"))
         val cookieStorage = FakeCookieStorage(listOf(avsCookie("session-A")))
         val repository = GateUserRepository(cookieStorage)
@@ -830,15 +860,15 @@ class UserManagerSessionTest {
             manager.userState.value.errorMsg.orEmpty().contains("无法确认"),
         )
 
-        // 继续被拒，达到确认阈值后才注销。
-        repeat(CREDENTIAL_REJECTION_CONFIRMATIONS - 1) {
+        // 后端持续拒绝也只暂停远程能力，不删除本地身份。
+        repeat(5) {
             clock += SESSION_RECOVERY_WINDOW_STEP_MS
             manager.recoverExpiredSession(snapshot.accountId, snapshot.generation)
         }
-        assertEquals(0, manager.userState.value.data?.id)
-        assertEquals(User.create(), userStorage.get())
-        assertTrue(cookieStorage.get().isEmpty())
-        assertEquals(SessionReadiness.Unauthenticated, readiness.state.value)
+        assertEquals(1, manager.userState.value.data?.id)
+        assertEquals(1, userStorage.get().id)
+        assertEquals("session-A", cookieStorage.get().single().value)
+        assertEquals(SessionReadiness.Authenticated, readiness.state.value)
     }
 
     @Test
@@ -965,7 +995,7 @@ class UserManagerSessionTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun restorationCompletesWhileBoundFavoriteWaitsForReadiness() = runTest {
+    fun failedStartupProbeReleasesWaitersIntoCooldownWithoutRemoteWork() = runTest {
         val userStorage = FakeUserStorage(user(1, "accountA"))
         val cookies = FakeCookieStorage()
         val readiness = SessionReadinessHolder()
@@ -977,17 +1007,24 @@ class UserManagerSessionTest {
         val manager = manager(userStorage, cookies, repository, readiness)
         val snapshot = manager.currentSessionSnapshot()
         val authGate = AuthenticatedSessionGate(readiness)
+        var remoteCalls = 0
         val mutation = backgroundScope.async {
-            manager.withBoundRemoteSession(snapshot.accountId, snapshot.generation) {
-                authGate.run { "collected" }
+            try {
+                manager.withBoundRemoteSession(snapshot.accountId, snapshot.generation) {
+                    authGate.run { remoteCalls++; "collected" }
+                }
+                error("Expected cooldown")
+            } catch (failure: SessionRecoveryException) {
+                failure.error
             }
         }
         runCurrent()
         val verify = backgroundScope.launch { manager.verifyStoredLogin() }
         withTimeout(1_000) {
             verify.join()
-            assertEquals("collected", mutation.await())
+            assertEquals(NetworkErrorKind.Network, mutation.await().kind)
         }
+        assertEquals(0, remoteCalls)
         assertEquals(SessionReadiness.Authenticated, readiness.state.value)
     }
 

@@ -26,8 +26,7 @@ interface UserRepository {
     /**
      * 验证凭据但不改变活动会话，返回候选认证结果（含 cookie 快照）。
      *
-     * @param origin 触发来源。只进日志与登录密度统计 —— 服务端对高频 `/login` 的软拒绝
-     *   与「凭据真的错误」报文完全一致，无法从 `code` 区分。
+     * @param origin 触发来源，只用于日志与登录密度统计。
      */
     suspend fun verifyLogin(
         username: String,
@@ -36,19 +35,7 @@ interface UserRepository {
     ): NetWorkResult<CandidateSession> =
         login(username, password)
 
-    /**
-     * 冷启动的**廉价会话探活**：只用共享客户端里已持久化的 cookie 打一个需要鉴权的接口，
-     * **不发送任何凭据、不产生登录**。
-     *
-     * 返回值语义：
-     * - `Success` → 会话仍然可用
-     * - `Error(kind = Authentication)` → 会话已失效（此时才值得动凭据）
-     * - 其它 `Error` → 网络/服务端临时问题，不能据此判定会话失效
-     *
-     * 之所以需要它：`verifyLogin` 与 `login` 是同一个实现（`POST /login`），
-     * 每次冷启动都用明文密码登录一次是撞库检测最容易命中的形态。
-     * 官方 app 的 JWT 有效期 1 小时，冷启动根本不发登录请求。
-     */
+    /** Read-only saved-cookie probe; the caller owns readiness and generation checks. */
     suspend fun probeActiveSession(): NetWorkResult<Unit>
 
     /**

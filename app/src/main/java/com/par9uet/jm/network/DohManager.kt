@@ -335,7 +335,7 @@ private class DohResolver(
             if (!response.isSuccessful) {
                 throw UnknownHostException("DoH 服务返回 HTTP ${response.code}")
             }
-            val bytes = response.body?.bytes() ?: throw UnknownHostException("DoH 服务返回空数据")
+            val bytes = response.body.bytes()
             return DohPacketParser.parse(bytes, type)
         }
     }

@@ -4,6 +4,7 @@ import com.par9uet.jm.core.network.NetWorkResult
 import com.par9uet.jm.core.network.NetworkErrorKind
 import com.par9uet.jm.core.network.AuthenticatedSessionRequiredException
 import com.par9uet.jm.core.network.isFormBodyNullParameter
+import com.par9uet.jm.core.SessionRecoveryException
 import io.github.jukomu.jmcomic.api.exception.NetworkException
 import io.github.jukomu.jmcomic.api.exception.ParseResponseException
 import io.github.jukomu.jmcomic.api.exception.ResponseException
@@ -24,12 +25,14 @@ internal fun Throwable.causeChainText(maxDepth: Int = 8): String {
 internal fun Throwable.toFavoriteSyncError(): NetWorkResult.Error {
     val causes = generateSequence(this) { it.cause }.take(16).toList()
     causes.filterIsInstance<CancellationException>().firstOrNull()?.let { throw it }
+    // Preserve cooldown errors before a nested original 401 can reclassify them as logout.
+    causes.filterIsInstance<SessionRecoveryException>().firstOrNull()?.let { return it.error }
     val response = causes.filterIsInstance<ResponseException>().firstOrNull()
     val authException = causes.filterIsInstance<AuthenticatedSessionRequiredException>().firstOrNull()
     val formBodyNull = isFormBodyNullParameter()
     val chain = causeChainText()
     val kind = when {
-        authException != null || response?.errorCode == 401 || formBodyNull ->
+        authException != null || response?.errorCode == 401 ->
             NetworkErrorKind.Authentication
         causes.any { it is ParseResponseException } -> NetworkErrorKind.Parsing
         response != null -> NetworkErrorKind.Server
@@ -47,7 +50,6 @@ internal fun Throwable.toFavoriteSyncError(): NetWorkResult.Error {
         }
         NetworkErrorKind.Authentication -> {
             val detail = when {
-                formBodyNull -> "SDK 自动重登缺少密码，请在应用内重新登录"
                 authException != null -> authException.message?.replace('\n', ' ')?.take(160)
                     ?: chain.take(160)
                 response != null -> "HTTP ${response.errorCode} ${response.message?.take(120).orEmpty()}"
@@ -78,7 +80,8 @@ internal fun Throwable.toFavoriteSyncError(): NetWorkResult.Error {
         }
         NetworkErrorKind.Unknown -> {
             val msg = this.message?.replace('\n', ' ')?.take(200)
-            if (!msg.isNullOrBlank()) "收藏同步失败：$msg" else "收藏同步失败，请重试（$chain）"
+            if (formBodyNull) "请求构造失败，已保留登录状态，请稍后重试"
+            else if (!msg.isNullOrBlank()) "收藏同步失败：$msg" else "收藏同步失败，请重试（$chain）"
         }
     }
     return NetWorkResult.Error(

@@ -8,7 +8,6 @@
 /captures
 .externalNativeBuild
 .cxx
-local.properties
 release-key
 .debug-screenshot.png
 

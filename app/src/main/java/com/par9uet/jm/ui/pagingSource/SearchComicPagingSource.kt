@@ -14,6 +14,9 @@ data class SearchComicFilter(
     val order: ComicSearchOrderFilter = ComicSearchOrderFilter.NEWEST,
     val searchContent: String = "",
     val excludedTags: List<String> = emptyList(),
+    /** 年/月筛选（官方 `y`/`m`）；空串 = 不限。与关键词、排除标签、排序正交，互不覆盖。 */
+    val year: String = "",
+    val month: String = "",
     /**
      * Bumped by every explicit search so that repeating the same query still reaches the network.
      * The paging source ignores it; it exists only to make `flatMapLatest` create a new Pager.
@@ -26,7 +29,9 @@ data class SearchComicFilter(
     fun matchesQuery(other: SearchComicFilter): Boolean =
         order == other.order &&
             searchContent == other.searchContent &&
-            excludedTags == other.excludedTags
+            excludedTags == other.excludedTags &&
+            year == other.year &&
+            month == other.month
 }
 
 /**
@@ -56,10 +61,16 @@ class SearchComicPagingSource(
         // 本地过滤把结果吃光）无法从日志区分，只能靠猜。这里记录真正发出去的 query。
         log(
             "SearchComicPagingSource",
-            "请求 page=$currentPage order=${filter.order.value} query=[$searchQuery]",
+            "请求 page=$currentPage order=${filter.order.value} " +
+                "year=[${filter.year}] month=[${filter.month}] query=[$searchQuery]",
         )
-        return when (val data =
-            comicRepository.getComicList(currentPage, filter.order, searchQuery)) {
+        return when (val data = comicRepository.getComicList(
+            currentPage,
+            filter.order,
+            searchQuery,
+            filter.year,
+            filter.month,
+        )) {
             is NetWorkResult.Error -> {
                 logError(
                     "SearchComicPagingSource",

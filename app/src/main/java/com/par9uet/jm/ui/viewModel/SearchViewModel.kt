@@ -103,6 +103,22 @@ class SearchViewModel(
         _searchViewportState.update(SearchViewportState::reset)
     }
 
+    /**
+     * 只改年/月，关键词、排除标签、排序原样保留。
+     * 空串 = 清除该维度（官方「全部年份 / 全部月份」）。
+     */
+    fun changeSearchComicDateFilter(year: String, month: String) {
+        _searchComicIdState.update { null }
+        val current = _searchComicFilterState.value
+        if (current.year == year && current.month == month) return
+        _searchComicFilterState.value = current.copy(
+            year = year,
+            month = month,
+            revision = current.revision + 1L,
+        )
+        _searchViewportState.update(SearchViewportState::reset)
+    }
+
     fun changeSearchComicContent(searchContent: String) {
         _searchComicIdState.update { null }
         updateSearchFilter(_searchComicFilterState.value.copy(searchContent = searchContent))

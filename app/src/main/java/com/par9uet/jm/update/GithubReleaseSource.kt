@@ -27,7 +27,7 @@ class GithubReleaseSource(
             .build()
         client.newCall(request).execute().use { response ->
             check(response.isSuccessful) { "GitHub 返回 ${response.code}" }
-            parseGithubRelease(response.body?.string() ?: error("GitHub 返回空响应"))
+            parseGithubRelease(response.body.string())
         }
     }
 }
@@ -75,4 +75,3 @@ private fun selectApkAsset(assets: JsonArray?, version: String): ReleaseAsset? {
 private fun JsonObject.stringOrEmpty(key: String): String {
     return get(key)?.takeIf { !it.isJsonNull }?.asString.orEmpty()
 }
-

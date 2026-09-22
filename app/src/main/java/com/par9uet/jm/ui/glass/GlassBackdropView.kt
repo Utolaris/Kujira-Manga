@@ -4,9 +4,11 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
+import android.graphics.Shader
 import android.os.Build
 import android.os.SystemClock
 import android.view.View
@@ -36,12 +38,14 @@ internal class GlassBackdropView(
     context: Context,
     private var style: GlassSurfaceStyle = GlassSurfaceStyle.Default,
     private val surfaceId: String = "glass-surface",
+    private var backdropMode: GlassBackdropMode = GlassBackdropMode.Blur,
 ) : View(context) {
     private val density = resources.displayMetrics.density
     private val surfaceRect = RectF()
     private val glassPath = Path()
     private val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val tintPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val frostedPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val topStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
     }
@@ -64,6 +68,8 @@ internal class GlassBackdropView(
     private var nativeFailureStreak = 0
     private var nativeRetryNotBeforeUptimeMs = 0L
     private var reportedDegraded = false
+    /** 最近一次确认"共享底图有内容"的 gen；用于识别它在同一 gen 内被清空。 */
+    private var contentSeenGeneration = -1
 
     init {
         setWillNotDraw(false)
@@ -87,11 +93,33 @@ internal class GlassBackdropView(
         invalidate()
     }
 
+    fun setBackdropMode(mode: GlassBackdropMode) {
+        if (backdropMode == mode) return
+        backdropMode = mode
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            nativeRenderState?.renderNode?.discardDisplayList()
+        }
+        nativeRenderState = createNativeRenderState(style)
+        nativeFailureStreak = 0
+        nativeRetryNotBeforeUptimeMs = 0L
+        reportedDegraded = false
+        sourceRegionDirty = true
+        geometryDirty = true
+        invalidate()
+    }
+
     fun setSource(newSource: GlassCaptureSource, newSourceView: View) {
         source = newSource
         sourceView = newSourceView
         lastSourceGeneration = -1
         sourceRegionDirty = true
+        // [GlassDiag] 临时诊断：新背板从 last=-1 起算，理论上第一帧必录。
+        log(
+            "GlassDiag",
+            "[surface:$surfaceId] 绑定共享底图 mode=$backdropMode " +
+                "native=${nativeRenderState != null} 自身尺寸=${width}x$height " +
+                "当前 gen=${newSource.generation}",
+        )
         invalidate()
     }
 
@@ -103,6 +131,7 @@ internal class GlassBackdropView(
     fun setColors(newColors: GlassSurfaceColors) {
         if (colors == newColors) return
         colors = newColors
+        geometryDirty = true
         tintPaint.color = colors.tint
         topStrokePaint.color = colors.topStroke
         bottomStrokePaint.color = colors.bottomStroke
@@ -125,32 +154,97 @@ internal class GlassBackdropView(
         canvas.drawRoundRect(surfaceRect, cornerRadiusPx(), cornerRadiusPx(), shadowPaint)
 
         val sharedSource = source
+        // [GlassDiag] 临时诊断：把两个分支的条件先算出来，便于原样记录"这一帧到底走了哪条路"。
+        val canAttempt = canAttemptNativeRender()
+        val sourceAvailable = sharedSource?.nativeCaptureAvailable == true
+        val hardwareAccelerated = canvas.isHardwareAccelerated
+        // 共享底图的显示列表可能在没有重录的情况下变为空（实测：gen 不变、dirty=false，
+        // 而 sharedHasDisplayList 从 true 变 false）。此时录出来的区域是一片空气——
+        // 画面上就是"面板有底色、没有高斯模糊"，而且不会有任何失败日志。
+        //
+        // 只在"同一个 gen 曾经有内容、现在变空"这种**跳变**上请求一次重录：
+        // 不去门控本帧的录制/绘制（万一某些设备上该信号偏差就会把偶发降级做成永久降级），
+        // 也不会逐帧抖动（请求一次即 gen 前进，之后就没人再问，静态源照样收敛）。
+        val sourceHasContent = sharedSource?.sharedHasDisplayList() == true
+        if (canAttempt && sharedSource != null && hardwareAccelerated) {
+            val sourceGeneration = sharedSource.generation
+            if (sourceHasContent) {
+                contentSeenGeneration = sourceGeneration
+            } else if (contentSeenGeneration == sourceGeneration) {
+                contentSeenGeneration = -1
+                sharedSource.markDirty("共享底图在 gen=$sourceGeneration 变为空")
+            }
+        }
+        var recorded = false
+        var drewBlur = false
         if (
-            canAttemptNativeRender() &&
+            canAttempt &&
             sharedSource != null &&
             sharedSource.nativeCaptureAvailable &&
-            canvas.isHardwareAccelerated &&
+            hardwareAccelerated &&
             (sourceRegionDirty || lastSourceGeneration != sharedSource.generation)
         ) {
             recordSourceRegion(sharedSource)
+            recorded = !sourceRegionDirty
         }
 
         if (
-            canAttemptNativeRender() &&
-            sharedSource?.nativeCaptureAvailable == true &&
-            canvas.isHardwareAccelerated &&
+            canAttempt &&
+            sourceAvailable &&
+            hardwareAccelerated &&
             !sourceRegionDirty &&
-            lastSourceGeneration == sharedSource.generation
+            lastSourceGeneration == sharedSource?.generation
         ) {
             drawNativeBackdrop(canvas)
+            drewBlur = true
         }
+        diagLogDecision(sharedSource, recorded, drewBlur, canAttempt, sourceAvailable, hardwareAccelerated)
 
         // On API 30 this translucent tint is the complete fallback. On API 31+ it is drawn over
         // the blurred source RenderNode, keeping the same material geometry on every device.
-        canvas.drawRoundRect(surfaceRect, cornerRadiusPx(), cornerRadiusPx(), tintPaint)
+        canvas.drawRoundRect(
+            surfaceRect,
+            cornerRadiusPx(),
+            cornerRadiusPx(),
+            if (backdropMode == GlassBackdropMode.Frosted) frostedPaint else tintPaint,
+        )
         drawDirectionalStroke(canvas, topStrokePaint, clipTop = true)
         drawDirectionalStroke(canvas, bottomStrokePaint, clipTop = false)
     }
+
+    // [GlassDiag] 临时诊断：仅在决策签名变化时记一行，避免逐帧刷屏。
+    private var lastDiagSignature: String? = null
+
+    @Suppress("LongParameterList")
+    private fun diagLogDecision(
+        sharedSource: GlassCaptureSource?,
+        recorded: Boolean,
+        drewBlur: Boolean,
+        canAttempt: Boolean,
+        sourceAvailable: Boolean,
+        hardwareAccelerated: Boolean,
+    ) {
+        val signature = "$recorded|$drewBlur|$canAttempt|$sourceAvailable|$hardwareAccelerated|" +
+            "$sourceRegionDirty|$lastSourceGeneration|${sharedSource?.generation}|$alpha"
+        if (signature == lastDiagSignature) return
+        lastDiagSignature = signature
+        log(
+            "GlassDiag",
+            "[surface:$surfaceId] recorded=$recorded 画了模糊=$drewBlur " +
+                "可尝试=$canAttempt 底图可用=$sourceAvailable 硬件加速=$hardwareAccelerated " +
+                "区域脏=$sourceRegionDirty last=$lastSourceGeneration gen=${sharedSource?.generation} " +
+                "区域有显示列表=${regionHasDisplayList()} 共享有显示列表=${sharedSource?.sharedHasDisplayList()} " +
+                "alpha=$alpha mode=$backdropMode 自身尺寸=${width}x$height",
+        )
+    }
+
+    /** [GlassDiag] 临时诊断：这个背板自己录下来的区域节点里到底有没有内容。 */
+    internal fun regionHasDisplayList(): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            nativeRenderState?.renderNode?.hasDisplayList() == true
+        } else {
+            false
+        }
 
     /** 原生模糊当前是否可尝试：退避窗口内直接跳过，避免每帧都撞同一个 GPU 失败。 */
     private fun canAttemptNativeRender(): Boolean =
@@ -169,6 +263,17 @@ internal class GlassBackdropView(
             cornerRadiusPx(),
             Path.Direction.CW,
         )
+        if (backdropMode == GlassBackdropMode.Frosted && !surfaceRect.isEmpty) {
+            // Dense enough for text over detailed manga, with a soft diagonal light falloff.
+            // Only a small gradient is drawn; no source bitmap or RenderEffect is needed.
+            val rgb = colors.tint and 0x00FFFFFF
+            frostedPaint.shader = LinearGradient(
+                0f, 0f, surfaceRect.width(), surfaceRect.height(),
+                intArrayOf((0xF2 shl 24) or rgb, (0xDB shl 24) or rgb, (0xED shl 24) or rgb),
+                floatArrayOf(0f, 0.55f, 1f),
+                Shader.TileMode.CLAMP,
+            )
+        }
         geometryDirty = false
     }
 
@@ -202,6 +307,13 @@ internal class GlassBackdropView(
             )
             lastSourceGeneration = sharedSource.generation
             sourceRegionDirty = false
+            // [GlassDiag] 临时诊断：每次真正录制都记一行（只在 gen 变化时发生，量可控）。
+            log(
+                "GlassDiag",
+                "[surface:$surfaceId] 已录制区域 ${captureWidth}x$captureHeight " +
+                    "源内偏移=($captureLeftInSource,$captureTopInSource) gen=${sharedSource.generation} " +
+                    "源节点有显示列表=${sharedSource.sharedHasDisplayList()}",
+            )
             if (nativeFailureStreak > 0) {
                 nativeFailureStreak = 0
                 if (reportedDegraded) {
@@ -317,7 +429,9 @@ internal class GlassBackdropView(
     }
 
     private fun createNativeRenderState(style: GlassSurfaceStyle): NativeGlassRenderState? {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        return if (
+            backdropMode == GlassBackdropMode.Blur && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+        ) {
             NativeGlassRenderState(style.material.blurRadius.value * density)
         } else {
             null

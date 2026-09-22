@@ -2,6 +2,15 @@ package com.par9uet.jm.network
 
 import okhttp3.Cookie
 import okhttp3.HttpUrl
+import okhttp3.Headers
+
+/** Keep response-header AVS out of the candidate jar; SDK login writes the JSON `s` itself. */
+internal fun Headers.withoutEmbeddedSessionCookie(): Headers = newBuilder().apply {
+    removeAll("Set-Cookie")
+    values("Set-Cookie").filterNot {
+        it.substringBefore('=').trim() == EMBEDDED_SESSION_COOKIE_NAME
+    }.forEach { add("Set-Cookie", it) }
+}.build()
 
 /**
  * 内置 API 的**会话令牌** cookie 名。

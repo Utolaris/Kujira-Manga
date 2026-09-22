@@ -60,8 +60,11 @@ class ComicRepositoryImpl(
         page: Int,
         order: ComicSearchOrderFilter,
         searchContent: String,
+        year: String,
+        month: String,
     ): NetWorkResult<ComicSearchPage> =
-        embeddedDataSource.getComicList(page, order, searchContent).map { it.toComicSearchPage() }
+        embeddedDataSource.getComicList(page, order, searchContent, year, month)
+            .map { it.toComicSearchPage() }
 
     override suspend fun getWeekData(): NetWorkResult<WeekData> =
         embeddedDataSource.getWeekData().map { it.toWeekData() }

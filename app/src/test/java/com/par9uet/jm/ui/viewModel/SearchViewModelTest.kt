@@ -197,6 +197,28 @@ class SearchViewModelTest {
     }
 
     @Test
+    fun dateFilterChangeKeepsSearchCriteriaAndOrder() = runTest(scheduler) {
+        val vm = buildVm(FakeComicRepository())
+        vm.changeSearchComicContent("neko", listOf("tag1"))
+        vm.changeSearchComicOrderFilter(ComicSearchOrderFilter.MOST_LIKE_COUNT)
+
+        vm.changeSearchComicDateFilter("2024", "3")
+
+        val filter = vm.searchComicFilterState.value
+        assertEquals("neko", filter.searchContent)
+        assertEquals(listOf("tag1"), filter.excludedTags)
+        assertEquals(ComicSearchOrderFilter.MOST_LIKE_COUNT, filter.order)
+        assertEquals("2024", filter.year)
+        assertEquals("3", filter.month)
+
+        vm.changeSearchComicDateFilter("", "")
+        assertEquals("", vm.searchComicFilterState.value.year)
+        assertEquals("", vm.searchComicFilterState.value.month)
+        assertEquals("neko", vm.searchComicFilterState.value.searchContent)
+        assertEquals(ComicSearchOrderFilter.MOST_LIKE_COUNT, vm.searchComicFilterState.value.order)
+    }
+
+    @Test
     fun returningToUnchangedSearchKeepsSavedViewport() = runTest(scheduler) {
         val vm = buildVm(FakeComicRepository())
         vm.changeSearchComicContent("neko", listOf("tag1"))

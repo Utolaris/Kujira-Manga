@@ -76,6 +76,7 @@ fun GlassModal(
     dismissOnOutsideClick: Boolean = true,
     dismissOnBack: Boolean = true,
     alignment: Alignment = Alignment.Center,
+    style: GlassSurfaceStyle = GlassSurfaceStyle(cornerRadius = 24.dp),
     surface: @Composable () -> Unit,
 ) {
     val visibleState = remember { MutableTransitionState(false) }
@@ -149,7 +150,7 @@ fun GlassModal(
                             Modifier
                         }
                     ),
-                style = GlassSurfaceStyle(cornerRadius = 24.dp),
+                style = style,
                 surfaceAlpha = surfaceAlpha,
                 surfaceScale = surfaceScale,
             ) {

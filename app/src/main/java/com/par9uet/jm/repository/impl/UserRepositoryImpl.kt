@@ -22,7 +22,6 @@ import com.par9uet.jm.core.network.map
 import com.par9uet.jm.retrofit.model.UserHistoryComicListResponse
 import com.par9uet.jm.retrofit.model.UserHistoryCommentListResponse
 import io.github.jukomu.jmcomic.api.exception.NetworkException
-import io.github.jukomu.jmcomic.api.model.FavoriteQuery
 import io.github.jukomu.jmcomic.api.model.ForumQuery
 import io.github.jukomu.jmcomic.api.model.JmAlbumMeta
 import io.github.jukomu.jmcomic.api.model.JmCategoryMeta
@@ -61,13 +60,8 @@ class UserRepositoryImpl(
      * 结果只用于判定，不落任何本地状态；返回的 payload 直接丢弃。
      */
     override suspend fun probeActiveSession(): NetWorkResult<Unit> =
-        safeEmbeddedCall("校验登录状态失败") {
-            requireNotNull(
-                authenticatedEmbeddedClient.withClient { client ->
-                    client.getFavorites(FavoriteQuery.Builder().folderId(0).page(1).build())
-                }
-            )
-            Unit
+        safeEmbeddedCall<Unit>("校验登录状态失败") {
+            authenticatedEmbeddedClient.probeSession()
         }
 
     private suspend fun authenticateCandidate(
@@ -180,11 +174,10 @@ class UserRepositoryImpl(
     }
 
     override suspend fun deleteHistoryComic(id: Int): NetWorkResult<Unit> {
-        return safeEmbeddedCall("删除历史记录失败") {
+        return safeEmbeddedCall<Unit>("删除历史记录失败") {
             authenticatedEmbeddedClient.withClient { client ->
                 client.deleteWatchHistory(id.toString())
             }
-            Unit
         }
     }
 

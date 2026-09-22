@@ -21,8 +21,10 @@ import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.HelpOutline
+import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Cancel
 import androidx.compose.material.icons.rounded.DeleteSweep
+import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -43,8 +45,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -53,12 +57,19 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.par9uet.jm.data.models.BlockedTagTemplate
+import com.par9uet.jm.data.models.ComicSearchOrderFilter
 import com.par9uet.jm.ui.components.ComicSearchHistoryTag
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.components.SearchExclusionEditor
 import com.par9uet.jm.ui.components.SearchFieldSurface
+import com.par9uet.jm.ui.components.YearMonthSelectDialog
 import com.par9uet.jm.ui.components.searchFieldColors
+import com.par9uet.jm.ui.glass.GlassAnchoredMenu
+import com.par9uet.jm.ui.glass.GlassMenuAlignment
+import com.par9uet.jm.ui.glass.GlassMenuItem
 import com.par9uet.jm.ui.glass.GlassModal
+import com.par9uet.jm.ui.glass.glassMenuAnchor
+import com.par9uet.jm.ui.glass.rememberGlassAnchoredMenuState
 import com.par9uet.jm.ui.models.LocalTabletLayoutEnabled
 import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.SearchViewModel
@@ -96,6 +107,12 @@ fun ComicSearchScreen(
     val historySearchState by searchViewModel.historySearchState.collectAsState()
     val blockedTagTemplates by searchViewModel.blockedTagTemplates.collectAsState()
     var showSyntaxHelp by remember { mutableStateOf(false) }
+    val sortMenuState = rememberGlassAnchoredMenuState()
+    var showDateFilterDialog by remember { mutableStateOf(false) }
+    val density = LocalDensity.current
+    val sortMenuMaxHeight = with(density) {
+        LocalWindowInfo.current.containerSize.height.toDp() * 0.56f
+    }
 
     fun addExcludedTag(tag: String) {
         excludedTags = normalizeSearchExcludedTags(excludedTags + tag)
@@ -137,12 +154,72 @@ fun ComicSearchScreen(
                     contentDescription = "搜索语法说明",
                 )
             }
+            // 年月 / 排序与关键词、排除标签正交：在起始页预选，提交搜索时一并带上。
+            IconButton(onClick = { showDateFilterDialog = true }) {
+                val dateActive = searchComicFilterState.year.isNotBlank() ||
+                    searchComicFilterState.month.isNotBlank()
+                Icon(
+                    imageVector = Icons.Rounded.CalendarMonth,
+                    contentDescription = if (dateActive) "按年月筛选（已启用）" else "按年月筛选",
+                    tint = if (dateActive) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+            }
+            IconButton(
+                onClick = { sortMenuState.open() },
+                modifier = Modifier.glassMenuAnchor(sortMenuState),
+            ) {
+                val orderActive = searchComicFilterState.order != ComicSearchOrderFilter.NEWEST
+                Icon(
+                    imageVector = Icons.Rounded.FilterList,
+                    contentDescription = "排序筛选",
+                    tint = if (orderActive) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+            }
         },
         overlayContent = {
             SearchSyntaxHelpDialog(
                 visible = showSyntaxHelp,
                 onDismiss = { showSyntaxHelp = false },
             )
+            YearMonthSelectDialog(
+                visible = showDateFilterDialog,
+                year = searchComicFilterState.year,
+                month = searchComicFilterState.month,
+                modifier = Modifier.widthIn(max = 420.dp),
+                onSelect = { year, month ->
+                    searchViewModel.changeSearchComicDateFilter(year, month)
+                },
+                onClear = {
+                    searchViewModel.changeSearchComicDateFilter("", "")
+                },
+                onDismissRequest = { showDateFilterDialog = false },
+            )
+            GlassAnchoredMenu(
+                state = sortMenuState,
+                surfaceId = "search-editor-sort-glass-menu",
+                alignment = GlassMenuAlignment.END,
+                width = 190.dp,
+                menuMaxHeight = sortMenuMaxHeight,
+            ) {
+                ComicSearchOrderFilter.entries.forEach { order ->
+                    GlassMenuItem(
+                        text = order.label,
+                        selected = order.value == searchComicFilterState.order.value,
+                        onClick = {
+                            sortMenuState.dismiss()
+                            searchViewModel.changeSearchComicOrderFilter(order)
+                        },
+                    )
+                }
+            }
         },
     ) { topContentPadding, bottomContentPadding ->
         SearchPageFocusEffect(pageLifecycleOwner)

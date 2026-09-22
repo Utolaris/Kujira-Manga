@@ -112,7 +112,9 @@ class HomeViewModelTest {
         override suspend fun getComicList(
             page: Int,
             order: ComicSearchOrderFilter,
-            searchContent: String
+            searchContent: String,
+            year: String,
+            month: String,
         ): NetWorkResult<ComicSearchPage> = NetWorkResult.Error("stub")
 
         override suspend fun getWeekData(): NetWorkResult<WeekData> =

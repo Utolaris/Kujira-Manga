@@ -58,6 +58,8 @@ class ComicRepositoryRoutingTest {
             page: Int,
             order: ComicSearchOrderFilter,
             searchContent: String,
+            year: String,
+            month: String,
         ): NetWorkResult<ComicListResponse> = routingStub()
 
         override suspend fun getWeekData(): NetWorkResult<WeekResponse> = routingStub()

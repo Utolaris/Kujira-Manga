@@ -104,6 +104,18 @@ class ArchitectureBoundaryTest {
             addAll(forbiddenQualifiedUsages("ui", listOf("com.par9uet.jm.retrofit.model.")))
             addAll(forbiddenImports("App.kt", listOf("com.par9uet.jm.retrofit.model.")))
             addAll(forbiddenQualifiedUsages("App.kt", listOf("com.par9uet.jm.retrofit.model.")))
+            // L1 不得认识 L4 实现与嵌入式 SDK 客户端：取数只能用 repository 接口 + data/models
+            // 契约，SDK 客户端由组合根注入 L2/L3。原先只禁 database/retrofit.model/favorites.data，
+            // repository.impl 与 network.Embedded* 是漏网（2026-09-22 复测为零违规后钉住）。
+            addAll(forbiddenImports("ui", listOf(
+                "com.par9uet.jm.repository.impl.", "com.par9uet.jm.network.Embedded",
+            )))
+            addAll(forbiddenQualifiedUsages("ui", listOf(
+                "com.par9uet.jm.repository.impl.", "com.par9uet.jm.network.Embedded",
+            )))
+            // Screen 只允许读 SessionReadiness 状态枚举；UserManager 是 L2 会话实现，须经 VM 暴露。
+            addAll(forbiddenImports("ui/screens", listOf("com.par9uet.jm.session.UserManager")))
+            addAll(forbiddenQualifiedUsages("ui/screens", listOf("com.par9uet.jm.session.UserManager")))
             // ui/components 是通用支撑层：只接收参数、只消费 ui/* 的环境值（CompositionLocal）。
             // 不得依赖持久化、数据层、会话、缓存或任何具体领域的 L2/L4——取数由调用方或
             // 组合根负责（见 ARCHITECTURE.md「已采用的边界」）。

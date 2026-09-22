@@ -1,5 +1,9 @@
 package com.par9uet.jm.ui.glass
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,11 +19,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.descendants
 import androidx.navigation.compose.rememberNavController
 import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.ui.theme.LocalExtendedColors
 import com.par9uet.jm.ui.theme.extendedColorSchemeFor
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Rule
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
@@ -37,6 +44,51 @@ class GlassCaptureHostSettleTest {
     private val sourceText = mutableStateOf("静态内容")
     private val drawCount = AtomicInteger(0)
     private var observing = false
+    private val backdropMode = mutableStateOf(GlassBackdropMode.Blur)
+
+    @Test
+    fun frostedSourceUpdatesWithoutCaptureAndCanSwitchBackToBlur() {
+        backdropMode.value = GlassBackdropMode.Frosted
+        startHost()
+        compose.runOnIdle {
+            assertEquals(0, captureHost().sourceCaptureGeneration)
+            sourceText.value = "翻页后内容"
+        }
+        compose.runOnIdle {
+            assertEquals("磨砂模式不应捕获漫画底图", 0, captureHost().sourceCaptureGeneration)
+            backdropMode.value = GlassBackdropMode.Blur
+        }
+        if (android.os.Build.VERSION.SDK_INT >= 31) {
+            compose.waitUntil(10_000) { captureHost().sourceCaptureGeneration > 0 }
+        }
+    }
+
+    @Test
+    fun frostedGradientDrawsWithoutSourceAndUpdatesWithTheme() {
+        compose.runOnUiThread {
+            val view = GlassBackdropView(compose.activity, backdropMode = GlassBackdropMode.Frosted)
+            view.layout(0, 0, 300, 300)
+            val bitmap = Bitmap.createBitmap(300, 300, Bitmap.Config.ARGB_8888)
+            try {
+                for (tint in listOf(Color.WHITE, Color.BLACK)) {
+                    view.setColors(GlassSurfaceColors(tint, Color.TRANSPARENT, Color.TRANSPARENT, Color.TRANSPARENT))
+                    bitmap.eraseColor(Color.TRANSPARENT)
+                    view.draw(Canvas(bitmap))
+                    val top = bitmap.getPixel(150, 50)
+                    val middle = bitmap.getPixel(150, 150)
+                    assertTrue("材质应保持半透明且能遮住漫画细节", Color.alpha(middle) in 215..245)
+                    assertNotEquals("应绘制渐变而非纯色底板", Color.alpha(top), Color.alpha(middle))
+                    assertEquals(tint and 0x00FFFFFF, middle and 0x00FFFFFF)
+                }
+            } finally {
+                bitmap.recycle()
+            }
+        }
+    }
+
+    private fun captureHost(): GlassCaptureHostView =
+        compose.activity.findViewById<ViewGroup>(android.R.id.content)
+            .descendants.filterIsInstance<GlassCaptureHostView>().first()
 
     @Test
     fun staticSourceStopsSchedulingDraws() {
@@ -77,6 +129,7 @@ class GlassCaptureHostSettleTest {
             TestTheme {
                 GlassCaptureHost(
                     modifier = Modifier.fillMaxSize(),
+                    backdropMode = backdropMode.value,
                     sourceContent = {
                         Column {
                             Text(sourceText.value, fontSize = 18.sp)

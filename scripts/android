@@ -177,6 +177,7 @@ Kujira-Manga Android 调试 CLI
 
 调试
   logcat [serial] [-c]   实时 logcat；-c 先清空
+  exported-logs [serial]  读取 debug 应用最近导出的日志和安装信息到 build/device-logs/
   screenshot [serial]    截图到 build/screenshot.png 并打开
   screenrecord [serial] [秒]  录屏到 build/screen.mp4（默认 30s）
   dumpsys [serial]       当前 Activity / 窗口摘要
@@ -344,6 +345,23 @@ cmd_logcat() {
   "$ADB" -s "$serial" logcat "$@"
 }
 
+cmd_exported_logs() {
+  local serial destination listing filename
+  serial="$(select_device "${1:-}")" || return 1
+  destination="$PROJECT_DIR/build/device-logs/$(date +%Y%m%d-%H%M%S)"
+  mkdir -p "$destination"
+  "$ADB" -s "$serial" shell dumpsys package "$DEBUG_APPLICATION_ID" |
+    grep -E 'versionCode=|versionName=|firstInstallTime=|lastUpdateTime=' > "$destination/install.txt"
+  listing="$("$ADB" -s "$serial" shell run-as "$DEBUG_APPLICATION_ID" ls files/logs)" || return 1
+  while IFS= read -r filename; do
+    filename="${filename%$'\r'}"
+    [[ "$filename" =~ ^kujira-log-[0-9]{8}-[0-9]{6}\.txt$ ]] || continue
+    "$ADB" -s "$serial" exec-out run-as "$DEBUG_APPLICATION_ID" cat "files/logs/$filename" > "$destination/$filename" || return 1
+    printf '%s\n' "$destination/$filename"
+  done <<< "$listing"
+  cat "$destination/install.txt"
+}
+
 cmd_input() {
   local serial action argument
   serial="$(select_device "${1:-}")"
@@ -488,6 +506,7 @@ main() {
     launch) cmd_launch "$@" ;;
     stop) cmd_stop "$@" ;;
     logcat) cmd_logcat "$@" ;;
+    exported-logs) cmd_exported_logs "$@" ;;
     screenshot) cmd_screenshot "$@" ;;
     screenrecord) cmd_screenrecord "$@" ;;
     dumpsys) cmd_dumpsys "$@" ;;

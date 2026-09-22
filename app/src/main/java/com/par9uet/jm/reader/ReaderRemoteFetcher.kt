@@ -225,7 +225,7 @@ internal class ReaderRemoteFetcher(
             if (!response.isSuccessful) {
                 throw ReaderImageException("HTTP ${response.code}", httpCode = response.code)
             }
-            val body = response.body ?: throw ReaderImageException("图片响应为空")
+            val body = response.body
             val contentLength = body.contentLength()
             if (contentLength == 0L) throw ReaderImageException("图片响应为空")
             if (contentLength > maxSourceBytes) {
@@ -415,7 +415,7 @@ internal class ReaderRemoteFetcher(
     ) {
         val buffer = ByteArray(readChunkBytes)
         var total = 0L
-        val body = opened.response.body ?: throw ReaderImageException("图片响应为空")
+        val body = opened.response.body
         FileOutputStream(target).use { output ->
             body.byteStream().use { input ->
                 while (true) {

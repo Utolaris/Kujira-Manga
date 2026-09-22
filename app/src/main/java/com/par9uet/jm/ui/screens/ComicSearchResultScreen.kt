@@ -11,11 +11,13 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -45,6 +47,7 @@ import com.par9uet.jm.ui.components.Comic
 import com.par9uet.jm.ui.components.ComicSkeleton
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.components.PullRefreshAndLoadMoreGrid
+import com.par9uet.jm.ui.components.YearMonthSelectDialog
 import com.par9uet.jm.ui.components.adaptiveComicGridCells
 import com.par9uet.jm.ui.glass.GlassAnchoredMenu
 import com.par9uet.jm.ui.glass.GlassMenuAlignment
@@ -194,6 +197,7 @@ fun ComicSearchResultScreen(
     val searchComicIdState by searchViewModel.searchComicIdState.collectAsState()
     val savedViewport by searchViewModel.searchViewportState.collectAsState()
     val sortMenuState = rememberGlassAnchoredMenuState()
+    var showDateFilterDialog by remember { mutableStateOf(false) }
     val density = LocalDensity.current
     val sortMenuMaxHeight = with(density) {
         LocalWindowInfo.current.containerSize.height.toDp() * 0.56f
@@ -390,14 +394,50 @@ fun ComicSearchResultScreen(
             )
         },
         actions = {
+            // 与搜索起始页同一套入口：年月 / 排序可在此调整，不覆盖关键词与排除标签。
+            IconButton(onClick = { showDateFilterDialog = true }) {
+                val dateActive = comicSearchFilterState.year.isNotBlank() ||
+                    comicSearchFilterState.month.isNotBlank()
+                Icon(
+                    imageVector = Icons.Rounded.CalendarMonth,
+                    contentDescription = if (dateActive) "按年月筛选（已启用）" else "按年月筛选",
+                    tint = if (dateActive) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+            }
             IconButton(
                 onClick = { sortMenuState.open() },
                 modifier = Modifier.glassMenuAnchor(sortMenuState),
             ) {
-                Icon(Icons.Rounded.MoreVert, contentDescription = "排序")
+                val orderActive = comicSearchFilterState.order != ComicSearchOrderFilter.NEWEST
+                Icon(
+                    imageVector = Icons.Rounded.FilterList,
+                    contentDescription = "排序筛选",
+                    tint = if (orderActive) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
             }
         },
         overlayContent = {
+            YearMonthSelectDialog(
+                visible = showDateFilterDialog,
+                year = comicSearchFilterState.year,
+                month = comicSearchFilterState.month,
+                modifier = Modifier.widthIn(max = 420.dp),
+                onSelect = { year, month ->
+                    searchViewModel.changeSearchComicDateFilter(year, month)
+                },
+                onClear = {
+                    searchViewModel.changeSearchComicDateFilter("", "")
+                },
+                onDismissRequest = { showDateFilterDialog = false },
+            )
             GlassAnchoredMenu(
                 state = sortMenuState,
                 surfaceId = "search-sort-glass-menu",

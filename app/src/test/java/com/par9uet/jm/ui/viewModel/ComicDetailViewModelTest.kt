@@ -524,7 +524,13 @@ class ComicDetailViewModelTest {
         override suspend fun getNetworkHomePage(): NetWorkResult<List<HomeComicSwiperItem>> = unused()
         override suspend fun getComicPicList(id: Int): NetWorkResult<ComicPageList> = unused()
         override suspend fun downloadImageBytes(comicId: Int, imageIndex: Int): ByteArray? = null
-        override suspend fun getComicList(page: Int, order: ComicSearchOrderFilter, searchContent: String): NetWorkResult<ComicSearchPage> = unused()
+        override suspend fun getComicList(
+            page: Int,
+            order: ComicSearchOrderFilter,
+            searchContent: String,
+            year: String,
+            month: String,
+        ): NetWorkResult<ComicSearchPage> = unused()
         override suspend fun getWeekData(): NetWorkResult<WeekData> = unused()
         override suspend fun getWeekRecommendComicList(page: Int, categoryId: String, typeId: String): NetWorkResult<ComicPage> = unused()
         override suspend fun getCommentList(page: Int, comicId: Int): NetWorkResult<CommentPage> = comments(comicId)

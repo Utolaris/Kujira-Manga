@@ -12,7 +12,7 @@
 > 系统会将其视为**全新应用**，旧版本的设置、收藏与下载数据都不会自动迁移。
 
 - 系统要求：Android 11（API 30）及以上
-- 当前版本：`1.4.8`（versionCode `148`）
+- 当前版本：`1.4.9`（versionCode `149`）
 - 安装包名：release `kujira.manga`，debug `kujira.manga.debug`（与旧包名签名不同，系统会视为新应用，数据不会自动迁移）
 - 调试入口：`./scripts/android`（设备、安装、logcat、插桩测试等，见 [docs/android-cli.md](docs/android-cli.md)）
 - 发布签名：密钥库 `release-key/Kujira-Manga-Key.p12`，密码存于钥匙串条目 `Kujira-Manga-Key`（见 [docs/release-signing.md](docs/release-signing.md)）

@@ -510,13 +510,21 @@ class ComicReadViewModel(
 
     fun triggerToolBar() {
         isShowToolBar.value = !isShowToolBar.value
+        // [GlassDiag] 临时诊断：阅读器 UI 侧的工具栏真值变化，用来对齐下面的玻璃日志。
+        log("ReaderDiag", "点屏幕中间 → 工具栏 ${if (isShowToolBar.value) "弹出" else "收起"}")
     }
 
     fun hideToolBar() {
+        if (isShowToolBar.value) {
+            log("ReaderDiag", "收起工具栏（翻页/面板连锁）")
+        }
         isShowToolBar.value = false
     }
 
     fun showToolBar() {
+        if (!isShowToolBar.value) {
+            log("ReaderDiag", "弹出工具栏（跳页/关闭面板后）")
+        }
         isShowToolBar.value = true
     }
 

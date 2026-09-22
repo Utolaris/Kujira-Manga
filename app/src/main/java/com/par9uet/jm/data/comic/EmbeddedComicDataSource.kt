@@ -9,6 +9,8 @@ import com.par9uet.jm.data.models.ComicSearchOrderFilter
 import com.par9uet.jm.core.BaseRepository
 import com.par9uet.jm.network.AuthenticatedEmbeddedClient
 import com.par9uet.jm.network.EmbeddedClientManager
+import com.par9uet.jm.network.EmbeddedSearchDate
+import com.par9uet.jm.network.EmbeddedSearchDateScope
 import com.par9uet.jm.retrofit.model.CollectComicResponse
 import com.par9uet.jm.retrofit.model.ComicDetailResponse
 import com.par9uet.jm.retrofit.model.ComicListResponse
@@ -51,6 +53,8 @@ interface ComicEmbeddedDataSource {
         page: Int,
         order: ComicSearchOrderFilter,
         searchContent: String,
+        year: String = "",
+        month: String = "",
     ): NetWorkResult<ComicListResponse>
 
     suspend fun getWeekData(): NetWorkResult<WeekResponse>
@@ -241,6 +245,8 @@ class EmbeddedComicDataSource(
         page: Int,
         order: ComicSearchOrderFilter,
         searchContent: String,
+        year: String,
+        month: String,
     ): NetWorkResult<ComicListResponse> = safeEmbeddedCall("内置 API 搜索漫画失败") {
         withEmbeddedClient { client ->
             val query = SearchQuery.Builder()
@@ -248,7 +254,10 @@ class EmbeddedComicDataSource(
                 .page(page)
                 .orderBy(order.toEmbeddedOrderBy())
                 .build()
-            client.search(query).toComicListResponse(searchContent)
+            // SDK 的 SearchQuery 没有 y/m；在 search() 调用期间注入，由拦截器补到 /search 上。
+            EmbeddedSearchDateScope.withDate(EmbeddedSearchDate(year = year, month = month)) {
+                client.search(query)
+            }.toComicListResponse(searchContent)
         }
     }
 
@@ -425,7 +434,7 @@ class EmbeddedComicDataSource(
                         )
                         return@withContext null
                     }
-                    val body = response.body ?: return@withContext null
+                    val body = response.body
                     val declared = body.contentLength()
                     if (declared > FALLBACK_IMAGE_MAX_BYTES) {
                         logError(
@@ -473,11 +482,10 @@ class EmbeddedComicDataSource(
         name: String,
         operation: String,
         comicId: String = "",
-    ): NetWorkResult<Unit> = safeEmbeddedCall("内置 API $operation") {
+    ): NetWorkResult<Unit> = safeEmbeddedCall<Unit>("内置 API $operation") {
         authenticatedEmbeddedClient.withClient { client ->
             client.manageFavoriteFolder(type, folderId, name, comicId)
         }
-        Unit
     }
 
     private fun ComicSearchOrderFilter.toEmbeddedOrderBy(): OrderBy = when (this) {

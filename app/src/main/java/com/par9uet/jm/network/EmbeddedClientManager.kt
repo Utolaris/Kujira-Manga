@@ -86,6 +86,9 @@ class EmbeddedClientManager(
 
     @Volatile
     private var sharedClient: SharedClient? = null
+    /** Last trusted API host actually used by the active session, not an independent race. */
+    @Volatile
+    private var activeApiHost: String? = null
     private val sharedSessionGeneration = AtomicLong(0L)
 
     /** `/login` 尝试的滑动窗口时间戳，仅供 [recordLoginAttempt] 的密度观测，不参与业务判断。 */
@@ -128,23 +131,31 @@ class EmbeddedClientManager(
      * （含 AVS）。候选客户端不读写 CookieStorage、不影响共享客户端，验证完成后即关闭；
      * 是否提升为活动会话由 UserManager 按 generation 决定。
      *
-     * @param origin 本次登录的触发来源。**只进日志与计数**：服务端对高频 `/login` 的软拒绝
-     *   与「凭据真的错误」报文完全一致，只能靠频率 + 来源区分，见 [recordLoginAttempt]。
+     * @param origin 只用于日志与计数；拒绝原因需结合请求密度和错误上下文判断。
      */
     fun verifyCandidate(
         username: String,
         password: String,
         origin: AuthAttemptOrigin = AuthAttemptOrigin.UNSPECIFIED,
     ): EmbeddedLoginResult {
+        val loginHost = activeApiHost
         val loginBusinessCode = ThreadLocal<Int?>()
         loginBusinessCode.set(null)
         val candidate = createClient(
             persistCookies = false,
             loginBusinessCode = loginBusinessCode,
             clientSessionGeneration = null,
+            loginHost = loginHost,
         )
         val attempt = recordLoginAttempt(origin)
         return try {
+            // Preserve backend affinity without sharing the active authentication token.
+            if (loginHost != null) {
+                val loginUrl = okhttp3.HttpUrl.Builder().scheme("https").host(loginHost).build()
+                candidate.setCookies(cookieStorage.getOrNull().orEmpty().filter {
+                    it.name == "__cflb" && it.expiresAt > System.currentTimeMillis() && it.matches(loginUrl)
+                })
+            }
             val userInfo = candidate.login(username, password)
             val sessionCookies = candidate.getCookies()
             val cookieNames = sessionCookies.map { it.name }
@@ -174,17 +185,7 @@ class EmbeddedClientManager(
         }
     }
 
-    /**
-     * 记录一次 `/login` 尝试，返回**滑动窗口内的尝试次数**。
-     *
-     * 存在的理由：三条自动路径（冷启动探活恢复 / 请求 401 恢复 / 收藏夹同步恢复）都可能在
-     * 401 后各发一次登录，密度远高于官方 —— 官方只有「JWT 客户端有效期到点」这一条路径，
-     * 1 小时一次，且服务器 401 被刻意排除在重试之外。
-     * 服务端对高频登录的软拒绝报文与「真的输错密码」完全一样
-     * （`{"code":401,...,"errorMsg":"無效的用戶名和\/或密碼！"}`），
-     * 所以**登录频率是唯一能把两者分开的客观量**。
-     * 本方法只观测、不改变任何行为。
-     */
+    /** Observe login density without inferring a server-side risk-control policy. */
     private fun recordLoginAttempt(origin: AuthAttemptOrigin): Int {
         val now = System.currentTimeMillis()
         val count = synchronized(loginAttemptTimestamps) {
@@ -235,39 +236,37 @@ class EmbeddedClientManager(
             return false
         }
         val persistenceGeneration = sharedSessionGeneration.get()
-        val written = synchronized(this) {
-            if (isCurrentSession(persistenceGeneration)) {
-                cookieStorage.set(cookies)
-            } else {
-                logError(
-                    "Login",
-                    "activateCandidateSession: persistence generation stale ($persistenceGeneration), skip storage",
-                )
+        return synchronized(this) {
+            runCatching {
+                if (!isCurrentSession(persistenceGeneration)) return false
+                val previous = cookieStorage.getOrNull() ?: return false
+                val shared = getSharedClient()
+                if (!isCurrentSession(shared.clientSessionGeneration)) {
+                    logError(
+                        "Login",
+                        "activateCandidateSession: shared client generation stale " +
+                            "(${shared.clientSessionGeneration} vs $persistenceGeneration)",
+                    )
+                    return false
+                }
+                try {
+                    shared.client.setCookies(cookies)
+                    if (!cookieStorage.set(cookies)) {
+                        shared.client.setCookies(previous)
+                        logError("Login", "activateCandidateSession: storage failed; retained previous cookies")
+                        return false
+                    }
+                } catch (error: Exception) {
+                    shared.client.setCookies(previous)
+                    throw error
+                }
+                // 不写 cacheUsername：见方法注释（FormBody null / SDK 自动重登）。
+                log("Login", "activateCandidateSession: shared client cookies applied ok")
+                true
+            }.getOrElse { error ->
+                logError("Login", "activateCandidateSession: apply cookies failed: ${error.message}")
                 false
             }
-        }
-        if (!written) {
-            logError("Login", "activateCandidateSession: CookieStorage write failed; refuse promote")
-            return false
-        }
-        // 强制确保共享客户端存在并装上 cookie：登录成功后不得只落盘、内存客户端仍空会话。
-        return runCatching {
-            val shared = getSharedClient()
-            if (!isCurrentSession(shared.clientSessionGeneration)) {
-                logError(
-                    "Login",
-                    "activateCandidateSession: shared client generation stale " +
-                        "(${shared.clientSessionGeneration} vs $persistenceGeneration)",
-                )
-                return false
-            }
-            shared.client.setCookies(cookies)
-            // 不写 cacheUsername：见方法注释（FormBody null / SDK 自动重登）。
-            log("Login", "activateCandidateSession: shared client cookies applied ok")
-            true
-        }.getOrElse { error ->
-            logError("Login", "activateCandidateSession: apply cookies failed: ${error.message}")
-            false
         }
     }
 
@@ -278,6 +277,7 @@ class EmbeddedClientManager(
     fun clearSession() {
         val staleClient = synchronized(this) {
             sharedSessionGeneration.incrementAndGet()
+            activeApiHost = null
             sharedClient?.also { sharedClient = null }
         }
         staleClient?.client?.setCookies(emptyList())
@@ -311,6 +311,7 @@ class EmbeddedClientManager(
         persistCookies: Boolean,
         loginBusinessCode: ThreadLocal<Int?>,
         clientSessionGeneration: Long?,
+        loginHost: String? = null,
     ): JmApiClient {
         val config = JmConfiguration.Builder()
             .clientType(ClientType.API)
@@ -321,8 +322,9 @@ class EmbeddedClientManager(
             // domainManager.getBestDomain() 重选域名（= 失败计数最少的那个）并 replaceHost。
             // 后端白天正常时无所谓；晚上后端一慢，6 次尝试 × 20s 就把单个请求放大到最多约 2 分钟，
             // 而收藏同步是成百个顺序请求 —— 总时长直接以分钟计。
-            // 收到 1：保留一次换域名重试的机会，把最坏情况砍半。
-            .retryTimes(1)
+            // 业务请求至多重试一次；凭据请求禁止 SDK 自动重试。
+            .retryTimes(if (persistCookies) 1 else 0)
+            .apply { if (loginHost != null) apiDomains(listOf(loginHost)) }
             .imageTimeout(Duration.ofSeconds(60))
             .downloadThreadPoolSize(2)
             .domainProbeTimeoutMs(3000)
@@ -330,7 +332,7 @@ class EmbeddedClientManager(
         val context = OkHttpBuilder.build(config)
         val domainManager = context.domainManager
         // 只在持久化的共享客户端上启用「冷启动竞速一次后固定域名」。
-        // 候选客户端（登录验证）是短命的，等不到初始化完成，保持 SDK 原行为。
+        // 登录候选通过 withEmbeddedLoginHost 沿用活动会话的实际请求域名。
         val domainPinning = if (persistCookies) {
             EmbeddedDomainPinning(
                 domainManager = domainManager,
@@ -350,7 +352,9 @@ class EmbeddedClientManager(
                 // 2. SDK 把 User-Agent 硬编码成 Android 9 / Chrome 91（全设备同一串），
                 //    这里换成设备真实的 WebView UA。
                 val request = chain.request()
+                    .withEmbeddedLoginHost(loginHost, domainManager.domains)
                     .withEmbeddedLang(domainManager.domains, languageProvider.language())
+                    .withEmbeddedSearchDate(domainManager.domains)
                     .withEmbeddedUserAgent(userAgentProvider.userAgent())
                 if (domainPinning == null) return@addInterceptor chain.proceed(request)
                 // 每次尝试都记一次结果，用于判断「被固定的域名是不是真的崩了」。
@@ -376,6 +380,11 @@ class EmbeddedClientManager(
                 // Reevaluate every redirect after BridgeInterceptor. The persisted active
                 // snapshot is authoritative, including on a fresh SDK client with no loginHost.
                 val original = chain.request()
+                if (persistCookies && original.url.isHttps && original.url.host in domainManager.domains) {
+                    synchronized(this) {
+                        if (isCurrentSession(clientSessionGeneration)) activeApiHost = original.url.host
+                    }
+                }
                 var sentCookieNames: List<String> = emptyList()
                 val request = if (persistCookies) {
                     // getOrNull()==null（Keystore 暂不可读）时不注入也不 merge 写回，
@@ -426,7 +435,12 @@ class EmbeddedClientManager(
                         }
                     }
                 }
-                response
+                // BridgeInterceptor saves headers into the candidate jar after this returns.
+                // Only SDK login's decoded JSON `s` may create AVS, including during redirects
+                // and background domain probes; otherwise parent-domain AVS can win selection.
+                if (persistCookies) response else response.newBuilder()
+                    .headers(response.headers.withoutEmbeddedSessionCookie())
+                    .build()
             }
             .build()
         val jmClient = JmApiClient(config, clientWithCookieInjection, context.cookieManager, domainManager)
@@ -536,14 +550,7 @@ class EmbeddedClientManager(
         private const val DOMAIN_PROBE_TIMEOUT_SECONDS = 3L
         private const val DOMAIN_PROBE_CALL_TIMEOUT_SECONDS = 4L
 
-        /**
-         * `/login` 密度观测窗口与告警阈值。
-         *
-         * 恢复冷却是指数退避（5→10→20→40→80→120s 封顶），也就是说**在最坏情况下
-         * 5 分钟内理论上还能发 5 次登录**；而官方 app 是 1 小时 1 次。
-         * 阈值取 3 是为了在后端拥塞时段（401 成批出现）能提前看见趋势，
-         * 而不是等到被服务端软拒绝、用户被登出之后。
-         */
+        /** Diagnostic window only; recovery uses its own 30s–300s cooldown. */
         private const val LOGIN_ATTEMPT_WINDOW_MS = 300_000L
         private const val LOGIN_ATTEMPT_BURST_THRESHOLD = 3
     }

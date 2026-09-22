@@ -187,6 +187,8 @@ class ExtractCodeViewModelTest {
             page: Int,
             order: ComicSearchOrderFilter,
             searchContent: String,
+            year: String,
+            month: String,
         ): NetWorkResult<ComicSearchPage> = unused()
 
         override suspend fun getWeekData(): NetWorkResult<WeekData> = unused()

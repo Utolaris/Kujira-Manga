@@ -76,16 +76,43 @@ class SearchComicPagingSourceTest {
         assertEquals("-a", repository.lastSearchContent)
     }
 
+    @Test
+    fun dateFilterIsForwardedWithoutTouchingKeyword() = runBlocking {
+        val repository = FakeComicRepository()
+        val source = SearchComicPagingSource(
+            comicRepository = repository,
+            filter = SearchComicFilter(
+                searchContent = "artist",
+                excludedTags = listOf("a"),
+                year = "2024",
+                month = "3",
+            )
+        )
+
+        source.load(PagingSource.LoadParams.Refresh(null, 20, false))
+
+        // 年月只作为独立参数下传；关键词与排除项保持原拼装。
+        assertEquals("artist -a", repository.lastSearchContent)
+        assertEquals("2024", repository.lastYear)
+        assertEquals("3", repository.lastMonth)
+    }
+
     private class FakeComicRepository : ComicRepository {
         var lastSearchContent: String? = null
+        var lastYear: String? = null
+        var lastMonth: String? = null
         var detailCallCount = 0
 
         override suspend fun getComicList(
             page: Int,
             order: ComicSearchOrderFilter,
-            searchContent: String
+            searchContent: String,
+            year: String,
+            month: String,
         ): NetWorkResult<ComicSearchPage> {
             lastSearchContent = searchContent
+            lastYear = year
+            lastMonth = month
             return NetWorkResult.Success(
                 ComicSearchPage(
                     items = listOf(

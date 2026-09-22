@@ -68,7 +68,9 @@ import androidx.core.view.WindowInsetsControllerCompat
 import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.data.models.ComicChapter
 import com.par9uet.jm.session.SessionReadiness
+import com.par9uet.jm.utils.log
 import com.par9uet.jm.ui.glass.GlassCaptureHost
+import com.par9uet.jm.ui.glass.GlassBackdropMode
 import com.par9uet.jm.ui.glass.GlassModal
 import com.par9uet.jm.ui.glass.GlassSurface
 import com.par9uet.jm.ui.glass.GlassSurfaceStyle
@@ -171,6 +173,12 @@ fun ComicReadScreen(
         }
     }
 
+    // [GlassDiag] 临时诊断：给这次实测划出边界，并记录阅读模式。
+    DisposableEffect(comicId, readMode) {
+        log("ReaderDiag", "===== 进入阅读器 comicId=$comicId 阅读模式=$readMode 本地=$localOnly =====")
+        onDispose { log("ReaderDiag", "===== 离开阅读器 comicId=$comicId =====") }
+    }
+
     // Metadata and pages arrive independently. Restore only once both the real history key and
     // page count exist; a callback captured before metadata loaded otherwise always restored 0.
     LaunchedEffect(comicId, size, readHistoryComicId, loading) {
@@ -265,8 +273,11 @@ fun ComicReadScreen(
 
     // The reader is a full-screen NavHost destination: keep its first frame opaque so the
     // sliding navigation spring never shows the previous screen through the loading state.
+    // 阅读器内页启用真实高斯模糊（强度见 GlassMaterialStyle.ReaderBlurRadius，当前与全局一致），
+    // 不再走 Frosted 色块。
     GlassCaptureHost(
         modifier = Modifier.fillMaxSize(),
+        backdropMode = GlassBackdropMode.Blur,
         sourceContent = {
             Surface(
                 modifier = Modifier.fillMaxSize(),
@@ -398,9 +409,8 @@ fun ComicReadScreen(
                     }
                 }
             }
-            // 面板必须留在 GlassCaptureHost 的 overlayContent 内：GlassSurface 只有在宿主提供的
-            // registry 作用域里才会注册成 native 玻璃背板，放到宿主外面会静默退化成纯色面板
-            // （GlassSurface 的 registry == null 分支），看起来就和全站的高斯模糊风格不一致。
+            // 阅读器统一使用渐变磨砂，避免对漫画大图重复捕获并执行 RenderEffect。
+            // 面板仍须留在 overlayContent 内，共享宿主的材质、定位和主题更新。
             when (activeDialog) {
                 ReadPanelDialog.Cache -> {
                     val currentComic = comic
@@ -472,6 +482,7 @@ private fun ChapterCachePickerDialog(
         onDismissRequest = onDismiss,
         surfaceId = "chapter-cache-picker-glass",
         modifier = Modifier.widthIn(max = 420.dp),
+        style = GlassSurfaceStyle.reader(cornerRadius = 24.dp),
     ) {
         Column(
             modifier = Modifier
@@ -570,7 +581,7 @@ private fun ReadSideBar(
     GlassSurface(
         surfaceId = "reader-left-actions",
         modifier = Modifier.width(82.dp),
-        style = GlassSurfaceStyle(cornerRadius = 28.dp),
+        style = GlassSurfaceStyle.reader(cornerRadius = 28.dp),
         surfaceAlpha = surfaceAlpha,
     ) {
         Column(
@@ -663,6 +674,7 @@ private fun ChapterPickerDialog(
         onDismissRequest = onDismiss,
         surfaceId = "chapter-picker-glass",
         modifier = Modifier.widthIn(max = 420.dp),
+        style = GlassSurfaceStyle.reader(cornerRadius = 24.dp),
     ) {
         Column(
             modifier = Modifier

@@ -22,7 +22,7 @@
 | L2 Coordinator | 集中保存流程顺序、分支和跨边界协调 | `ui/viewModel`（**18** 个，加上 `favorites/presentation/FavoritesViewModel` 共 **19** 个：含 DohSetting / AppLockSetting / Onboarding / AppUpdate 等）、`reader/ReaderImagePipeline`、`reader/coordinator`、`download/coordinator`（含 `DownloadManager`）、`cache/migration` 的协调器与通知适配、`favorites/sync`、`session`（`UserManager`、`UserRepository`、`AuthenticatedRequestRecovery`、`SessionReadinessHolder`）、`startup/PostStartupCoordinator` |
 | L3 Molecule | 组合多个原子能力，完成一个完整业务动作 | `reader/molecule`、`download/molecule`（含 `DownloadLibraryQueries`）、`cache/migration` 的操作端口与实现、`favorites/usecase`、`backup/BackupRestoreOperations`、`download/export/DownloadExportOperations`、`repository/impl`（组合网络服务、内置客户端与领域映射） |
 | L4 Atom | 每个原子只负责一个底层契约 | `database`、`storage`、`retrofit`、`data`、`network`（含内置 API 客户端三件套）、`image`、`coil`、`cache/atom`、`cache/CacheBudget`、`reader/atom`、`download/atom`、`download/export/PdfExport`、`favorites/data`（含 `FavoriteStore`）、`update`（含 `AppUpdateDownloadManager` 下载适配）、`contentfilter`、`launcher`、`utils` |
-| Shared Contract | 不含行为的稳定 DTO，可被各层依赖 | `core/model`（`CommonUIState`、`User`、`RemoteSetting`、`SignInData`）、`core/network`（`NetWorkResult` / `ResponseWrapper` / `AuthFailure` / `AuthenticatedSessionRequiredException` / `AuthAttemptOrigin` / `CredentialRejection` / `FormBodyNullParameter`）、`data/models`（`Comic` / `Comment` / `WeekData` / `ComicPage` / `CommentPage` / `ComicSearchPage` / `ComicPageList` / `ActionResult` / `HomeComicSwiperItem`；零出度）、`favorites/model/FavoritesModels`、`reader/ReaderImageModels`、`download/model/DownloadLibraryModels` |
+| Shared Contract | 不含行为的稳定 DTO，可被各层依赖 | `core/model`（`CommonUIState`、`User`、`RemoteSetting`、`SignInData`）、`core/network`（`NetWorkResult` / `ResponseWrapper` / `AuthFailure` / `AuthenticatedSessionRequiredException` / `AuthAttemptOrigin` / `FormBodyNullParameter`）、`data/models`（`Comic` / `Comment` / `WeekData` / `ComicPage` / `CommentPage` / `ComicSearchPage` / `ComicPageList` / `ActionResult` / `HomeComicSwiperItem`；零出度）、`favorites/model/FavoritesModels`、`reader/ReaderImageModels`、`download/model/DownloadLibraryModels` |
 
 依赖方向为 `L1 -> L2 -> L3 -> L4`。L3 之间、L4 之间不得为了方便横向调用；
 需要组合时提升到 L3，需要决定顺序时提升到 L2。`di` 是组合根，可以引用所有层，
@@ -91,7 +91,7 @@ update/ backup/ contentfilter/ launcher/ startup/   扁平包，按类判断层�
 update/AppUpdateDownloadManager  已从 store 迁入 update（L2 下载协调 + 状态契约）
 core/                        共享契约与基础类型：core/model（User / RemoteSetting / SignInData /
                              CommonUIState）、core/network（NetWorkResult / ResponseWrapper /
-                             AuthAttemptOrigin / CredentialRejection / FormBodyNullParameter）、
+                             AuthAttemptOrigin / FormBodyNullParameter）、
                              core/BaseRepository、core/ToastManager
 session/                     L2 会话协调（UserManager / UserRepository /
                              AuthenticatedRequestRecovery / SessionReadinessHolder）
@@ -196,6 +196,10 @@ data/ repository/ retrofit/  历史命名保留；本轮列出的历史依赖环
   （如 `ComicDetailScreen`）弹窗必须组合在 topBar **之后**。
   例外：收藏筛选 `FavoritesModalHost.FilterDialog` 刻意用 Material `ModalBottomSheet`
   ——密排 chip 计数时高斯模糊会拉低可读性；Welcome 引导无 host，Glass 走纯色 fallback。
+  阅读器的 host 显式使用 `GlassBackdropMode.Frosted`：工具栏和章节/缓存面板统一采用
+  半透明渐变磨砂、圆角及细边框，跳过共享底图录制与 `RenderEffect`，避免漫画大图下
+  模糊失败造成的外观切换；这是一种近似玻璃材质，不对背后的漫画执行真实高斯模糊。
+  其他页面默认保持 `GlassBackdropMode.Blur`。
 - 收藏分页适配器 `favorites/presentation/CollectComicPagingSource` 归属收藏功能，
   收藏功能不再反向依赖通用 UI 包。
 - PDF 导出归属 `download/export`，通用工具包不再反向依赖下载缓存。
@@ -457,11 +461,11 @@ UI 使用 `download/model`（`DownloadItem` / `DownloadItemGroup` / `DownloadIte
 用 `python3 scripts/check-coupling.py <模块>` 可复现下列数字。「违规」指跨过 L2 直读
 L4 设施，或反向依赖上层；`data.models` 是共享契约，不算违规。
 
-| 模块 | 状态 | 违规面（2026-09-13 审计口径；本轮复核后） |
+| 模块 | 状态 | 违规面（2026-09-13 首次审计；2026-09-22 复测修正） |
 | --- | --- | --- |
-| `ui/components` | **已修** | 原 11/24 文件；细分口径 Ce 17→11，已无 L3/L4 领域依赖 |
-| `ui/viewModel` | **已修** | 原 10/14 文件；`retrofit/model` 8 处清零，无 `favorites/data`、无 `database` |
-| `ui/screens` | **领域直连已清** | `download/coordinator` 2、`repository` 1 已消除；仍直连 `storage` 23、`session` 15、`backup` 7、`favorites/presentation` 6、`network` 7、`update` 3、`cache` 1、`contentfilter` 9（搜索语法/标签排除，契约向）、`reader` 4（`ComicPicImage` 等阅读页组件）、`download` 4（`download/model` / `PdfExportMode` 契约）。后四类多为契约/偏好，见下文 |
+| `ui/components` | **已修** | 原 11/24 文件；细分口径 Ce 17→11。2026-09-22 复测（files=22 / Ce=10）：出边只有 `ui/*` 同层设施、`coil`、`image`、`utils`、`BuildConfig` 与 `data.models` 6 处共享契约，**无 L3/L4 领域依赖** |
+| `ui/viewModel` | **已修** | 原 10/14 文件；`retrofit/model` 8 处清零，无 `favorites/data`、无 `database`。2026-09-22 复测（files=18 / Ce=27）：`storage` 31 / `data` 17（**全为 `data.models` 契约**）/ `download` 15（model 5 + coordinator 5 + export 3 + molecule 2）/ `backup` 11 / `update` 9 / `network` 8 / `cache` 7（含 migration 2 + atom 1）/ `repository` 6 / `reader` 6 / `session` 6 —— 均为 L2 合法取数或既有偏好惯例，不是违规 |
+| `ui/screens` | **领域直连已清** | `download/coordinator` 2、`repository` 1 已消除；`storage` / `network` / `cache` 复测**已清零**（09-13 口径曾是 23 / 7 / 1，随 `getKoin` 收口下沉 `ui/viewModel`）。仍直连 `contentfilter` 9（搜索语法/标签排除，契约向）、`backup` 7、`session` 7（全部为 `SessionReadiness` 枚举，无 `UserManager`）、`favorites/presentation` 4、`download` 4（`download/model` / `PdfExportMode` 契约）、`update` 3、`reader` 2（`readerPageKey` / `ReaderImageException` 契约）。后几类多为契约/偏好，见下文 |
 
 已落地的三步：
 
@@ -537,19 +541,25 @@ L4 设施，或反向依赖上层；`data.models` 是共享契约，不算违规
    且先发布 `resolverKey` 再构造 TLS 客户端；读者必须取同一把锁，否则会拿到新 key
    配旧（可能为 `null`）的 resolver。`init()` 复用首屏已建 resolver（`ensureResolver()`），
    不要用 `rebuildResolver()`——那会关掉正在恢复阅读器的连接。
-10. **登录态因 401 登出必须先确认**（`session/UserManager.refreshRejectedSession` +
-    `core/network/CredentialRejection`）：服务端把「真的凭据错误」与「对高频 `/login` 的
-    软拒绝 / 风控」压在同一个 401 里（报文同为 `無效的用戶名和\/或密碼！`），所以
-    `AuthFailure.InvalidCredentials` **不等于**凭据失效。只有「明确文案命中」且连续
-    `CREDENTIAL_REJECTION_CONFIRMATIONS`（3）次才 `clearIdentityWhileLocked`；未确认时保留身份，
-    把错误降级成 `kind = Network` + `AuthFailure.TemporaryFailure`，提示「稍后重试」。
-    `AuthAttemptOrigin` 只进日志与登录密度计数（`EmbeddedClientManager.recordLoginAttempt`）；
-    官方 app 的对应设计是**完全不因 401 改登录态**（JWT 客户端 1 小时到期才静默重登）。
+10. **自动恢复失败不得清除登录身份**（`session/UserManager`）：连续 401 或密码错误文案
+    不能排除持续的后端异常。自动恢复失败保留账号与 Cookie，返回 `Network` +
+    `TemporaryFailure`，认证请求退避 30、60、120、240 秒，封顶 5 分钟；冷却期内
+    收藏、历史、签到等不再发请求，公开接口不受影响。手动登录和退出清除冷却状态。
+    重登成功结果复用 60 秒；期间业务再次拒绝会话也进入退避，只有业务请求成功才重置
+    失败次数。HTTP 401 或成功 HTTP 响应中明确的业务码 401 才触发恢复，禁止凭错误文案
+    或 FormBody 空参数异常判定失效；收藏错误映射须保留 `SessionRecoveryException`
+    的分类，不能因嵌套的旧 401 再升级为“请登录”。冷启动只读探活独立于认证等待门，
+    避免等待自身负责产生的就绪状态。独立登录客户端沿用活动客户端实际请求的可信域名，
+    仅继承该域的 `__cflb`，不继承 AVS；凭据请求禁用 SDK 重试。
+    `AuthAttemptOrigin` 只用于日志与密度观测。官方样本的通用请求层不因 401 自动重登，
+    另有一小时的本地认证有效期；这不能证明服务端 Cookie 的过期时间或风控规则。
 11. **会话令牌单写者**（`network/EmbeddedSessionCookies`）：`AVS` 只允许由登录流程
     （`EmbeddedClientManager.activateCandidateSession`）写入持久化快照。响应侧合并必须走
     `mergeEmbeddedResponseCookies`（剥离 AVS），因为请求侧 `embeddedCookiesForRequest`
     在多个同名 AVS 之间按列表顺序取第一个，被公开响应污染过一次就会持续 401。
-    官方实现同样只发登录响应里的 `s`，从不合并 CookieJar。
+    此规则是本客户端的会话写入约束，不依赖普通响应更新 AVS。
+    登录候选客户端也在网络响应返回 CookieJar 前剥离 `Set-Cookie: AVS`，只保留 SDK
+    从登录 JSON `s` 写入的令牌，避免父域响应 Cookie 与登录令牌并存、请求选错。
 
 ## 构建与密钥（2026-09-12 核对）
 

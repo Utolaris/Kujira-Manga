@@ -172,7 +172,7 @@ class AppUpdateDownloadManager(
                 if (!response.isSuccessful) {
                     error("下载失败：HTTP ${response.code}")
                 }
-                val body = response.body ?: error("下载失败：响应体为空")
+                val body = response.body
                 val isPartial = response.code == 206
                 if (!isPartial && existing > 0L) {
                     // 服务器不支持 Range，从头下载。

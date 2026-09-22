@@ -49,21 +49,6 @@ internal fun decodeReaderRawFile(
     return reorderAndScaleFallback(bitmap, bounds, page, profile)
 }
 
-internal fun decodeReaderRawBytes(
-    bytes: ByteArray,
-    page: ReaderPage,
-    profile: ReaderDecodeProfile,
-): DecodedReaderImage {
-    require(bytes.isNotEmpty() && bytes.size.toLong() <= READER_MAX_SOURCE_BYTES) { "图片源数据无效" }
-    val bounds = readBounds(bytes)
-    val bitmap = try {
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, fullSizeOptions(profile)) ?: error("图片解码为空")
-    } catch (error: OutOfMemoryError) {
-        decodeSampledBytesForSeamRecovery(bytes, bounds, profile)
-    }
-    return reorderAndScaleFallback(bitmap, bounds, page, profile)
-}
-
 /** OOM fallback: a sampled decode still allows 1:1 reorder without per-segment filtering. */
 private fun decodeSampledForSeamRecovery(path: String, bounds: Pair<Int, Int>, profile: ReaderDecodeProfile): Bitmap {
     System.gc()
@@ -74,22 +59,6 @@ private fun decodeSampledForSeamRecovery(path: String, bounds: Pair<Int, Int>, p
         maxWidth = profile.maxWidth,
     ).coerceAtLeast(2)
     return BitmapFactory.decodeFile(path, decodeOptions(recoverySample, profile)) ?: error("图片解码为空")
-}
-
-private fun decodeSampledBytesForSeamRecovery(
-    bytes: ByteArray,
-    bounds: Pair<Int, Int>,
-    profile: ReaderDecodeProfile,
-): Bitmap {
-    System.gc()
-    val recoverySample = readerRegionSampleSize(
-        width = bounds.first,
-        height = bounds.second,
-        maxPixels = MAX_SOURCE_PIXELS / 4,
-        maxWidth = profile.maxWidth,
-    ).coerceAtLeast(2)
-    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, decodeOptions(recoverySample, profile))
-        ?: error("图片解码为空")
 }
 
 internal fun decodeReaderDecodedFile(
@@ -104,50 +73,6 @@ internal fun decodeReaderDecodedFile(
             ?: return null
         DecodedReaderImage(bitmap, bounds.first.toFloat() / bounds.second.toFloat())
     }.getOrNull()
-}
-
-private fun decodeBitmapFactory(
-    file: File,
-    bounds: Pair<Int, Int>,
-    page: ReaderPage,
-    profile: ReaderDecodeProfile,
-): DecodedReaderImage {
-    val bitmap = BitmapFactory.decodeFile(
-        file.absolutePath,
-        decodeOptions(
-            readerRegionSampleSize(
-                bounds.first,
-                bounds.second,
-                profile.maxPixels,
-                maxWidth = profile.maxWidth,
-            ),
-            profile,
-        ),
-    ) ?: error("图片解码为空")
-    return reorderAndScaleFallback(bitmap, bounds, page, profile)
-}
-
-private fun decodeBitmapFactory(
-    bytes: ByteArray,
-    bounds: Pair<Int, Int>,
-    page: ReaderPage,
-    profile: ReaderDecodeProfile,
-): DecodedReaderImage {
-    val bitmap = BitmapFactory.decodeByteArray(
-        bytes,
-        0,
-        bytes.size,
-        decodeOptions(
-            readerRegionSampleSize(
-                bounds.first,
-                bounds.second,
-                profile.maxPixels,
-                maxWidth = profile.maxWidth,
-            ),
-            profile,
-        ),
-    ) ?: error("图片解码为空")
-    return reorderAndScaleFallback(bitmap, bounds, page, profile)
 }
 
 private fun reorderAndScaleFallback(
@@ -222,20 +147,11 @@ private fun readBounds(file: File): Pair<Int, Int> {
     return validateBounds(options.outWidth, options.outHeight)
 }
 
-private fun readBounds(bytes: ByteArray): Pair<Int, Int> {
-    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
-    return validateBounds(options.outWidth, options.outHeight)
-}
-
 private fun validateBounds(width: Int, height: Int): Pair<Int, Int> {
     require(width > 0 && height > 0) { "图片尺寸无效" }
     require(width.toLong() * height.toLong() <= MAX_SOURCE_PIXELS) { "图片尺寸过大" }
     return width to height
 }
-
-internal fun scaledBoundary(value: Int, sourceExtent: Int, targetExtent: Int): Int =
-    (value.toLong() * targetExtent / sourceExtent.toLong()).toInt()
 
 private fun scaleDownSize(
     sourceWidth: Int,

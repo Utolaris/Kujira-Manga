@@ -74,7 +74,7 @@ fun ToolsBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .widthIn(max = 560.dp),
-            style = GlassSurfaceStyle(cornerRadius = 28.dp),
+            style = GlassSurfaceStyle.reader(cornerRadius = 28.dp),
             surfaceAlpha = surfaceAlpha,
         ) {
             Column(

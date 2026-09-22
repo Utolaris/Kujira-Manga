@@ -18,6 +18,7 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.unit.IntSize
+import com.par9uet.jm.utils.log
 
 internal data class GlassSurfaceBounds(
     val left: Float,
@@ -65,6 +66,10 @@ fun GlassSurface(
     val currentScale = rememberUpdatedState(surfaceScale.coerceAtLeast(0.1f))
 
     DisposableEffect(registry, surfaceId) {
+        // [GlassDiag] 临时诊断：registry 为空时面板会退化成纯色底板（看起来就是"没有高斯模糊"）。
+        if (registry == null) {
+            log("GlassDiag", "[surface:$surfaceId] registry=null → 面板退化为纯色（无模糊）")
+        }
         onDispose {
             registry?.removeSurface(surfaceId)
         }

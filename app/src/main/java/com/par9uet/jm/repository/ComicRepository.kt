@@ -35,10 +35,16 @@ interface ComicRepository {
 
     suspend fun downloadImageBytes(comicId: Int, imageIndex: Int): ByteArray?
 
+    /**
+     * @param year 上架年份筛选（`y`），空串 = 不限
+     * @param month 上架月份筛选（`m`），空串 = 不限；与 [year] 可独立或组合
+     */
     suspend fun getComicList(
         page: Int,
         order: ComicSearchOrderFilter,
         searchContent: String,
+        year: String = "",
+        month: String = "",
     ): NetWorkResult<ComicSearchPage>
 
     suspend fun getWeekData(): NetWorkResult<WeekData>
