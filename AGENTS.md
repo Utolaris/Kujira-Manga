@@ -51,7 +51,7 @@
 
 - **日常开发在 `canary`**；推送前跑相关单测。
 - **发版走 `dev`**：发版时将 `canary` 同步到 `dev` 并推送；`dev` 独有 GitHub Actions CI
-  （官方 Actions **v6**）构建签名 Release APK 并生成 draft Release。完整流程见
+  （官方/社区 Actions 钉**最新 major**，清单见 `docs/release-flow.md`）构建签名 Release APK 并生成 draft Release。完整流程见
   `docs/release-flow.md`。
 - 发版前：更新 `version.properties` 与 `CHANGELOG.md`；安全/架构变更后同步核对 `ARCHITECTURE.md`。
 - 临时分支合入 `canary` 后删除；CI/密钥/流程变更先改文档与 workflow。

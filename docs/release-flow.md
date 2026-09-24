@@ -10,7 +10,7 @@
 | 临时分支 | `feat/*`、`fix/*`、`chore/*` 等；合入 `canary` 后删除，不要长期留远端。 |
 
 ```text
-canary  ──(发版时 ff/merge)──►  dev  ──push──►  GitHub Actions (v6)  ──►  Release APK
+canary  ──(发版时 ff/merge)──►  dev  ──push──►  GitHub Actions（最新 major）  ──►  Release APK
    ▲                                 │
    └── 日常开发 / PR 合入            └── draft Release，人工/AI 发布
 ```
@@ -33,7 +33,7 @@ canary  ──(发版时 ff/merge)──►  dev  ──push──►  GitHub Ac
    git push origin canary dev
    ```
 4. **CI 构建**：`dev` 推送后触发 `.github/workflows/dev-release.yml`  
-   - 官方 GitHub Actions 使用 **v6**（`actions/checkout@v6`、`actions/setup-java@v6` 等）  
+   - GitHub Actions 一律钉 **当前最新 major**（见下表），避免 Node 运行时弃用警告；升级时先改本文再改 workflow
    - 使用仓库 Secrets 签名，产出 Release APK  
    - 上传 Actions Artifact，并创建/更新对应 tag 的 **draft** GitHub Release
 5. **发布 APK**：核对 draft Release 附件与 `CHANGELOG.md` 对应章节后：
@@ -46,6 +46,16 @@ canary  ──(发版时 ff/merge)──►  dev  ──push──►  GitHub Ac
 
 - 路径：`.github/workflows/dev-release.yml`
 - **仅**在分支 `dev` 的 `push`（或手动 `workflow_dispatch`）时运行；`canary` 不跑发布构建。
+- Action 版本（2026-09-24 对齐最新 major；改 workflow 前先更新本表）：
+
+  | Action | 版本 | 用途 |
+  |---|---|---|
+  | `actions/checkout` | **v7** | 源码 |
+  | `actions/setup-java` | **v6** | Temurin 21 |
+  | `gradle/actions/setup-gradle` | **v6** | Gradle 缓存/配置 |
+  | `android-actions/setup-android` | **v4** | Android SDK |
+  | `actions/upload-artifact` | **v7** | APK 产物 |
+  | `softprops/action-gh-release` | **v3** | draft Release |
 - 「放回仓库」指：把 CI 构建出的 APK 挂到 **GitHub Release**（tag = `v${VERSION_NAME}`），不把 `*.apk` 提交进 git（见 `.gitignore`）。
 
 ### 所需 GitHub Secrets

@@ -1,5 +1,5 @@
 # Dev Release CI（仅 dev 分支）
-# 官方 actions/* 固定 v6；SDK 安装用 android-actions/setup-android@v4（v3 的 tools 包已废弃）。
+# Action 版本钉最新 major，清单见 docs/release-flow.md；升级前先改文档再改本文件。
 
 name: Dev Release
 
@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -33,7 +33,7 @@ jobs:
           java-version: "21"
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
@@ -120,14 +120,14 @@ jobs:
           echo "notes=${body}" >> "$GITHUB_OUTPUT"
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: kujira-manga-v${{ steps.apk.outputs.version_name }}
           path: dist/*.apk
           if-no-files-found: error
 
       - name: Create or update draft GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ steps.apk.outputs.version_name }}
           name: v${{ steps.apk.outputs.version_name }}
