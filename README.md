@@ -12,7 +12,7 @@
 > 系统会将其视为**全新应用**，旧版本的设置、收藏与下载数据都不会自动迁移。
 
 - 系统要求：Android 11（API 30）及以上
-- 当前版本：`1.4.9`（versionCode `149`）
+- 当前版本：`1.5.0`（versionCode `150`）
 - 安装包名：release `kujira.manga`，debug `kujira.manga.debug`（与旧包名签名不同，系统会视为新应用，数据不会自动迁移）
 - 调试入口：`./scripts/android`（设备、安装、logcat、插桩测试等，见 [docs/android-cli.md](docs/android-cli.md)）
 - 发布签名：密钥库 `release-key/Kujira-Manga-Key.p12`，密码存于钥匙串条目 `Kujira-Manga-Key`（见 [docs/release-signing.md](docs/release-signing.md)）
@@ -42,6 +42,8 @@
 
 本地优先（Room + 分页）：文件夹、搜索筛选、后台同步与手动刷新；远端无变化时不刷新列表，避免封面闪烁。
 
+已登录用户可在设置中开启本地模式：收藏和浏览历史按账号保存在本机，评论、签到等登录态功能暂不可用。确认切回网络模式后，应用会显示常驻同步通知，结束时通知结果；可离开设置或把应用放到后台，期间不能修改收藏夹。重新登录、逐条补偿本地收藏与取消收藏、全量刷新均成功后才关闭本地模式，历史观看以远端为准；失败则保留本地模式供重试。次日 06:00–21:59 会自动尝试切回，失败后在回到前台时按间隔重试。
+
 ### 下载与缓存
 
 - 按漫画/章节下载，可暂停、恢复、批量重下
@@ -51,6 +53,7 @@
 ### 隐私与入口
 
 - 应用锁（密码 / 图案）
+- 手机锁屏后应用强制退到后台（解锁后回到桌面，不会直接回到本应用）
 - 启动器图标伪装（相册 / 系统工具等别名）
 - 支持设置与下载缓存的备份 / 恢复
 
@@ -74,7 +77,7 @@
 
 ```bash
 ./scripts/android doctor           # 检查 SDK / 设备
-./scripts/android install-debug    # 编译并安装到唯一真机
+./scripts/android install-debug    # 编译并安装到全部已连接真机
 ./scripts/android logcat
 ```
 

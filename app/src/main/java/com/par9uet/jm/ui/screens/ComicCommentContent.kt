@@ -349,8 +349,17 @@ internal fun CommentComposer(
     modifier: Modifier = Modifier,
     surfaceIdPrefix: String? = null,
 ) {
+    val isLocalMode by comicDetailViewModel.isLocalModeFlow.collectAsState()
     Box(modifier = modifier.imePadding()) {
-        when (authState) {
+        when {
+            isLocalMode -> CommentStatusCapsule(surfaceIdPrefix) {
+                Text(
+                    text = com.par9uet.jm.core.model.LOCAL_MODE_UNAVAILABLE_MESSAGE,
+                    modifier = Modifier.weight(1f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            else -> when (authState) {
             SessionReadiness.Unknown,
             SessionReadiness.Restoring -> CommentStatusCapsule(surfaceIdPrefix) {
                 CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
@@ -380,6 +389,7 @@ internal fun CommentComposer(
                 onSuccess = onSuccess,
                 surfaceIdPrefix = surfaceIdPrefix,
             )
+            }
         }
     }
 }

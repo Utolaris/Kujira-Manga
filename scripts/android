@@ -147,6 +147,29 @@ select_device() {
   printf '%s\n' "$phones"
 }
 
+# install-debug 专用：未指定 serial 时返回**全部**已连接真机（一行一台），
+# 多机并排调试不用再手写循环；指定了 serial 仍只装那一台。
+select_install_targets() {
+  local requested="${1:-}" phones count
+  if [ -n "$requested" ]; then
+    select_device "$requested"
+    return
+  fi
+  phones="$(list_phones)"
+  if [ -z "$phones" ]; then
+    echo "没有检测到真机。当前设备：" >&2
+    device_table >&2
+    echo "手机请打开「开发者选项 → 无线调试」并完成配对；USB 时确认已授权调试。" >&2
+    return 1
+  fi
+  count="$(printf '%s\n' "$phones" | wc -l | tr -d ' ')"
+  if [ "$count" -gt 1 ]; then
+    echo "==> 检测到 $count 台真机，将全部安装：" >&2
+    printf '%s\n' "$phones" | sed 's/^/  /' >&2
+  fi
+  printf '%s\n' "$phones"
+}
+
 latest_apk() {
   local dir="$1"
   ls -t "$dir"/*.apk 2>/dev/null | head -1
@@ -168,7 +191,7 @@ Kujira-Manga Android 调试 CLI
   sdk-update [pkg...]    更新/安装 SDK 包（默认 platform-tools）
 
 安装与启动
-  install-debug [serial] 编译并安装 debug APK（默认真机）
+  install-debug [serial] 编译并安装 debug APK（默认装到全部真机；可指定一台）
   install-release [serial] 安装已有 release APK（需已构建）
   uninstall [serial]     卸载 debug 应用（保留数据需手动备份）
   clear [serial]         清除 debug 应用数据
@@ -177,7 +200,7 @@ Kujira-Manga Android 调试 CLI
 
 调试
   logcat [serial] [-c]   实时 logcat；-c 先清空
-  exported-logs [serial]  读取 debug 应用最近导出的日志和安装信息到 build/device-logs/
+  exported-logs [serial]  读取 debug 应用最近导出的 JSON 日志和安装信息到 build/device-logs/
   screenshot [serial]    截图到 build/screenshot.png 并打开
   screenrecord [serial] [秒]  录屏到 build/screen.mp4（默认 30s）
   dumpsys [serial]       当前 Activity / 窗口摘要
@@ -198,6 +221,7 @@ Kujira-Manga Android 调试 CLI
 
 HyperOS
   appops-allow [serial]  允许 debug 包「后台弹出界面」(10021)
+  appops-ignore [serial] 恢复 debug 包「后台弹出界面」为 ignore
 
 示例
   ./scripts/android doctor
@@ -284,17 +308,26 @@ cmd_sdk_update() {
 }
 
 cmd_install_debug() {
-  local serial
-  serial="$(select_device "${1:-}")"
+  local targets serial apk failed=0
+  targets="$(select_install_targets "${1:-}")"
   require_gradle_jdk
-  echo "==> 设备 $serial"
   echo "==> assembleDebug"
   ./gradlew $GRADLE_FLAGS assembleDebug --console=plain
-  local apk
   apk="$(latest_apk app/build/outputs/apk/debug)"
   [ -n "$apk" ] || { echo "未找到 debug APK" >&2; exit 1; }
   echo "==> install $(basename "$apk")"
-  "$ADB" -s "$serial" install -r -t "$apk"
+  while IFS= read -r serial; do
+    [ -n "$serial" ] || continue
+    echo "==> 设备 $serial"
+    if ! "$ADB" -s "$serial" install -r -t "$apk"; then
+      echo "安装失败：$serial" >&2
+      failed=1
+    fi
+  done <<< "$targets"
+  if [ "$failed" -ne 0 ]; then
+    echo "==> 部分设备安装失败" >&2
+    exit 1
+  fi
   echo "==> 完成"
 }
 
@@ -355,7 +388,7 @@ cmd_exported_logs() {
   listing="$("$ADB" -s "$serial" shell run-as "$DEBUG_APPLICATION_ID" ls files/logs)" || return 1
   while IFS= read -r filename; do
     filename="${filename%$'\r'}"
-    [[ "$filename" =~ ^kujira-log-[0-9]{8}-[0-9]{6}\.txt$ ]] || continue
+    [[ "$filename" =~ ^kujira-log-[0-9]{8}-[0-9]{6}\.json$ ]] || continue
     "$ADB" -s "$serial" exec-out run-as "$DEBUG_APPLICATION_ID" cat "files/logs/$filename" > "$destination/$filename" || return 1
     printf '%s\n' "$destination/$filename"
   done <<< "$listing"
@@ -487,6 +520,14 @@ cmd_appops_allow() {
   "$ADB" -s "$serial" shell appops get "$DEBUG_APPLICATION_ID" | grep 10021 || true
 }
 
+cmd_appops_ignore() {
+  local serial
+  serial="$(select_device "${1:-}")"
+  "$ADB" -s "$serial" shell appops set --user 0 "$DEBUG_APPLICATION_ID" 10021 ignore
+  "$ADB" -s "$serial" shell appops set --user 0 "$TEST_PACKAGE" 10021 ignore
+  "$ADB" -s "$serial" shell appops get "$DEBUG_APPLICATION_ID" | grep 10021 || true
+}
+
 main() {
   local cmd="${1:-}"
   shift || true
@@ -519,6 +560,7 @@ main() {
     test) cmd_test "$@" ;;
     test-class) cmd_test_class "$@" ;;
     appops-allow) cmd_appops_allow "$@" ;;
+    appops-ignore) cmd_appops_ignore "$@" ;;
     *)
       echo "未知命令: $cmd" >&2
       usage >&2

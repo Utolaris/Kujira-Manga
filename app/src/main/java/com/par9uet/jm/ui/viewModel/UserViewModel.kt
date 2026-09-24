@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -49,7 +50,17 @@ class UserViewModel(
     private val contentPreferences: ContentPreferences,
     private val downloadManager: DownloadManager,
     private val miscSettingsPreferences: com.par9uet.jm.storage.MiscSettingsPreferences,
+    private val localMode: com.par9uet.jm.core.model.ConnectionModeStatus,
+    private val localBrowseHistory: com.par9uet.jm.storage.LocalBrowseHistoryManager,
+    private val localModeExit: com.par9uet.jm.core.model.LocalModeExit,
+    private val favoriteSyncRequester: com.par9uet.jm.favorites.sync.FavoriteSyncRequester,
 ) : ViewModel() {
+    val isLocalMode: kotlinx.coroutines.flow.StateFlow<Boolean> = localMode.isLocalModeFlow
+    val localHistoryEntries = kotlinx.coroutines.flow.combine(
+        localBrowseHistory.entries,
+        userManager.userState,
+    ) { entries, user -> entries.filter { it.accountId == user.data?.id } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     /** Screens collect auth/user through the VM instead of service-locating UserManager. */
     val authState = userManager.authState
     val userState = userManager.userState
@@ -58,6 +69,13 @@ class UserViewModel(
 
     fun toast(msg: String) {
         toastManager.showAsync(msg)
+    }
+
+    /** 需要登录态的入口；本地模式统一提示不可用。 */
+    fun allowLoginFeatureOrToast(): Boolean {
+        if (!localMode.isLocalMode) return true
+        toastManager.showAsync(com.par9uet.jm.core.model.LOCAL_MODE_UNAVAILABLE_MESSAGE)
+        return false
     }
 
     private val _loginState = MutableStateFlow(CommonUIState(data = null))
@@ -73,6 +91,7 @@ class UserViewModel(
             }
             when (val data = userManager.login(username, password)) {
                 is NetWorkResult.Error -> {
+                    logError("Login", "manual login failed: ${data.message} kind=${data.kind} code=${data.code}")
                     _loginState.update {
                         it.copy(
                             isError = true,
@@ -84,6 +103,26 @@ class UserViewModel(
                 is NetWorkResult.Success<CandidateSession> -> {
                     // UserManager persists the identity through a generation-checked commit, so
                     // a manual login cannot be overwritten by the startup verifier.
+                    log("Login", "manual login success uid=${data.data.loginResponse.uid} localMode=${localMode.isLocalMode}")
+                    // 重登成功后必须离开本地模式；补偿+全量刷新可能很久，不能卡住登录按钮。
+                    if (localMode.isLocalMode) {
+                        val session = userManager.currentSessionSnapshot()
+                        if (session.accountId == data.data.loginResponse.uid) {
+                            log("Login", "auto exit local mode with verified session after manual login")
+                            val exitAccount = session.accountId
+                            val exitGeneration = session.generation
+                            viewModelScope.launch {
+                                localModeExit.exitLocalModeAfterLogin(exitAccount, exitGeneration)
+                                if (!localMode.isLocalMode) {
+                                    favoriteSyncRequester.initializeForLogin()
+                                }
+                            }
+                        }
+                    } else {
+                        // Cache construction runs in the application sync controller, so login
+                        // navigation and the button never wait for remote favorite metadata.
+                        viewModelScope.launch { favoriteSyncRequester.initializeForLogin() }
+                    }
                 }
             }
             _loginState.update {
@@ -122,8 +161,10 @@ class UserViewModel(
         userManager.sessionState,
         contentPreferences.blockedTags,
         _historyRefreshVersion,
-    ) { session, blockedTagList, _ -> session to blockedTagList }
-        .flatMapLatest { (_, blockedTagList) ->
+        localMode.isLocalModeFlow,
+    ) { session, blockedTagList, _, isLocal -> Triple(session, blockedTagList, isLocal) }
+        .flatMapLatest { (_, blockedTagList, isLocal) ->
+        if (isLocal) return@flatMapLatest flowOf(androidx.paging.PagingData.empty())
         Pager(
             config = PagingConfig(
                 pageSize = HistoryComicPagingSource.PAGE_SIZE,
@@ -203,6 +244,18 @@ class UserViewModel(
 
     fun deleteHistoryComics(comics: List<Comic>) {
         if (comics.isEmpty()) return
+        if (localMode.isLocalMode) {
+            val session = userManager.currentSessionSnapshot()
+            if (session.accountId <= 0 || _historyEditState.value.session != session) {
+                toastManager.showAsync("会话已切换，未继续删除")
+                clearHistorySelection()
+                return
+            }
+            val saved = localBrowseHistory.delete(session.accountId, comics.map { it.id })
+            toastManager.showAsync(if (saved) "已删除 ${comics.size} 条历史记录" else "本地历史删除失败，请重试")
+            clearHistorySelection()
+            return
+        }
         log("UserViewModel", "deleteHistoryComics: 开始删除 ${comics.size} 条历史记录, ids=${comics.map { it.id }}")
         viewModelScope.launch {
             // Bind the whole batch to the session that started it. A mid-batch account switch
@@ -289,8 +342,10 @@ class UserViewModel(
      * outer stateIn(Eagerly) retains that generation's cache across UI re-subscribe.
      */
     @OptIn(ExperimentalCoroutinesApi::class)
-    val historyCommentPager = userManager.sessionState
-        .flatMapLatest { snapshot ->
+    val historyCommentPager = combine(userManager.sessionState, localMode.isLocalModeFlow) { snapshot, isLocal ->
+        snapshot to isLocal
+    }.flatMapLatest { (snapshot, isLocal) ->
+            if (isLocal) return@flatMapLatest flowOf(androidx.paging.PagingData.empty())
             Pager(
                 config = PagingConfig(pageSize = 20, prefetchDistance = 6, initialLoadSize = 20),
                 pagingSourceFactory = {
@@ -310,6 +365,7 @@ class UserViewModel(
     )
     val signDataState = _signInDataState.asStateFlow()
     fun getSignInData() {
+        if (!allowLoginFeatureOrToast()) return
         viewModelScope.launch {
             _signInDataState.update {
                 it.copy(
@@ -347,6 +403,7 @@ class UserViewModel(
     private val _signInState = MutableStateFlow(CommonUIState<String>())
     val signInState = _signInState.asStateFlow()
     fun signIn() {
+        if (!allowLoginFeatureOrToast()) return
         viewModelScope.launch {
             _signInState.update {
                 it.copy(

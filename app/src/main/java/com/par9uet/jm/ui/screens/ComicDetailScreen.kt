@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Favorite
@@ -525,18 +526,18 @@ fun ComicDetailScreen(
                     actions = {
                         IconButton(
                             onClick = {
-                                when (authState) {
-                                    SessionReadiness.Authenticated -> enterCommentMode()
-                                    SessionReadiness.Unauthenticated ->
+                                when {
+                                    detailBottomState.mode == DetailBottomMode.COMMENT -> exitCommentMode()
+                                    authState == SessionReadiness.Authenticated -> enterCommentMode()
+                                    authState == SessionReadiness.Unauthenticated ->
                                         mainNavController.navigate("login")
-                                    SessionReadiness.Unknown,
-                                    SessionReadiness.Restoring -> Unit
                                 }
                             },
                         ) {
                             Icon(
-                                Icons.Outlined.ChatBubbleOutline,
-                                contentDescription = "评论",
+                                if (detailBottomState.mode == DetailBottomMode.COMMENT) Icons.Rounded.Close
+                                else Icons.Outlined.ChatBubbleOutline,
+                                contentDescription = if (detailBottomState.mode == DetailBottomMode.COMMENT) "返回" else "评论",
                             )
                         }
                     },

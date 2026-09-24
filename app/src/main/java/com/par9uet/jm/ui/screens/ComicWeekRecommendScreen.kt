@@ -1,8 +1,11 @@
 package com.par9uet.jm.ui.screens
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material3.Icon
@@ -16,13 +19,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.paging.LoadState
 import androidx.paging.compose.collectAsLazyPagingItems
 import com.par9uet.jm.ui.components.Comic
+import com.par9uet.jm.ui.components.ComicSkeleton
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.components.PullRefreshAndLoadMoreGrid
 import com.par9uet.jm.ui.components.SelectDialog
@@ -30,6 +37,35 @@ import com.par9uet.jm.ui.components.SelectOption
 import com.par9uet.jm.ui.components.adaptiveComicGridCells
 import com.par9uet.jm.ui.viewModel.WeekViewModel
 import org.koin.compose.viewmodel.koinActivityViewModel
+
+/**
+ * 与搜索结果骨架同构：18 个 [ComicSkeleton]、10.dp 间距，占位与真实网格同 padding，
+ * 内容替换时不会跳版。
+ */
+@Composable
+private fun ComicWeekRecommendSkeleton(
+    topContentPadding: Dp,
+    bottomContentPadding: Dp,
+    modifier: Modifier = Modifier,
+) {
+    LazyVerticalGrid(
+        modifier = modifier.fillMaxSize(),
+        columns = adaptiveComicGridCells(),
+        verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.Top),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(
+            start = 10.dp,
+            end = 10.dp,
+            top = topContentPadding + 10.dp,
+            bottom = bottomContentPadding + 10.dp,
+        ),
+        userScrollEnabled = false,
+    ) {
+        items(18) {
+            ComicSkeleton()
+        }
+    }
+}
 
 /**
  * Weekly picks for one issue.
@@ -106,19 +142,34 @@ fun ComicWeekRecommendScreen(
             )
         },
     ) { topContentPadding, bottomContentPadding ->
-        PullRefreshAndLoadMoreGrid(
-            modifier = Modifier.fillMaxSize(),
-            lazyPagingItems = weekRecommendComicPagingItems,
-            key = { it.id },
-            columns = adaptiveComicGridCells(),
-            contentPadding = PaddingValues(
-                start = 10.dp,
-                end = 10.dp,
-                top = topContentPadding + 10.dp,
-                bottom = bottomContentPadding + 10.dp,
-            ),
-        ) {
-            Comic(it)
+        // 刊号未就绪时分页会立刻回空页（WeekComicPagingSource），只看 paging 会漏掉首屏加载；
+        // 与搜索一致：空列表 + 加载中（分页刷新或刊号元数据）时展示骨架。
+        val showSkeleton = weekRecommendComicPagingItems.itemCount == 0 && !weekDataState.isError &&
+            (
+                weekDataState.isLoading ||
+                    weekDataState.data == null ||
+                    weekRecommendComicPagingItems.loadState.refresh is LoadState.Loading
+                )
+        if (showSkeleton) {
+            ComicWeekRecommendSkeleton(
+                topContentPadding = topContentPadding,
+                bottomContentPadding = bottomContentPadding,
+            )
+        } else {
+            PullRefreshAndLoadMoreGrid(
+                modifier = Modifier.fillMaxSize(),
+                lazyPagingItems = weekRecommendComicPagingItems,
+                key = { it.id },
+                columns = adaptiveComicGridCells(),
+                contentPadding = PaddingValues(
+                    start = 10.dp,
+                    end = 10.dp,
+                    top = topContentPadding + 10.dp,
+                    bottom = bottomContentPadding + 10.dp,
+                ),
+            ) {
+                Comic(it)
+            }
         }
     }
 }

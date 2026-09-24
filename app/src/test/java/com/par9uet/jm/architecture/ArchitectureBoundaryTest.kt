@@ -77,7 +77,7 @@ class ArchitectureBoundaryTest {
                 "AppLockSettingScreen.kt",
                 "WelcomeScreen.kt",
                 "CheckUpdateScreen.kt",
-                "AboutScreen.kt",
+                "CheckUpdateInfoCards.kt",
                 "BackupRestoreScreen.kt",
             ).forEach { screen ->
                 addAll(forbiddenImports("ui/screens/$screen", listOf(
@@ -236,7 +236,7 @@ class ArchitectureBoundaryTest {
             addAll(forbiddenImports("ui/viewModel/CachePathViewModel.kt", listOf(
                 "com.par9uet.jm.worker.", "androidx.work.",
             )))
-            listOf("AboutScreen.kt", "CheckUpdateScreen.kt", "BackupRestoreScreen.kt").forEach { screen ->
+            listOf("CheckUpdateInfoCards.kt", "CheckUpdateScreen.kt", "BackupRestoreScreen.kt").forEach { screen ->
                 addAll(forbiddenImports("ui/screens/$screen", listOf(
                     "okhttp3.", "com.google.gson.", "java.io.File", "androidx.core.content.FileProvider",
                     "com.par9uet.jm.database.", "com.par9uet.jm.backup.BackupManager",

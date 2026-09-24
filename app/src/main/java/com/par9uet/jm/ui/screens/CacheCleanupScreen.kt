@@ -1,15 +1,21 @@
 package com.par9uet.jm.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -38,8 +44,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.glass.GlassConfirmDialog
@@ -48,6 +58,7 @@ import com.par9uet.jm.ui.viewModel.CacheControlState
 import com.par9uet.jm.ui.viewModel.CacheCleanupViewModel
 import com.par9uet.jm.utils.formatBytes
 import org.koin.androidx.compose.koinViewModel
+import kotlin.math.roundToInt
 
 @Composable
 fun CacheCleanupScreen(
@@ -194,67 +205,112 @@ private fun TotalBudgetSection(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                stops.forEachIndexed { index, stop ->
-                    val selected = index == selectedIndex
-                    Text(
-                        text = stop.label,
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable {
-                                if (index != lastHapticIndex) {
-                                    AppHaptics.tick()
-                                    lastHapticIndex = index
-                                }
-                                onBudgetSelected(stop.mb)
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val availableWidth = maxWidth
+                val thumbSize = 24.dp
+                val labelWidth = (availableWidth / stops.size).coerceAtMost(72.dp)
+                val stepWidth = (availableWidth - labelWidth) / (stops.size - 1).coerceAtLeast(1)
+                val sliderInset = (labelWidth - thumbSize) / 2
+                val primary = MaterialTheme.colorScheme.primary
+                val onPrimary = MaterialTheme.colorScheme.onPrimary
+                val inactiveTrack = MaterialTheme.colorScheme.surfaceVariant
+                val inactiveStop = MaterialTheme.colorScheme.outline.copy(alpha = 0.65f)
+
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Box(modifier = Modifier.fillMaxWidth().height(36.dp)) {
+                        stops.forEachIndexed { index, stop ->
+                            val selected = index == selectedIndex
+                            Box(
+                                modifier = Modifier
+                                    .offset(x = stepWidth * index)
+                                    .width(labelWidth)
+                                    .height(36.dp)
+                                    .clickable {
+                                        if (index != lastHapticIndex) {
+                                            AppHaptics.tick()
+                                            lastHapticIndex = index
+                                        }
+                                        onBudgetSelected(stop.mb)
+                                    },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = stop.label,
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    style = if (availableWidth < 360.dp) {
+                                        MaterialTheme.typography.labelSmall
+                                    } else {
+                                        MaterialTheme.typography.bodySmall
+                                    },
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (selected) primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
-                            .padding(vertical = 2.dp),
-                        textAlign = TextAlign.Center,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                        color = if (selected) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    }
+                    Slider(
+                        value = selectedIndex.toFloat(),
+                        onValueChange = { value ->
+                            val index = value.roundToInt().coerceIn(stops.indices)
+                            if (index != lastHapticIndex) {
+                                AppHaptics.tick()
+                                lastHapticIndex = index
+                                onBudgetSelected(stops[index].mb)
+                            }
                         },
+                        valueRange = 0f..(stops.size - 1).toFloat(),
+                        steps = (stops.size - 2).coerceAtLeast(0),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = sliderInset),
+                        thumb = {
+                            Surface(
+                                modifier = Modifier.size(thumbSize),
+                                shape = CircleShape,
+                                color = primary,
+                                border = BorderStroke(2.dp, MaterialTheme.colorScheme.surface),
+                                shadowElevation = 3.dp,
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Box(modifier = Modifier.size(5.dp).background(onPrimary, CircleShape))
+                                }
+                            }
+                        },
+                        track = { sliderState ->
+                            Canvas(modifier = Modifier.fillMaxWidth().height(20.dp)) {
+                                val trackHeight = 8.dp.toPx()
+                                val trackTop = (size.height - trackHeight) / 2f
+                                val radius = CornerRadius(trackHeight / 2f)
+                                val progress = if (stops.size > 1) {
+                                    (sliderState.value / stops.lastIndex).coerceIn(0f, 1f)
+                                } else 0f
+                                drawRoundRect(
+                                    color = inactiveTrack,
+                                    topLeft = Offset(0f, trackTop),
+                                    size = Size(size.width, trackHeight),
+                                    cornerRadius = radius,
+                                )
+                                if (progress > 0f) {
+                                    drawRoundRect(
+                                        color = primary,
+                                        topLeft = Offset(0f, trackTop),
+                                        size = Size(size.width * progress, trackHeight),
+                                        cornerRadius = radius,
+                                    )
+                                }
+                                for (index in 1 until stops.lastIndex) {
+                                    drawCircle(
+                                        color = if (index <= sliderState.value) onPrimary else inactiveStop,
+                                        radius = 2.5.dp.toPx(),
+                                        center = Offset(size.width * index / stops.lastIndex, size.height / 2f),
+                                    )
+                                }
+                            }
+                        },
+                        colors = SliderDefaults.colors(thumbColor = primary),
                     )
                 }
             }
-            Slider(
-                value = selectedIndex.toFloat(),
-                onValueChange = { value ->
-                    val index = value.toInt().coerceIn(stops.indices)
-                    if (index != lastHapticIndex) {
-                        AppHaptics.tick()
-                        lastHapticIndex = index
-                    }
-                    onBudgetSelected(stops[index].mb)
-                },
-                valueRange = 0f..(stops.size - 1).toFloat(),
-                steps = (stops.size - 2).coerceAtLeast(0),
-                modifier = Modifier.fillMaxWidth(),
-                thumb = {
-                    Box(
-                        modifier = Modifier
-                            .size(22.dp)
-                            .background(
-                                color = MaterialTheme.colorScheme.primary,
-                                shape = CircleShape,
-                            ),
-                    )
-                },
-                colors = SliderDefaults.colors(
-                    thumbColor = MaterialTheme.colorScheme.primary,
-                    activeTrackColor = MaterialTheme.colorScheme.primary,
-                    inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant,
-                    activeTickColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
-                    inactiveTickColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
-                ),
-            )
         }
     }
 }

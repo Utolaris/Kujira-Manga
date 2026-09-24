@@ -293,8 +293,8 @@ fun WelcomeScreen(
                         loginState = loginState,
                         username = loginUsername,
                         password = loginPassword,
-                        onUsernameChange = { loginUsername = it.filter { ch -> ch.code in 0..127 } },
-                        onPasswordChange = { loginPassword = it.filter { ch -> ch.code in 0..127 } }
+                        onUsernameChange = { loginUsername = it },
+                        onPasswordChange = { loginPassword = it }
                     )
                 }
             }

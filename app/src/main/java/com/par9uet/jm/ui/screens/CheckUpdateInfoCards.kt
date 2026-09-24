@@ -1,17 +1,14 @@
 package com.par9uet.jm.ui.screens
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
@@ -19,119 +16,24 @@ import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.par9uet.jm.ui.components.CommonScaffold
 
 private const val GITHUB_REPO_URL = "https://github.com/Utolaris/Kujira-Manga"
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AboutScreen() {
-    val context = LocalContext.current
+internal fun RepositoryCard() {
     val uriHandler = LocalUriHandler.current
-    val appIcon = remember(context) { loadAppIconBitmap(context) }
-    val appVersion = remember(context) { appVersionName(context) }
-    val versionCode = remember(context) { appVersionCode(context) }
-
-    CommonScaffold(title = "关于") { topContentPadding, bottomContentPadding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                start = 16.dp,
-                end = 16.dp,
-                top = topContentPadding + 16.dp,
-                bottom = bottomContentPadding + 16.dp,
-            ),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            item { AppHeaderCard(appIcon, appVersion, versionCode) }
-            item { RepoCard(onOpenRepo = { uriHandler.openUri(GITHUB_REPO_URL) }) }
-            item { TechCard() }
-        }
-    }
-}
-
-@Composable
-private fun AppHeaderCard(
-    appIcon: android.graphics.Bitmap?,
-    appVersion: String,
-    versionCode: String,
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            appIcon?.let {
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    modifier = Modifier.size(88.dp)
-                ) {
-                    Image(
-                        bitmap = it.asImageBitmap(),
-                        contentDescription = "应用图标",
-                        modifier = Modifier.size(88.dp)
-                    )
-                }
-            }
-            Text(
-                text = "Kujira-Manga",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                InfoChip(text = "v$appVersion")
-                InfoChip(text = "($versionCode)")
-            }
-        }
-    }
-}
-
-@Composable
-private fun InfoChip(text: String) {
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-    ) {
-        Text(
-            text = text,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-            style = MaterialTheme.typography.labelMedium
-        )
-    }
-}
-
-@Composable
-private fun RepoCard(onOpenRepo: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
@@ -158,7 +60,7 @@ private fun RepoCard(onOpenRepo: () -> Unit) {
                 )
             }
             FilledTonalButton(
-                onClick = onOpenRepo,
+                onClick = { uriHandler.openUri(GITHUB_REPO_URL) },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp)
             ) {
@@ -171,7 +73,7 @@ private fun RepoCard(onOpenRepo: () -> Unit) {
 }
 
 @Composable
-private fun TechCard() {
+internal fun TechStackCard() {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),

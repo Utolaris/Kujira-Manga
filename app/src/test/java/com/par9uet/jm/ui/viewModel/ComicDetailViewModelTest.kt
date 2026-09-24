@@ -287,8 +287,8 @@ class ComicDetailViewModelTest {
                 comicRepository = repository,
                 toastManager = toastManager,
                 favoriteSession = session,
-                collectFavorite = CollectFavorite(remote, local, session),
-                uncollectFavorites = UncollectFavorites(remote, local, session),
+                collectFavorite = CollectFavorite(remote, local, session, com.par9uet.jm.favorites.alwaysNetworkLocalModeStatus(), com.par9uet.jm.favorites.inMemoryLocalChanges(), com.par9uet.jm.favorites.usecase.LocalFavoriteOperationGate()),
+                uncollectFavorites = UncollectFavorites(remote, local, session, com.par9uet.jm.favorites.alwaysNetworkLocalModeStatus(), com.par9uet.jm.favorites.inMemoryLocalChanges(), com.par9uet.jm.favorites.usecase.LocalFavoriteOperationGate()),
                 observeLocalFavorite = ObserveLocalFavorite(local, session),
                 downloadManager = downloadManager,
                 userManager = testUserManager(),
@@ -304,6 +304,17 @@ class ComicDetailViewModelTest {
                 contentPreferences = object : com.par9uet.jm.storage.ContentPreferences {
                     override val blockedTags = MutableStateFlow(emptyList<String>())
                 },
+                localMode = com.par9uet.jm.favorites.alwaysNetworkLocalModeStatus(),
+                localBrowseHistory = com.par9uet.jm.storage.LocalBrowseHistoryManager(
+                    object : com.par9uet.jm.storage.LocalBrowseHistoryStore {
+                        private var data: List<com.par9uet.jm.storage.LocalBrowseHistoryEntry> = emptyList()
+                        override fun getOrNull() = data
+                        override fun set(entries: List<com.par9uet.jm.storage.LocalBrowseHistoryEntry>): Boolean {
+                            data = entries
+                            return true
+                        }
+                    }
+                ),
             ),
             toastManager = toastManager,
             local = local,
@@ -362,6 +373,7 @@ class ComicDetailViewModelTest {
             },
             repository,
             readiness,
+            com.par9uet.jm.favorites.fakeNightPrompt(), com.par9uet.jm.favorites.FakeConnectionMode(),
         )
     }
 

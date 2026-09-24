@@ -83,8 +83,16 @@ fun UserHistoryComicScreen(
     val miscSettings by userViewModel.misc.collectAsState()
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
 
-    val selectedComics: List<com.par9uet.jm.data.models.Comic> = remember(historyComicLazyPagingItems.itemSnapshotList, historyEditState.selectedComicIds) {
-        historyComicLazyPagingItems.itemSnapshotList.filterNotNull().filter { it.id in historyEditState.selectedComicIds }
+    val isLocalMode by userViewModel.isLocalMode.collectAsState()
+    val localHistory by userViewModel.localHistoryEntries.collectAsState()
+    val selectedComics: List<com.par9uet.jm.data.models.Comic> = if (isLocalMode) {
+        remember(localHistory, historyEditState.selectedComicIds) {
+            localHistory.map { it.toComic() }.filter { it.id in historyEditState.selectedComicIds }
+        }
+    } else {
+        remember(historyComicLazyPagingItems.itemSnapshotList, historyEditState.selectedComicIds) {
+            historyComicLazyPagingItems.itemSnapshotList.filterNotNull().filter { it.id in historyEditState.selectedComicIds }
+        }
     }
     // Session switch clears the selection (and therefore editing); dismiss any open
     // confirm dialog so a stale A-session dialog cannot confirm under B.
@@ -126,7 +134,58 @@ fun UserHistoryComicScreen(
             )
         },
     ) { topContentPadding, bottomContentPadding ->
-        if (historyComicLazyPagingItems.loadState.refresh is LoadState.Loading && historyComicLazyPagingItems.itemCount == 0) {
+        if (isLocalMode) {
+            val comics = localHistory.map { it.toComic() }
+            if (comics.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(top = topContentPadding),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "暂无本地历史",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else {
+                androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+                    modifier = Modifier.fillMaxSize(),
+                    columns = adaptiveComicGridCells(miscSettings.gridColumns.history),
+                    verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Top),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(
+                        start = 12.dp,
+                        end = 12.dp,
+                        top = topContentPadding + 12.dp,
+                        bottom = bottomContentPadding,
+                    ),
+                ) {
+                    items(
+                        count = comics.size,
+                        key = { comics[it].id },
+                    ) { index ->
+                        val comic = comics[index]
+                        Comic(
+                            comic = comic,
+                            editing = historyEditState.editing,
+                            selected = comic.id in historyEditState.selectedComicIds,
+                            onLongClick = {
+                                if (historyEditState.editing) {
+                                    userViewModel.toggleHistorySelected(comic.id)
+                                } else {
+                                    userViewModel.enterHistoryEdit(comic.id)
+                                }
+                            },
+                            onToggleSelected = {
+                                userViewModel.toggleHistorySelected(comic.id)
+                            },
+                        )
+                    }
+                }
+            }
+        } else if (historyComicLazyPagingItems.loadState.refresh is LoadState.Loading && historyComicLazyPagingItems.itemCount == 0) {
             Box(modifier = Modifier.padding(top = topContentPadding)) {
                 UserHistoryComicSkeleton()
             }
@@ -145,6 +204,9 @@ fun UserHistoryComicScreen(
                     top = topContentPadding + 12.dp,
                     bottom = bottomContentPadding,
                 ),
+                // 不要下拉刷新：LifecycleResumeEffect 每次回页已 refresh，入口重复；
+                // 且 resume 触发的 Loading 会在未手势时误播下拉刷新动画。
+                enablePullRefresh = false,
             ) { comic ->
                 Comic(
                     comic = comic,

@@ -76,6 +76,8 @@ class SettingsViewModelTest {
         override fun request(kind: FavoriteSyncRequestKind, folderId: Int) {
             requests += kind
         }
+
+        override suspend fun initializeForLogin() = Unit
     }
 
     private fun buildViewModel(recommendEnabled: Boolean): Pair<SettingsViewModel, InMemoryPersistence> {
@@ -96,6 +98,7 @@ class SettingsViewModelTest {
             miscSettings = manager,
             localSettingManager = manager,
             favoriteSyncRequester = FakeSyncRequester(),
+            favoriteForceAlign = com.par9uet.jm.core.model.FavoriteForceAlign { },
         )
         return vm to persistence
     }
@@ -164,10 +167,10 @@ class SettingsViewModelTest {
 
 
     @Test
-    fun `force refresh routes through narrow sync requester`() {
+    fun `force refresh routes through force align port`() {
         val persistence = InMemoryPersistence()
         val manager = LocalSettingManager(persistence, RecordingLauncherApplier())
-        val requester = FakeSyncRequester()
+        var aligned = 0
         val vm = SettingsViewModel(
             recommendationPreferences = manager,
             readerPreferences = manager,
@@ -178,13 +181,14 @@ class SettingsViewModelTest {
             apiEndpointPreference = manager,
             contentLanguagePreferences = manager,
             miscSettings = manager,
-            localSettingManager = manager, favoriteSyncRequester = requester,
+            localSettingManager = manager, favoriteSyncRequester = FakeSyncRequester(),
+            favoriteForceAlign = com.par9uet.jm.core.model.FavoriteForceAlign { aligned++ },
         )
 
         vm.requestFavoriteForceRefresh()
         scheduler.runCurrent()
 
-        org.junit.Assert.assertEquals(listOf(FavoriteSyncRequestKind.FORCE), requester.requests)
+        org.junit.Assert.assertEquals(1, aligned)
     }
 
     private class RecordingLauncherApplier : com.par9uet.jm.launcher.LauncherIdentityApplier {

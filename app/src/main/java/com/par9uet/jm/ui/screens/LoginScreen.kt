@@ -86,8 +86,6 @@ fun LoginScreen(
         }
     }
 
-    fun sanitizeAscii(value: String): String = value.filter { it.code in 0..127 }
-
     fun toLogin() {
         if (username.isBlank() || password.isBlank()) return
         loginSubmitted = true
@@ -158,7 +156,7 @@ fun LoginScreen(
                     ) {
                         OutlinedTextField(
                             value = username,
-                            onValueChange = { username = sanitizeAscii(it) },
+                            onValueChange = { username = it },
                             label = { Text("用户名") },
                             placeholder = { Text("请输入用户名") },
                             modifier = Modifier.fillMaxWidth(),
@@ -167,7 +165,7 @@ fun LoginScreen(
                         )
                         OutlinedTextField(
                             value = password,
-                            onValueChange = { password = sanitizeAscii(it) },
+                            onValueChange = { password = it },
                             label = { Text("密码") },
                             placeholder = { Text("请输入密码") },
                             modifier = Modifier.fillMaxWidth(),

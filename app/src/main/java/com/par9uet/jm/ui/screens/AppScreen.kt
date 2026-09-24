@@ -83,7 +83,6 @@ fun AppScreen(
             composable(route = "appLockSetting") { AppLockSettingScreen() }
             composable(route = "colorPalette") { ColorPaletteScreen() }
             composable(route = "blockedTags") { BlockedTagsScreen() }
-            composable(route = "about") { AboutScreen() }
             composable(route = "checkUpdate") { CheckUpdateScreen() }
             composable(route = "logViewer") { LogViewerScreen() }
             composable(route = "cacheCleanup") { CacheCleanupScreen() }

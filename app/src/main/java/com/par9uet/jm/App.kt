@@ -89,6 +89,7 @@ fun App(
     localSettingManager: LocalSettingManager = getKoin().get(),
     postStartupCoordinator: PostStartupCoordinator = getKoin().get(),
     remoteConfigPreferences: RemoteConfigPreferences = getKoin().get(),
+    connectionModeStatus: com.par9uet.jm.core.model.ConnectionModeStatus = getKoin().get(),
 ) {
     val appLock by localSettingManager.appLock.collectAsState()
     val securityLoadBlocked by localSettingManager.securityLoadBlocked.collectAsState()
@@ -154,12 +155,17 @@ fun App(
     // Mark the first real screen for startup traces. Permission prompts are scheduled after that
     // frame and never compete with the onboarding or app-lock screen.
     val context = LocalContext.current
+    var localModeColdNoticeShown by remember { mutableStateOf(false) }
     LaunchedEffect(showOnboarding, showAppLock, securityLoadBlocked) {
         withFrameNanos { }
         context.findActivity()?.let { activity ->
             activity.reportFullyDrawn()
             if (!showOnboarding && !showAppLock && !securityLoadBlocked) {
                 activity.requestNotificationPermissionIfNeeded()
+                if (!localModeColdNoticeShown && connectionModeStatus.isLocalMode) {
+                    localModeColdNoticeShown = true
+                    toastManager.showAsync("当前处于本地模式")
+                }
             }
         }
     }
@@ -346,6 +352,37 @@ private fun MainAppContent(
         }
     }
 
+    // 夜间 401 引导进本地模式。
+    val nightLocalModePrompt: com.par9uet.jm.session.NightLocalModePrompt = getKoin().get()
+    val localModeCoordinator: com.par9uet.jm.session.LocalModeCoordinator = getKoin().get()
+    val localModeStatus: com.par9uet.jm.core.model.ConnectionModeStatus = getKoin().get()
+    LaunchedEffect(localModeCoordinator, localModeStatus) {
+        localModeStatus.isLocalModeFlow.collect { isLocal ->
+            if (isLocal) {
+                while (localModeStatus.isLocalMode) {
+                    if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                        localModeCoordinator.exitLocalModeIfOffPeak()
+                    }
+                    kotlinx.coroutines.delay(60_000L)
+                }
+            }
+        }
+    }
+    DisposableEffect(lifecycleOwner, localModeCoordinator) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                clipboardScope.launch { localModeCoordinator.exitLocalModeIfOffPeak() }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    var nightLocalModePromptAccountId by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(Unit) {
+        nightLocalModePrompt.prompt.collect { accountId ->
+            if (localModeCoordinator.isCurrentAccount(accountId)) nightLocalModePromptAccountId = accountId
+        }
+    }
     // 冷启动静默检查有结果且非新装/锁屏时，引导去「检查更新」下载。
     val autoUpdateChecker: com.par9uet.jm.update.AutoUpdateChecker = getKoin().get()
     val pendingAutoUpdate by autoUpdateChecker.prompt.collectAsState()
@@ -376,6 +413,20 @@ private fun MainAppContent(
             },
             overlayContent = {
                 Box(modifier = Modifier.fillMaxSize()) {
+                    com.par9uet.jm.ui.glass.GlassConfirmDialog(
+                        visible = nightLocalModePromptAccountId != null,
+                        title = "登录态频繁失效",
+                        message = "夜间风控可能导致登录被踢。可切换到本地模式，继续使用收藏与历史（仅存本地）。",
+                        confirmText = "进入本地模式",
+                        dismissText = "暂不",
+                        onConfirm = {
+                            val accountId = nightLocalModePromptAccountId
+                            nightLocalModePromptAccountId = null
+                            if (accountId != null) localModeCoordinator.enterLocalMode(accountId)
+                        },
+                        onDismiss = { nightLocalModePromptAccountId = null },
+                        surfaceId = "night-local-mode-prompt",
+                    )
                     if (showNsfwDialog) {
                         NsfwWarningDialog(
                             visible = showNsfwDialog,

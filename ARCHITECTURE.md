@@ -242,13 +242,19 @@ data/ repository/ retrofit/  历史命名保留；本轮列出的历史依赖环
   （组件份额 MB），`coil/Config` 用 `componentMbToBytes` 换算字节，**不得**再把组件 MB
   当总额度二次分享额。变更后重建 `ImageLoader` 并 shutdown 旧实例。历史字段
   `LocalSetting.coverDiskCacheMb` 仅备份透传，不再驱动 Coil。
-- 更新入口拆为 `AboutScreen` 和 `CheckUpdateScreen`；`AppUpdateViewModel` 管理检查、弹窗、下载和安装决策，
+- `CheckUpdateScreen` 同时展示版本、项目仓库与技术栈；`AppUpdateViewModel` 管理检查、弹窗、下载和安装决策，
   `update` 提供版本解析（`GithubReleaseSource`）、发布模型（`AppRelease`）、系统安装适配器（`ApkInstaller`）
   与 APK 下载协调（`AppUpdateDownloadManager`）。
 - `BackupRestoreViewModel` 管理备份/恢复步骤及任务生命周期，`backup/BackupRestoreOperations`
   组合设置快照、文档读写和下载排队；Screen 仅持有系统文件选择器和展示组件。
 - `favorites/sync/FavoriteSyncController` 是唯一收藏同步任务入口，按登录会话代次隔离任务、进度与结果；
   `favorites/usecase/SyncFavorites` 负责远端分页、元数据补齐和受会话保护的本地提交。
+  手动登录后若该账号尚无成功的全量快照，控制器异步构建一次，提交成功才提示“收藏夹初始化完成。”；
+  已有快照、失败或账号切换均不重复提示，登录导航不等待同步。
+- 本地模式按账号保存在 `LocalSetting.localModeAccountIds`，`session/LocalModeGate` 将当前账号与设置合成只读模式状态。
+  `favorites/usecase` 将每次新增或取消收藏写为该账号的待同步意图，`storage/LocalFavoriteChangeManager` 只在加密存储写入成功后确认；
+  `session/LocalModeCoordinator` 在切回网络模式时先确认登录态（已手动登录时复用当前会话，否则重登），再推送收藏意图并执行 `SyncFavorites` 全量刷新；全部成功后才关闭该账号的本地模式并清除本地浏览历史。切换期间 `LocalFavoriteOperationGate` 直接拒绝收藏修改；补偿或刷新失败时仍留在本地模式，未完成的意图供稍后重试。设置页确认后由 `worker/LocalModeExitWorker` 运行前台任务和常驻进度通知，离开设置或退到后台不会取消。再次进入本地模式前也会清理旧历史。开启时间按账号保存，自动恢复从次日白天开始。
+  这是普通异步同步任务入口之外的切换流程。其他账号的模式和历史不受影响。
 - `favorites/data/FavoriteStore` 保留 Room 事务及 DAO 操作，纯 SQL 构造、同步规划和实体映射分别位于
   `favorites/data/FavoriteQueries`、`favorites/data/FavoriteSyncPlanner` 和 `favorites/data/FavoriteMappers`。
   它直接实现 `favorites/data` 定义的三个窄本地端口 `FavoriteLocalQuery`、
@@ -268,7 +274,7 @@ data/ repository/ retrofit/  历史命名保留；本轮列出的历史依赖环
   | `ui/screens/CacheCleanupScreen.kt`、`DownloadComicDetailScreen.kt` | `java.io.`、`kotlinx.coroutines.`、`download.coordinator.DownloadManager`、`reader.ReaderImagePipeline`、`database.`、`download.export.*`、`cache.atom.` |
   | `ui/screens/ComicDetailScreen.kt`、`readScreen/ComicReadScreen.kt` | `download.coordinator.DownloadManager`（含全限定） |
   | `ui/screens/ExtractCodeScreen.kt` | `repository.`（含全限定） |
-  | `DohSettingScreen` / `AppLockSettingScreen` / `WelcomeScreen` / `CheckUpdateScreen` / `AboutScreen` / `BackupRestoreScreen` | `network.`、`storage.`、`session.UserManager`、`org.koin.compose.getKoin`（import + 全限定）；About/CheckUpdate/Backup 另禁 okhttp/gson/FileProvider/database/BackupManager/DownloadManager/AppUpdateDownloadManager |
+  | `DohSettingScreen` / `AppLockSettingScreen` / `WelcomeScreen` / `CheckUpdateScreen` / `CheckUpdateInfoCards` / `BackupRestoreScreen` | `network.`、`storage.`、`session.UserManager`、`org.koin.compose.getKoin`（import + 全限定）；CheckUpdate/Backup 另禁 okhttp/gson/FileProvider/database/BackupManager/DownloadManager/AppUpdateDownloadManager |
   | `cache/atom` | `ui.`、`store.`、`reader.` |
   | `data`（整体） | `repository.`、`session.`、`reader.` |
   | `retrofit`（整体） | `data.`、`store.`、`session.`、`network.`（**例外**：`network.applyAppHttpDefaults` / `applyHttpLogging` 等 OkHttp 工厂） |
@@ -554,12 +560,19 @@ L4 设施，或反向依赖上层；`data.models` 是共享契约，不算违规
     `AuthAttemptOrigin` 只用于日志与密度观测。官方样本的通用请求层不因 401 自动重登，
     另有一小时的本地认证有效期；这不能证明服务端 Cookie 的过期时间或风控规则。
 11. **会话令牌单写者**（`network/EmbeddedSessionCookies`）：`AVS` 只允许由登录流程
-    （`EmbeddedClientManager.activateCandidateSession`）写入持久化快照。响应侧合并必须走
+    （`EmbeddedClientManager.activateCandidateSession`）写入持久化快照。登录响应的 JWT 与 AVS
+    在 `SecureCookieStorage` 中作为同一加密会话写入，JWT 按官方客户端的一小时本地有效期发送为
+    `Authorization: Bearer`，且仅发送到当前可信的 HTTPS API 域名；域名下发等外部请求不带
+    AVS 或 JWT。旧版单独保存的 Cookie 可迁移读取。响应侧合并必须走
     `mergeEmbeddedResponseCookies`（剥离 AVS），因为请求侧 `embeddedCookiesForRequest`
     在多个同名 AVS 之间按列表顺序取第一个，被公开响应污染过一次就会持续 401。
     此规则是本客户端的会话写入约束，不依赖普通响应更新 AVS。
     登录候选客户端也在网络响应返回 CookieJar 前剥离 `Set-Cookie: AVS`，只保留 SDK
     从登录 JSON `s` 写入的令牌，避免父域响应 Cookie 与登录令牌并存、请求选错。
+12. **官方 API 签名**（`core/network/OfficialApiSignature`）：SDK 与 Retrofit 都使用官方
+    JMComic3 v2.1.8 的 Token 密钥、版本和 `md5(timestamp + secret)` 算法。SDK 请求保留其
+    原始请求时间戳，以匹配 SDK 内部响应解密时间戳；Retrofit 沿用进程固定时间戳。
+    内置 API 的表单 POST 改用官方的 multipart FormData，JSON POST 保持原类型。
 
 ## 构建与密钥（2026-09-12 核对）
 

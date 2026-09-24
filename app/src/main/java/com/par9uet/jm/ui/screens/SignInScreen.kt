@@ -22,11 +22,9 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -89,7 +87,6 @@ fun rememberFirstVisibleMonthAfterScroll(state: CalendarState): CalendarMonth {
     return visibleMonth.value
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SignInScreen(
     userViewModel: UserViewModel = koinActivityViewModel(),
@@ -117,6 +114,10 @@ fun SignInScreen(
         }
     }
     LaunchedEffect(authState) {
+        if (!userViewModel.allowLoginFeatureOrToast()) {
+            mainNavController.popBackStack()
+            return@LaunchedEffect
+        }
         when (authState) {
             SessionReadiness.Authenticated -> userViewModel.getSignInData()
             SessionReadiness.Unauthenticated -> mainNavController.navigate("login")
@@ -126,26 +127,15 @@ fun SignInScreen(
     }
 
     CommonScaffold(title = "每日签到") { topContentPadding, bottomContentPadding ->
-        PullToRefreshBox(
-            modifier = Modifier
-                .fillMaxSize(),
-            isRefreshing = signDataState.isLoading,
-            onRefresh = {
-                when (authState) {
-                    SessionReadiness.Authenticated -> userViewModel.getSignInData()
-                    SessionReadiness.Unauthenticated -> mainNavController.navigate("login")
-                    SessionReadiness.Unknown,
-                    SessionReadiness.Restoring -> Unit
-                }
-            }
+        // 不要整页下拉刷新：进入页与签到成功都会 getSignInData，刷新入口重复；
+        // 且 isRefreshing 绑 isLoading 后首屏/签到后会在未手势时误播下拉刷新动画。
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                top = topContentPadding,
+                bottom = bottomContentPadding,
+            ),
         ) {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(
-                    top = topContentPadding,
-                    bottom = bottomContentPadding,
-                ),
-            ) {
                 item {
                     Column(
                         modifier = Modifier
@@ -319,6 +309,10 @@ fun SignInScreen(
                                 .height(52.dp),
                             shape = MaterialTheme.shapes.large,
                             onClick = {
+                                if (!userViewModel.allowLoginFeatureOrToast()) {
+                                    mainNavController.popBackStack()
+                                    return@Button
+                                }
                                 when (authState) {
                                     SessionReadiness.Authenticated -> userViewModel.signIn()
                                     SessionReadiness.Unauthenticated -> mainNavController.navigate("login")
@@ -347,7 +341,6 @@ fun SignInScreen(
                         }
                     }
                 }
-            }
         }
     }
 }

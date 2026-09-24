@@ -45,6 +45,12 @@ adb shell appops get kujira.manga.debug | grep 10021
 
 跑测期间请勿操作手机。脚本只做瞬时唤醒/收起通知栏，不改 stayon / DND / 白名单，也不做后台 `am start` 抢回 Activity。
 
+### 方向锁定
+
+插桩测试期间会**关闭方向锁定**（`accelerometer_rotation=1` + `wm user-rotation free`），避免显示管理把 Activity 固定在一个不好测的方向。
+
+**测试结束后（含失败、卡死、Ctrl+C）会恢复测前的自动旋转状态**，原本锁定的继续锁定并尽量保留角度，原本开启自动旋转的继续开启。
+
 ## 看门狗与结果
 
 - 默认 **180s** 没有新输出判卡死并 `force-stop`（`--stall <秒>` 可调）。当时前台窗口会写进输出。
@@ -70,7 +76,7 @@ adb shell am instrument -w -r -e package <包名> \
   kujira.manga.debug.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
-## 测试集（当前 20 个类 / 约 69 条）
+## 测试集（当前 24 个类 / 约 76 条）
 
 | 包 | 类 | 真机上要什么 |
 | --- | --- | --- |
@@ -82,11 +88,12 @@ adb shell am instrument -w -r -e package <包名> \
 | download | `DownloadContentFilesTest` | 章节页文件读写 |
 | download.export | `PdfExportDeviceTest` | 真实 `PdfDocument` + SAF；失败时用 `DocumentsContract.deleteDocument` 清不完整 PDF |
 | launcher | `LauncherDisguiseInstrumentedTest` | 桌面别名 |
+| network | `DohStartupRaceTest` | DoH 启动竞态 |
 | reader.atom | `LocalChapterFilesDeviceTest` | 三种历史布局、自然排序、ZIP |
-| storage | `SessionPersistenceTest` | 会话落盘 |
+| storage | `SessionPersistenceTest`、`OfficialAuthSessionPersistenceTest` | 会话落盘；加密 JWT 与 AVS 成对持久化 |
 | store | `FavoriteStoreSyncTest` | 收藏同步与 Room 事务（测试包仍在 `store`，主源码 `store` 已拆到领域包） |
-| ui / ui.glass / ui.navigation / ui.viewModel | `FavoriteSyncGridTest`、`MainNavigationFlowTest`、`NavigationInteractionTest`、`GlassCaptureHostSettleTest`、`RetainedMainNavigationTest`、`ReaderFavoriteMutationTest` | Compose 必须 RESUMED；Glass 静态源要能收敛 |
-| worker | `DownloadComicWorkerContractTest`、`CacheMigrationWorkerContractTest` | 真实 `WorkerParameters` |
+| ui / ui.glass / ui.navigation / ui.viewModel | `FavoriteSyncGridTest`、`MainNavigationFlowTest`、`NavigationInteractionTest`、`SearchResultRefreshContentTest`、`GlassCaptureHostSettleTest`、`RetainedMainNavigationTest`、`ReaderFavoriteMutationTest` | Compose 必须 RESUMED；Glass 静态源要能收敛 |
+| worker | `DownloadComicWorkerContractTest`、`CacheMigrationWorkerContractTest`、`LocalModeExitNotificationTest` | 真实 `WorkerParameters`；本地模式同步的常驻通知 |
 
 ## 调试要点
 

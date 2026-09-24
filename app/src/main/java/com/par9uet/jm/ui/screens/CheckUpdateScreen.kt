@@ -111,7 +111,7 @@ fun CheckUpdateScreen(
                 )
             }
             UpdateDownloadDialog(
-                visible = showDownloadDialog && !downloadState.background,
+                visible = showDownloadDialog && !downloadState.background && !apkReady,
                 onDismiss = viewModel::dismissDownload,
                 onPauseResume = viewModel::toggleDownloadPause,
                 onCancel = viewModel::cancelDownload,
@@ -155,6 +155,8 @@ fun CheckUpdateScreen(
                     )
                 }
             }
+            item { RepositoryCard() }
+            item { TechStackCard() }
         }
     }
 }
@@ -590,7 +592,7 @@ private fun UpdateDownloadDialog(
                     val statusText = when (status) {
                         AppUpdateDownloadStatus.Downloading -> "下载中"
                         AppUpdateDownloadStatus.Paused -> "已暂停"
-                        AppUpdateDownloadStatus.Completed -> "下载完成，正在安装..."
+                        AppUpdateDownloadStatus.Completed -> "下载完成，但安装包不可用，请重新下载"
                         AppUpdateDownloadStatus.Canceled -> "已取消"
                         AppUpdateDownloadStatus.Error -> "下载失败：${downloadState.errorMessage}"
                         AppUpdateDownloadStatus.Idle -> "等待下载"
@@ -608,12 +610,6 @@ private fun UpdateDownloadDialog(
                 if (status == AppUpdateDownloadStatus.Downloading || isPaused) {
                     LinearProgressIndicator(
                         progress = { downloadState.progress.coerceIn(0f, 1f) },
-                        modifier = Modifier.fillMaxWidth(),
-                        color = MaterialTheme.colorScheme.primary,
-                        trackColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
-                } else if (status == AppUpdateDownloadStatus.Completed) {
-                    LinearProgressIndicator(
                         modifier = Modifier.fillMaxWidth(),
                         color = MaterialTheme.colorScheme.primary,
                         trackColor = MaterialTheme.colorScheme.surfaceVariant
@@ -696,4 +692,3 @@ private fun UpdateDownloadDialog(
         }
     }
 }
-

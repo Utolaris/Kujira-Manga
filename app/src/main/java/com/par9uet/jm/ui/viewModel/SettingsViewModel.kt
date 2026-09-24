@@ -106,12 +106,16 @@ class SettingsViewModel(
     miscSettings: com.par9uet.jm.storage.MiscSettingsPreferences,
     private val localSettingManager: LocalSettingManager,
     private val favoriteSyncRequester: FavoriteSyncRequester,
+    private val favoriteForceAlign: com.par9uet.jm.core.model.FavoriteForceAlign,
 ) : ViewModel() {
 
     /** Narrow prefs facades for settings-adjacent screens (palette / templates / grids). */
     val misc: StateFlow<MiscSettingsState> = localSettingManager.misc
     val blockedTagTemplates = localSettingManager.blockedTagTemplates
     val colorPalette: StateFlow<ColorPaletteState> = appearancePreferences.colorPalette
+    val localModeHelpDismissed: StateFlow<Boolean> = localSettingManager.localModeHelpDismissed
+
+    fun dismissLocalModeHelp() = localSettingManager.dismissLocalModeHelp()
 
     fun saveBlockedTagTemplate(index: Int?, name: String, tags: List<String>) =
         localSettingManager.saveBlockedTagTemplate(index, name, tags)
@@ -192,11 +196,13 @@ class SettingsViewModel(
 
     val favoriteSyncState: StateFlow<FavoriteSyncUiState> = favoriteSyncRequester.state
 
-    /** Narrow maintenance capability; Settings never touches FavoritesViewModel. */
+    /**
+     * 强制让收藏夹与远端对齐（丢弃未同步本地变更并关闭本地模式）。
+     * 先弹确认框，由设置页在确认后调用。
+     */
     fun requestFavoriteForceRefresh() = viewModelScope.launch {
-        if (!favoriteSyncRequester.state.value.isSyncing) {
-            favoriteSyncRequester.request(FavoriteSyncRequestKind.FORCE)
-        }
+        if (favoriteSyncRequester.state.value.isSyncing) return@launch
+        favoriteForceAlign.forceAlignFavoritesWithRemote()
     }
 
     // ---- simple settings intents ----

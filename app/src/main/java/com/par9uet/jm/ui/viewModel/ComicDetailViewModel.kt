@@ -39,8 +39,11 @@ class ComicDetailViewModel(
     private val userManager: com.par9uet.jm.session.UserManager,
     private val readHistoryManager: com.par9uet.jm.storage.ReadHistoryManager,
     private val contentPreferences: com.par9uet.jm.storage.ContentPreferences,
+    private val localMode: com.par9uet.jm.core.model.ConnectionModeStatus,
+    private val localBrowseHistory: com.par9uet.jm.storage.LocalBrowseHistoryManager,
 ) : ViewModel() {
     /** Detail / chapter / relate screens collect auth + history + filters via the VM. */
+    val isLocalModeFlow = localMode.isLocalModeFlow
     val authState = userManager.authState
     val readHistoryState = readHistoryManager.readHistoryState
     val blockedTags = contentPreferences.blockedTags
@@ -143,6 +146,9 @@ class ComicDetailViewModel(
                             isError = false,
                             errorMsg = "",
                         )
+                        if (localMode.isLocalMode) {
+                            localBrowseHistory.record(favoriteSession.currentAccountId(), data.data)
+                        }
                     }
                 }
             }
@@ -279,7 +285,7 @@ class ComicDetailViewModel(
 
                 else -> _collectComicState.update {
                     val message = if (favoriteSession.isCurrent(snapshot)) {
-                        "取消收藏失败，请重试"
+                        batch.message ?: "取消收藏失败，请重试"
                     } else {
                         "登录状态已变化，请重试"
                     }

@@ -17,6 +17,9 @@ import com.par9uet.jm.download.atom.DownloadFileRemoval
 import com.par9uet.jm.download.coordinator.DownloadExecutionControl
 import com.par9uet.jm.download.coordinator.DownloadManager
 import com.par9uet.jm.download.molecule.DownloadTaskOperations
+import com.par9uet.jm.favorites.model.FavoriteSyncUiState
+import com.par9uet.jm.favorites.sync.FavoriteSyncRequestKind
+import com.par9uet.jm.favorites.sync.FavoriteSyncRequester
 import com.par9uet.jm.retrofit.model.LoginResponse
 import com.par9uet.jm.session.CandidateSession
 import com.par9uet.jm.session.SessionReadiness
@@ -70,6 +73,17 @@ class UserViewModelHistorySessionTest {
     @After
     fun tearDown() {
         Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `manual login requests account cache initialization`() = runTest(scheduler) {
+        val environment = environment()
+        environment.repository.currentAccountId = 2
+
+        environment.viewModel.login("accountB", "pwd")
+        runCurrent()
+
+        assertEquals(1, environment.sync.initializationCalls)
     }
 
     @Test
@@ -316,12 +330,20 @@ class UserViewModelHistorySessionTest {
         val viewModel: UserViewModel,
         val userManager: UserManager,
         val repository: HistoryRepository,
+        val sync: FakeSyncRequester,
     ) {
         suspend fun loginAs(id: Int, username: String) {
             repository.currentAccountId = id
             repository.activeAccountIdForHistory = id
             userManager.login(username, "pwd")
         }
+    }
+
+    private class FakeSyncRequester : FavoriteSyncRequester {
+        override val state: StateFlow<FavoriteSyncUiState> = MutableStateFlow(FavoriteSyncUiState())
+        var initializationCalls = 0
+        override fun request(kind: FavoriteSyncRequestKind, folderId: Int) = Unit
+        override suspend fun initializeForLogin() { initializationCalls++ }
     }
 
     private fun environment(
@@ -337,8 +359,10 @@ class UserViewModelHistorySessionTest {
             cookies,
             repository,
             readiness,
+            com.par9uet.jm.favorites.fakeNightPrompt(), com.par9uet.jm.favorites.FakeConnectionMode(),
         )
         readiness.set(SessionReadiness.Authenticated)
+        val sync = FakeSyncRequester()
         val viewModel = UserViewModel(
             userManager = userManager,
             userRepository = repository,
@@ -346,8 +370,24 @@ class UserViewModelHistorySessionTest {
             contentPreferences = FakeContentPreferences(),
             downloadManager = testDownloadManager(CoroutineScope(Dispatchers.Default)),
             miscSettingsPreferences = FakeMiscSettingsPreferences(),
+            localMode = com.par9uet.jm.favorites.alwaysNetworkLocalModeStatus(),
+            localModeExit = object : com.par9uet.jm.core.model.LocalModeExit {
+                override suspend fun exitLocalMode() = Unit
+                override suspend fun exitLocalModeAfterLogin(accountId: Int, generation: Long) = Unit
+            },
+            favoriteSyncRequester = sync,
+            localBrowseHistory = com.par9uet.jm.storage.LocalBrowseHistoryManager(
+                object : com.par9uet.jm.storage.LocalBrowseHistoryStore {
+                    private var data: List<com.par9uet.jm.storage.LocalBrowseHistoryEntry> = emptyList()
+                    override fun getOrNull() = data
+                    override fun set(entries: List<com.par9uet.jm.storage.LocalBrowseHistoryEntry>): Boolean {
+                        data = entries
+                        return true
+                    }
+                }
+            ),
         )
-        return Environment(viewModel, userManager, repository)
+        return Environment(viewModel, userManager, repository, sync)
     }
 }
 

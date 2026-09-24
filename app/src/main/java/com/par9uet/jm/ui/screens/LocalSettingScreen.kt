@@ -43,7 +43,6 @@ import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Image
-import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Recommend
@@ -54,6 +53,7 @@ import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.CleaningServices
+import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.EventAvailable
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material3.Card
@@ -96,6 +96,7 @@ import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.SettingsUiState
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.components.SelectDialog
+import kotlinx.coroutines.launch
 import com.par9uet.jm.ui.components.SelectOption
 import com.par9uet.jm.ui.glass.GlassModal
 
@@ -156,6 +157,17 @@ fun LocalSettingScreen(
     val favoriteSyncState by settingsViewModel.favoriteSyncState.collectAsState()
     var settingType by remember { mutableStateOf<SettingType>(SettingType.Api) }
     var isOpenSettingSelectDialog by remember { mutableStateOf(false) }
+    var showExitLocalModeConfirm by remember { mutableStateOf(false) }
+    var showLocalModeHelp by remember { mutableStateOf(false) }
+    var showForceRefreshConfirm by remember { mutableStateOf(false) }
+    val localModeCoordinator = org.koin.compose.koinInject<com.par9uet.jm.session.LocalModeCoordinator>()
+    val localModeExitScheduler = org.koin.compose.koinInject<com.par9uet.jm.core.model.LocalModeExitScheduler>()
+    val localFavoriteOperationGate = org.koin.compose.koinInject<com.par9uet.jm.favorites.usecase.LocalFavoriteOperationGate>()
+    val toastManager = org.koin.compose.koinInject<com.par9uet.jm.core.ToastManager>()
+    val isLocalMode by org.koin.compose.koinInject<com.par9uet.jm.core.model.ConnectionModeStatus>()
+        .isLocalModeFlow.collectAsState()
+    val localModeTransition by localModeCoordinator.transition.collectAsState()
+    val isSyncingLocalFavorites by localFavoriteOperationGate.isTransitioning.collectAsState()
 
     fun openSetting(type: SettingType) {
         settingType = type
@@ -175,6 +187,45 @@ fun LocalSettingScreen(
                 settingsViewModel = settingsViewModel,
                 onDismiss = { isOpenSettingSelectDialog = false }
             )
+            com.par9uet.jm.ui.glass.GlassConfirmDialog(
+                visible = showForceRefreshConfirm,
+                title = "强制刷新收藏夹",
+                message = "如果您认为收藏夹内容存在异常，可以执行此流程，这将会强制让收藏夹和远端对齐，本地的尚未同步的收藏漫画可能丢失。使用此功能将关闭本地模式。",
+                confirmText = "执行",
+                dismissText = "取消",
+                onConfirm = {
+                    showForceRefreshConfirm = false
+                    settingsViewModel.requestFavoriteForceRefresh()
+                },
+                onDismiss = { showForceRefreshConfirm = false },
+                surfaceId = "force-refresh-favorites-confirm",
+            )
+            LocalModeHelpDialog(
+                visible = showLocalModeHelp,
+                onConfirm = { dontShowAgain ->
+                    if (dontShowAgain) settingsViewModel.dismissLocalModeHelp()
+                    showLocalModeHelp = false
+                    localModeCoordinator.enterLocalMode()
+                },
+                onDismiss = { showLocalModeHelp = false },
+            )
+            com.par9uet.jm.ui.glass.GlassConfirmDialog(
+                visible = showExitLocalModeConfirm,
+                title = "切换到网络模式",
+                message = "将重新登录并同步本地收藏。同步期间可退出设置或将应用放到后台，但暂时不能修改收藏夹；完成后才切换到网络模式。本地模式期间的历史观看会被远端覆盖。",
+                confirmText = "开始同步",
+                onConfirm = {
+                    showExitLocalModeConfirm = false
+                    if (!localModeExitScheduler.request()) toastManager.showAsync("无法启动收藏同步，请重试")
+                },
+                onDismiss = { showExitLocalModeConfirm = false },
+                surfaceId = "exit-local-mode-confirm",
+            )
+            LaunchedEffect(localModeTransition) {
+                if (localModeTransition is com.par9uet.jm.session.LocalModeTransition.Failed) {
+                    showExitLocalModeConfirm = false
+                }
+            }
             GlassModal(
                 visible = showCachePathDialog,
                 onDismissRequest = { showCachePathDialog = false },
@@ -284,6 +335,26 @@ fun LocalSettingScreen(
             }
             item {
                 SettingsSection(title = "\u8fde\u63a5") {
+                    SettingsSwitchRow(
+                        icon = Icons.Rounded.CloudOff,
+                        title = "本地模式",
+                        value = isLocalMode,
+                        enabled = !isSyncingLocalFavorites,
+                        valueText = if (isSyncingLocalFavorites) {
+                            (localModeTransition as? com.par9uet.jm.session.LocalModeTransition.Exiting)?.stage
+                                ?: "正在准备同步"
+                        } else null,
+                        onCheckedChange = { enabled ->
+                            if (isSyncingLocalFavorites) return@SettingsSwitchRow
+                            if (!enabled) {
+                                showExitLocalModeConfirm = true
+                            } else if (!settingsViewModel.localModeHelpDismissed.value) {
+                                showLocalModeHelp = true
+                            } else {
+                                localModeCoordinator.enterLocalMode()
+                            }
+                        }
+                    )
                     SettingsRow(
                         Icons.Rounded.Api,
                         "网络推荐节点",
@@ -327,8 +398,8 @@ fun LocalSettingScreen(
                             "\u91cd\u65b0\u83b7\u53d6\u6536\u85cf\u53ca\u5b8c\u6574\u5143\u6570\u636e"
                         }
                     ) {
-                        if (!favoriteSyncState.isSyncing) {
-                            settingsViewModel.requestFavoriteForceRefresh()
+                        if (!favoriteSyncState.isSyncing && !isSyncingLocalFavorites) {
+                            showForceRefreshConfirm = true
                         }
                     }
                 }
@@ -369,9 +440,6 @@ fun LocalSettingScreen(
                     }
                     SettingsRow(Icons.Rounded.SystemUpdate, "\u68c0\u67e5\u66f4\u65b0", "\u67e5\u770b GitHub Release \u6700\u65b0\u7248\u672c") {
                         mainNavController.navigate("checkUpdate")
-                    }
-                    SettingsRow(Icons.Rounded.Info, "\u5173\u4e8e", "\u5e94\u7528\u7248\u672c\u548c\u4ed3\u5e93") {
-                        mainNavController.navigate("about")
                     }
                 }
             }
@@ -566,7 +634,7 @@ private fun AllGridColumnSliderDialog(
             Text("网格列数", style = MaterialTheme.typography.titleLarge)
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    "拖动滑块设置各页面每行显示的漫画数量，0 = 自适应",
+                    "拖动滑块设置各页面每行显示的漫画数量，0 = 自适应\n如果启用了较高的列数可能导致设备卡顿。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -639,16 +707,19 @@ private fun SettingsSwitchRow(
     icon: ImageVector,
     title: String,
     value: Boolean,
+    enabled: Boolean = true,
+    valueText: String? = null,
     onCheckedChange: (Boolean) -> Unit
 ) {
     SettingsBaseRow(
         icon = icon,
         title = title,
-        value = if (value) "\u5f00\u542f" else "\u5173\u95ed",
-        onClick = { onCheckedChange(!value) },
+        value = valueText ?: if (value) "\u5f00\u542f" else "\u5173\u95ed",
+        onClick = { if (enabled) onCheckedChange(!value) },
         trailingContent = {
             Switch(
                 checked = value,
+                enabled = enabled,
                 onCheckedChange = onCheckedChange
             )
         }

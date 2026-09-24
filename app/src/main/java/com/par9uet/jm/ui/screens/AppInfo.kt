@@ -11,13 +11,6 @@ internal fun appVersionName(context: Context): String {
 }
 
 @Suppress("DEPRECATION")
-internal fun appVersionCode(context: Context): String {
-    return runCatching {
-        context.packageManager.getPackageInfo(context.packageName, 0).versionCode.toString()
-    }.getOrNull().orEmpty().ifBlank { "unknown" }
-}
-
-@Suppress("DEPRECATION")
 internal fun loadAppIconBitmap(context: Context) = runCatching {
     val drawable = context.packageManager.getApplicationIcon(context.packageName)
     val width = drawable.intrinsicWidth.takeIf { it > 0 } ?: 128

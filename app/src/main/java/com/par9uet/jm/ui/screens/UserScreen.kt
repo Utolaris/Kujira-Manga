@@ -327,6 +327,7 @@ fun UserScreen(
     val mainNavController = LocalMainNavController.current
 
     fun checkLoginThenDo(onDo: () -> Unit) {
+        if (!userViewModel.allowLoginFeatureOrToast()) return
         if (authState == SessionReadiness.Unauthenticated) {
             mainNavController.navigate("login")
             return
@@ -379,7 +380,12 @@ fun UserScreen(
                     icon = Icons.Default.History,
                     label = "历史观看",
                     onClick = {
-                        checkLoginThenDo { mainNavController.navigate("userHistoryComic") }
+                        // 历史观看在本地模式可用（本地列表）；网络模式仍需登录。
+                        if (userViewModel.isLocalMode.value || authState != SessionReadiness.Unauthenticated) {
+                            mainNavController.navigate("userHistoryComic")
+                        } else {
+                            mainNavController.navigate("login")
+                        }
                     }
                 )
                 MenuDivider()

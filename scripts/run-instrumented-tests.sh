@@ -80,6 +80,8 @@ usage() {
 HyperOS / MIUI 需已允许「后台弹出界面」（MIUIOP 10021）；脚本只做 preflight，
 不会自动改 appops。若 ignore，会打印需要执行的 adb 命令并失败退出。
 
+测试期间会关闭方向锁定，结束后（含失败/中断）恢复测前设置。
+
 示例：
   ./scripts/run-instrumented-tests.sh                                  # 全量
   ./scripts/run-instrumented-tests.sh -p com.par9uet.jm.worker         # 一个包
@@ -178,11 +180,52 @@ current_focus() {
 
 # Transient only: wake + collapse the shade. No stayon / DND / appops / whitelist.
 # HyperOS 10021 is a preflight — if missing, fail with the exact adb commands.
+# Restore the original orientation setting after instrumentation.
 prepare_device_for_instrumentation() {
   local serial="$1"
   adb -s "$serial" shell input keyevent KEYCODE_WAKEUP >/dev/null 2>&1 || true
   adb -s "$serial" shell input keyevent KEYCODE_BACK >/dev/null 2>&1 || true
   adb -s "$serial" shell cmd statusbar collapse >/dev/null 2>&1 || true
+}
+
+# accelerometer_rotation=1 → auto-rotate on = 方向锁定关；=0 → 方向锁定开。
+# wm user-rotation free/lock 一并改，覆盖 AOSP 与 HyperOS 显示管理两条路径。
+# 测完还原测前的自动旋转设置与固定角度。
+ORIENTATION_SERIAL=""
+ORIENTATION_TOUCHED=0
+ORIENTATION_PREV_USER_ROT=""
+ORIENTATION_PREV_ACCEL=""
+
+disable_orientation_lock() {
+  local serial="$1" rot="" accel=""
+  ORIENTATION_SERIAL="$serial"
+  accel="$(adb -s "$serial" shell settings get system accelerometer_rotation </dev/null 2>/dev/null | tr -d '\r\n' || true)"
+  case "$accel" in 0|1) ;; *) return 0 ;; esac
+  ORIENTATION_PREV_ACCEL="$accel"
+  rot="$(adb -s "$serial" shell settings get system user_rotation </dev/null 2>/dev/null | tr -d '\r\n' || true)"
+  case "$rot" in ''|null|*[!0-9]*) rot="" ;; esac
+  ORIENTATION_PREV_USER_ROT="$rot"
+  ORIENTATION_TOUCHED=1
+  adb -s "$serial" shell settings put system accelerometer_rotation 1 >/dev/null 2>&1 || true
+  adb -s "$serial" shell wm user-rotation free >/dev/null 2>&1 || true
+}
+
+restore_orientation_setting() {
+  local serial="${1:-$ORIENTATION_SERIAL}" rot="${ORIENTATION_PREV_USER_ROT:-}"
+  [ -n "$serial" ] || return 0
+  [ "$ORIENTATION_TOUCHED" -eq 1 ] || return 0
+  adb -s "$serial" shell settings put system accelerometer_rotation "$ORIENTATION_PREV_ACCEL" >/dev/null 2>&1 || true
+  if [ "$ORIENTATION_PREV_ACCEL" = 1 ]; then
+    adb -s "$serial" shell wm user-rotation free >/dev/null 2>&1 || true
+  else
+    case "$rot" in ''|*[!0-9]*) rot=0 ;; esac
+    adb -s "$serial" shell wm user-rotation lock "$rot" >/dev/null 2>&1 || true
+  fi
+  ORIENTATION_TOUCHED=0
+}
+
+restore_device_after_instrumentation() {
+  if [ "${ORIENTATION_TOUCHED:-0}" -eq 1 ]; then restore_orientation_setting; fi
 }
 
 # HyperOS 4 / MIUIOP 10021 (后台弹出界面): without allow, instrumentation
@@ -411,7 +454,9 @@ main() {
   echo "==> 超过 ${STALL_SECONDS}s 没有新输出会判定卡死并主动中止（--stall 可改）"
   preflight_hyperos_background_start "$serial" || die "环境不满足 HyperOS 10021 preflight，已中止（见上方 adb 命令）。"
   prepare_device_for_instrumentation "$serial"
-  echo "==> 设备已准备（仅瞬时唤醒/收起通知栏）；跑测期间请勿操作手机"
+  disable_orientation_lock "$serial"
+  trap restore_device_after_instrumentation EXIT
+  echo "==> 设备已准备（瞬时唤醒/收起通知栏；测试期间关闭方向锁定，结束后恢复原设置）；跑测期间请勿操作手机"
   if [ "$START_APP" -eq 1 ]; then
     adb -s "$serial" shell monkey -p "$APPLICATION_ID" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1 || true
     sleep 1
@@ -427,6 +472,8 @@ main() {
   set -e
   kill "$watchdog_pid" 2>/dev/null || true
   wait "$watchdog_pid" 2>/dev/null || true
+  restore_device_after_instrumentation
+  trap - EXIT
   if [ -f "$stall_file" ]; then
     cat "$stall_file" >> "$output_file"
   fi
