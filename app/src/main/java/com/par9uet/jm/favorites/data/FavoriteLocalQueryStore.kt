@@ -73,6 +73,7 @@ internal class FavoriteLocalQueryStore(
         val comicsById = comicDao.getByIds(accountId, requestedIds).associateBy { it.albumId }
         return requestedIds.mapNotNull { comicsById[it]?.toComic() }
     }
+
 }
 
 /** Maps Room favorite rows to [Comic] inside L4 so presentation never sees entities. */

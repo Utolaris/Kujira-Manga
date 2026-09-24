@@ -19,8 +19,18 @@ import com.par9uet.jm.repository.ComicRepository
 import com.par9uet.jm.session.SessionReadinessHolder
 import com.par9uet.jm.session.UserManager
 import com.par9uet.jm.session.UserRepository
+import com.par9uet.jm.session.NightLocalModePrompt
 import com.par9uet.jm.core.network.NetWorkResult
+import com.par9uet.jm.core.model.ConnectionModeStatus
+import com.par9uet.jm.storage.ConnectionModeEditor
+import com.par9uet.jm.storage.ConnectionModePreferences
 import com.par9uet.jm.storage.CookieStorage
+import com.par9uet.jm.storage.LocalBrowseHistoryEntry
+import com.par9uet.jm.storage.LocalBrowseHistoryManager
+import com.par9uet.jm.storage.LocalBrowseHistoryStore
+import com.par9uet.jm.storage.LocalFavoriteChange
+import com.par9uet.jm.storage.LocalFavoriteChangeManager
+import com.par9uet.jm.storage.LocalFavoriteChangeStore
 import com.par9uet.jm.storage.ReadHistoryStorage
 import com.par9uet.jm.storage.ReaderResumeManager
 import com.par9uet.jm.storage.SecureStorage
@@ -94,11 +104,34 @@ class ReaderFavoriteMutationTest {
         // 阅读器只订阅 authState 与续读标记，两者都在收藏用例的链路之外：给最小实现，
         // 任何一次真实访问都会直接失败，避免测试悄悄依赖网络或 SharedPreferences。
         val secureStorage = SecureStorage(context)
+        val connectionMode = object : ConnectionModePreferences {
+            override val localModeAccountIds = MutableStateFlow<List<Int>>(emptyList())
+            override val localModeEnteredAtByAccount = MutableStateFlow<Map<Int, Long>>(emptyMap())
+        }
+        val modeStatus = object : ConnectionModeStatus {
+            override val isLocalMode = false
+            override val isLocalModeFlow = MutableStateFlow(false)
+        }
+        val promptEditor = object : ConnectionModeEditor {
+            override fun setLocalModeEnabled(accountId: Int, enabled: Boolean) = true
+            override fun nightLocalModePromptDate() = ""
+            override fun setNightLocalModePromptDate(date: String) = true
+        }
+        val localChanges = LocalFavoriteChangeManager(object : LocalFavoriteChangeStore {
+            override fun getOrNull(): List<LocalFavoriteChange> = emptyList()
+            override fun set(items: List<LocalFavoriteChange>) = true
+        })
+        val localBrowseHistory = LocalBrowseHistoryManager(object : LocalBrowseHistoryStore {
+            override fun getOrNull(): List<LocalBrowseHistoryEntry> = emptyList()
+            override fun set(entries: List<LocalBrowseHistoryEntry>) = true
+        })
         val userManager = UserManager(
             proxy<UserStorage> { _, _ -> error("No user storage expected") },
             proxy<CookieStorage> { _, _ -> error("No cookie storage expected") },
             proxy<UserRepository> { _, _ -> error("No user repository expected") },
             SessionReadinessHolder(),
+            NightLocalModePrompt(connectionMode, promptEditor),
+            connectionMode,
         )
         val viewModel = ComicReadViewModel(
             repository, koin.get<ReaderImagePipeline>(), koin.get<ReaderPreferences>(),
@@ -108,9 +141,10 @@ class ReaderFavoriteMutationTest {
             ),
             ToastManager(), ReadHistoryManager(ReadHistoryStorage(secureStorage)),
             session, ObserveLocalFavorite(localQuery, session),
-            CollectFavorite(remote, mutations, session), UncollectFavorites(remote, mutations, session),
+            CollectFavorite(remote, mutations, session, modeStatus, localChanges),
+            UncollectFavorites(remote, mutations, session, modeStatus, localChanges),
             koin.get<DownloadManager>(),
-            userManager, ReaderResumeManager(secureStorage),
+            userManager, ReaderResumeManager(secureStorage), modeStatus, localBrowseHistory,
         )
         withContext(Dispatchers.Main) {
             viewModel.getComicDetail(11)

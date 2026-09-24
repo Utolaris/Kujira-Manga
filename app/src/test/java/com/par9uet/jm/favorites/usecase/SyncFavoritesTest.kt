@@ -88,6 +88,8 @@ class SyncFavoritesTest {
     }
 
     private class LocalSnapshot : FavoriteLocalSync {
+        override suspend fun hasFullSnapshot(accountId: Int): Boolean = false
+
         val replacements = mutableListOf<Pair<Int, List<Int>>>()
         var markedSuccessful = false
         override suspend fun replaceAllSnapshot(

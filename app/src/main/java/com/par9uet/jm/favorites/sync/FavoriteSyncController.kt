@@ -33,6 +33,9 @@ interface FavoriteSyncRequester {
     val state: StateFlow<FavoriteSyncUiState>
 
     fun request(kind: FavoriteSyncRequestKind, folderId: Int = 0)
+
+    /** Starts a full cache build for an account that has never completed one. */
+    suspend fun initializeForLogin()
 }
 
 /** Owns the application sync job, its session, progress and automatic trailing requests. */
@@ -45,7 +48,10 @@ class FavoriteSyncController(
         onProgress: (FavoriteSyncProgress) -> Unit,
     ) -> NetWorkResult<FavoriteSyncReport>,
     private val applicationScope: CoroutineScope,
+    private val localMode: com.par9uet.jm.core.model.ConnectionModeStatus,
     private val autoSyncCoordinator: FavoriteAutoSyncCoordinator = FavoriteAutoSyncCoordinator(),
+    private val hasFullSnapshot: suspend (Int) -> Boolean = { false },
+    private val onCacheInitialized: () -> Unit = {},
 ) : FavoriteSyncRequester {
     private val lock = Any()
     private val _state = MutableStateFlow(FavoriteSyncUiState())
@@ -54,6 +60,7 @@ class FavoriteSyncController(
     private var requestGeneration = 0L
     private var syncJob: Job? = null
     private var trailingJob: Job? = null
+    private var pendingInitialAccount: Int? = null
 
     init {
         applicationScope.launch {
@@ -61,11 +68,38 @@ class FavoriteSyncController(
                 synchronized(lock) { refreshSession() }
             }
         }
+        applicationScope.launch {
+            localMode.isLocalModeFlow.collect { isLocal ->
+                if (isLocal) synchronized(lock) {
+                    requestGeneration++
+                    syncJob?.cancel()
+                    syncJob = null
+                    trailingJob?.cancel()
+                    trailingJob = null
+                    pendingInitialAccount = null
+                    autoSyncCoordinator.reset()
+                    _state.value = FavoriteSyncUiState()
+                }
+            }
+        }
+    }
+
+    override suspend fun initializeForLogin() {
+        val snapshot = session.snapshot()
+        if (snapshot.accountId <= 0 || localMode.isLocalMode || hasFullSnapshot(snapshot.accountId)) return
+        synchronized(lock) {
+            refreshSession()
+            if (!session.isCurrent(snapshot) || localMode.isLocalMode) return
+            pendingInitialAccount = snapshot.accountId
+            if (!_state.value.isSyncing) startSync(FAVORITE_SCOPE_ALL, force = true)
+        }
     }
 
     override fun request(kind: FavoriteSyncRequestKind, folderId: Int) {
         synchronized(lock) {
             refreshSession()
+            // 本地模式不打远端同步，避免登录态被踢时把 401 风暴拉满。
+            if (localMode.isLocalMode) return
             if (observedSession.accountId <= 0) return
             when (kind) {
                 FavoriteSyncRequestKind.AUTO -> {
@@ -94,6 +128,7 @@ class FavoriteSyncController(
         syncJob = null
         trailingJob?.cancel()
         trailingJob = null
+        pendingInitialAccount = null
         autoSyncCoordinator.reset()
         _state.value = FavoriteSyncUiState()
     }
@@ -126,6 +161,9 @@ class FavoriteSyncController(
         _state.value = FavoriteSyncUiState(isSyncing = true, isForceRefresh = force)
         val job = applicationScope.launch(start = CoroutineStart.LAZY) {
             var failure: NetWorkResult.Error? = null
+            var succeeded = false
+            var notifyCacheInitialized = false
+            var startedInitialSync = false
             try {
                 val onProgress: (FavoriteSyncProgress) -> Unit = { progress ->
                     synchronized(lock) {
@@ -142,7 +180,10 @@ class FavoriteSyncController(
                 ) {
                     syncOperation(snapshot, folderId, force, onProgress)
                 }
-                if (result is NetWorkResult.Error) failure = result
+                when (result) {
+                    is NetWorkResult.Success -> succeeded = true
+                    is NetWorkResult.Error -> failure = result
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
@@ -169,17 +210,27 @@ class FavoriteSyncController(
                                 errorKind = failure.kind,
                             )
                         }
+                        if (succeeded && pendingInitialAccount == snapshot.accountId) {
+                            if (force && folderId == FAVORITE_SCOPE_ALL) {
+                                pendingInitialAccount = null
+                                notifyCacheInitialized = true
+                            } else {
+                                startSync(FAVORITE_SCOPE_ALL, force = true)
+                                startedInitialSync = true
+                            }
+                        }
                         // 失败时**不立刻续跑**。后端拥塞的时段（例如晚间）如果失败后马上再起一轮，
                         // 就会把失败叠成连续失败风暴 —— 每一轮都会重新走一遍 401 恢复 + 登录，
                         // 用户看到的是"一直弹需要重新登录"。
                         //
                         // 这里刻意不动 coordinator 的状态：pending 请求留在原地，
                         // 由下一个 30 秒窗口（AUTO 请求进来变 Coalesced → scheduleTrailing）自然消化。
-                        if (failure == null) {
+                        if (failure == null && !startedInitialSync) {
                             autoSyncCoordinator.onSyncFinished()?.let { startSync(it, force = false) }
                         }
                     }
                 }
+                if (notifyCacheInitialized && session.isCurrent(snapshot)) onCacheInitialized()
             }
         }
         syncJob = job

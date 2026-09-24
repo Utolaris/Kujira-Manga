@@ -33,6 +33,8 @@ import com.par9uet.jm.storage.DohPreferences
 import com.par9uet.jm.storage.DohPreferencesEditor
 import com.par9uet.jm.storage.ReaderPreferences
 import com.par9uet.jm.storage.RecommendationPreferences
+import com.par9uet.jm.storage.ConnectionModePreferences
+import com.par9uet.jm.storage.ConnectionModeEditor
 import com.par9uet.jm.storage.RemoteConfigPreferences
 import com.par9uet.jm.core.network.NetWorkResult
 import com.par9uet.jm.network.RemoteConfigManager
@@ -85,6 +87,8 @@ val LOCAL_SETTING_MANAGER_ALIASES = arrayOf(
     MiscSettingsPreferences::class,
     AppExperiencePreferences::class,
     LocalSettingSnapshotProvider::class,
+    ConnectionModePreferences::class,
+    ConnectionModeEditor::class,
 )
 
 /**
@@ -155,7 +159,7 @@ val appModule = module {
     single { RemoteSettingRepositoryImpl(get()) } bind RemoteSettingRepository::class
 
     single { SessionReadinessHolder() }
-    single { UserManager(get(), get(), get(), get()) }
+    single { UserManager(get(), get(), get(), get(), nightLocalModePrompt = get(), connectionMode = get()) }
     single { com.par9uet.jm.network.SecureRemoteConfigStore(get()) } bind com.par9uet.jm.network.RemoteConfigStore::class
     single {
         val remoteSettingRepository = get<RemoteSettingRepository>()
@@ -175,6 +179,36 @@ val appModule = module {
     single { LocalSettingManager(get<LocalSettingStorage>(), get()) } binds LOCAL_SETTING_MANAGER_ALIASES
     single { HistorySearchManager(get()) }
     single { ReadHistoryManager(get()) }
+    single<com.par9uet.jm.storage.LocalBrowseHistoryStore> {
+        com.par9uet.jm.storage.LocalBrowseHistoryStorage(get())
+    }
+    single { com.par9uet.jm.storage.LocalBrowseHistoryManager(get()) }
+    single<com.par9uet.jm.storage.LocalFavoriteChangeStore> {
+        com.par9uet.jm.storage.LocalFavoriteChangeStorage(get())
+    }
+    single { com.par9uet.jm.storage.LocalFavoriteChangeManager(get()) }
+    single { com.par9uet.jm.session.LocalModeGate(get(), get(), get()) } bind com.par9uet.jm.core.model.ConnectionModeStatus::class
+    single { com.par9uet.jm.session.NightLocalModePrompt(get(), get()) }
+    single {
+        com.par9uet.jm.session.LocalModeCoordinator(
+            connectionModeEditor = get(),
+            connectionModePreferences = get(),
+            localModeStatus = get(),
+            userManager = get(),
+            browseHistory = get(),
+            exitFavoriteSync = get(),
+            localFavoriteOperationGate = get(),
+            favoriteSession = get(),
+            refreshFavorites = { snapshot -> get<com.par9uet.jm.favorites.usecase.SyncFavorites>().synchronize(snapshot, force = true) },
+            localFavoriteChanges = get(),
+            toastManager = get(),
+        )
+    }
+    single<com.par9uet.jm.core.model.FavoriteForceAlign> {
+        com.par9uet.jm.core.model.FavoriteForceAlign {
+            get<com.par9uet.jm.session.LocalModeCoordinator>().forceAlignFavoritesWithRemote()
+        }
+    }
     single { ReaderResumeManager(secureStorage = get()) }
     single { ToastManager() }
     single<com.par9uet.jm.cache.atom.CacheFiles> {
@@ -224,7 +258,7 @@ val appModule = module {
     viewModel { com.par9uet.jm.ui.viewModel.BackupRestoreViewModel(get(), get(), get()) }
     // SettingsViewModel 依赖多且全是同包同类型的窄偏好接口，靠位置传参容易错位 ——
     // 增删依赖时务必同步这里，并跑 SettingsViewModelTest / CatalogViewModelWiringTest。
-    viewModel { com.par9uet.jm.ui.viewModel.SettingsViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    viewModel { com.par9uet.jm.ui.viewModel.SettingsViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
 
     single<Gson> { GsonBuilder().setStrictness(Strictness.LENIENT).serializeNulls().create() }
 }

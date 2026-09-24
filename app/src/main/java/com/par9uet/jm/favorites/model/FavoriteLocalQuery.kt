@@ -34,4 +34,5 @@ interface FavoriteLocalQuery {
     suspend fun getCachedFolders(accountId: Int): Map<String, String>
 
     suspend fun getComics(accountId: Int, albumIds: Collection<Int>): List<Comic>
+
 }

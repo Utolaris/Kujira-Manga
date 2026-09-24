@@ -9,6 +9,8 @@ import kotlinx.coroutines.withContext
 
 data class LocalChapterContent(
     val groupId: Int,
+    val comicName: String,
+    val authorList: List<String>,
     val chapters: List<ComicChapter>,
     val imagePaths: List<String>,
 )
@@ -24,6 +26,8 @@ class LoadLocalChapter(
         val chapters = downloads.getCompleteByGroupId(groupId)
         LocalChapterContent(
             groupId = groupId,
+            comicName = task?.groupName?.takeIf { it.isNotBlank() } ?: task?.name.orEmpty(),
+            authorList = task?.authorList.orEmpty(),
             chapters = chapters.mapIndexed { index, chapter ->
                 ComicChapter(chapter.id, chapter.chapterName.ifBlank {
                     if (chapters.size > 1) "第 ${index + 1} 章" else chapter.name

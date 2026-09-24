@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.flowOf
 data class FavoritesBatchResult(
     val succeeded: Int,
     val failed: Int,
+    val message: String? = null,
 )
 
 /** Canonical "collect this comic into favorites" operation, session-bound end to end. */
@@ -24,24 +25,58 @@ class CollectFavorite(
     private val remoteMutation: FavoriteRemoteMutation,
     private val localMutation: FavoriteLocalMutation,
     private val session: FavoriteSession,
+    private val localMode: com.par9uet.jm.core.model.ConnectionModeStatus,
+    private val localChanges: com.par9uet.jm.storage.LocalFavoriteChangeManager,
+    private val localOperationGate: LocalFavoriteOperationGate,
 ) {
     suspend operator fun invoke(
         sessionSnapshot: FavoriteSessionSnapshot,
         comic: Comic,
     ): NetWorkResult<Unit> {
-        return session.withBoundRemoteSession(sessionSnapshot) {
-            when (val result = remoteMutation.collectComic(comic.id)) {
-                // Preserve the real server/network failure verbatim. A stale-session failure is
-                // synthesized only when the bound capability or guarded local commit is refused.
-                is NetWorkResult.Error -> result
-                is NetWorkResult.Success -> {
-                    val committed = session.withCurrentSession(sessionSnapshot) {
-                        localMutation.addFromComic(sessionSnapshot.accountId, comic)
+        if (localOperationGate.isTransitioning()) return NetWorkResult.Error("收藏同步期间暂不可修改收藏夹")
+        if (localMode.isLocalMode) {
+            com.par9uet.jm.utils.log(
+                "LocalModeSync",
+                "collect LOCAL album=${comic.id} account=${sessionSnapshot.accountId} gen=${sessionSnapshot.generation}",
+            )
+            return localOperationGate.withLock {
+                if (localOperationGate.isTransitioning()) return@withLock NetWorkResult.Error("收藏同步期间暂不可修改收藏夹")
+                session.withCurrentSession(sessionSnapshot) {
+                    if (!localMode.isLocalMode) return@withCurrentSession staleSessionError()
+                    if (!localChanges.record(sessionSnapshot.accountId, comic.id, collect = true)) {
+                        com.par9uet.jm.utils.logError("LocalModeSync", "collect LOCAL record failed album=${comic.id}")
+                        return@withCurrentSession NetWorkResult.Error("本地收藏保存失败，请重试")
                     }
-                    if (committed == null) staleSessionError() else result
-                }
+                    localMutation.addFromComic(sessionSnapshot.accountId, comic)
+                    NetWorkResult.Success(Unit)
+                } ?: staleSessionError()
             }
-        } ?: staleSessionError()
+        }
+        com.par9uet.jm.utils.log(
+            "LocalModeSync",
+            "collect REMOTE album=${comic.id} account=${sessionSnapshot.accountId} gen=${sessionSnapshot.generation}",
+        )
+        return localOperationGate.withLock {
+            if (localOperationGate.isTransitioning()) return@withLock NetWorkResult.Error("收藏同步期间暂不可修改收藏夹")
+            session.withBoundRemoteSession(sessionSnapshot) {
+                when (val result = remoteMutation.collectComic(comic.id)) {
+                    is NetWorkResult.Error -> {
+                        com.par9uet.jm.utils.logError("LocalModeSync", "collect REMOTE failed album=${comic.id}: ${result.message}")
+                        result
+                    }
+                    is NetWorkResult.Success -> {
+                        val committed = session.withCurrentSession(sessionSnapshot) {
+                            localMutation.addFromComic(sessionSnapshot.accountId, comic)
+                        }
+                        com.par9uet.jm.utils.log(
+                            "LocalModeSync",
+                            "collect REMOTE ok album=${comic.id} localCommit=${committed != null}",
+                        )
+                        if (committed == null) staleSessionError() else result
+                    }
+                }
+            } ?: staleSessionError()
+        }
     }
 }
 
@@ -49,42 +84,64 @@ class UncollectFavorites(
     private val remoteMutation: FavoriteRemoteMutation,
     private val localMutation: FavoriteLocalMutation,
     private val session: FavoriteSession,
+    private val localMode: com.par9uet.jm.core.model.ConnectionModeStatus,
+    private val localChanges: com.par9uet.jm.storage.LocalFavoriteChangeManager,
+    private val localOperationGate: LocalFavoriteOperationGate,
 ) {
     suspend operator fun invoke(
         sessionSnapshot: FavoriteSessionSnapshot,
         comicIds: Collection<Int>,
     ): FavoritesBatchResult {
         val distinctIds = comicIds.distinct()
-        var succeeded = 0
-        var failed = 0
-        val batchStarted = session.withBoundRemoteSession(sessionSnapshot) {
-            for (index in distinctIds.indices) {
-                if (!session.isCurrent(sessionSnapshot)) {
-                    failed += distinctIds.size - index
-                    break
-                }
-                val comicId = distinctIds[index]
-                when (remoteMutation.uncollectComic(comicId)) {
-                    is NetWorkResult.Error -> failed++
-                    is NetWorkResult.Success -> {
-                        val committed = session.withCurrentSession(sessionSnapshot) {
-                            localMutation.remove(sessionSnapshot.accountId, listOf(comicId))
-                        }
-                        if (committed == null) {
-                            failed += distinctIds.size - index
-                            break
-                        }
+        if (localOperationGate.isTransitioning()) return FavoritesBatchResult(0, distinctIds.size, "收藏同步期间暂不可修改收藏夹")
+        if (localMode.isLocalMode) {
+            return localOperationGate.withLock {
+                if (localOperationGate.isTransitioning()) return@withLock FavoritesBatchResult(0, distinctIds.size, "收藏同步期间暂不可修改收藏夹")
+                session.withCurrentSession(sessionSnapshot) {
+                    if (!localMode.isLocalMode) return@withCurrentSession FavoritesBatchResult(0, distinctIds.size)
+                    var succeeded = 0
+                    for (comicId in distinctIds) {
+                        if (!localChanges.record(sessionSnapshot.accountId, comicId, collect = false)) continue
+                        localMutation.remove(sessionSnapshot.accountId, listOf(comicId))
                         succeeded++
                     }
-                }
+                    FavoritesBatchResult(succeeded = succeeded, failed = distinctIds.size - succeeded)
+                } ?: FavoritesBatchResult(0, distinctIds.size)
             }
-            true
         }
-        if (batchStarted != true) {
-            // The whole batch was refused before any remote call: nothing was processed.
-            failed += distinctIds.size
+        return localOperationGate.withLock {
+            if (localOperationGate.isTransitioning()) return@withLock FavoritesBatchResult(0, distinctIds.size, "收藏同步期间暂不可修改收藏夹")
+            var succeeded = 0
+            var failed = 0
+            val batchStarted = session.withBoundRemoteSession(sessionSnapshot) {
+                for (index in distinctIds.indices) {
+                    if (!session.isCurrent(sessionSnapshot)) {
+                        failed += distinctIds.size - index
+                        break
+                    }
+                    val comicId = distinctIds[index]
+                    when (remoteMutation.uncollectComic(comicId)) {
+                        is NetWorkResult.Error -> failed++
+                        is NetWorkResult.Success -> {
+                            val committed = session.withCurrentSession(sessionSnapshot) {
+                                localMutation.remove(sessionSnapshot.accountId, listOf(comicId))
+                            }
+                            if (committed == null) {
+                                failed += distinctIds.size - index
+                                break
+                            }
+                            succeeded++
+                        }
+                    }
+                }
+                true
+            }
+            if (batchStarted != true) {
+                // The whole batch was refused before any remote call: nothing was processed.
+                failed += distinctIds.size
+            }
+            FavoritesBatchResult(succeeded = succeeded, failed = failed)
         }
-        return FavoritesBatchResult(succeeded = succeeded, failed = failed)
     }
 }
 
@@ -92,12 +149,20 @@ class MoveFavorites(
     private val remoteMutation: FavoriteRemoteMutation,
     private val localMutation: FavoriteLocalMutation,
     private val session: FavoriteSession,
+    private val localMode: com.par9uet.jm.core.model.ConnectionModeStatus,
+    private val localOperationGate: LocalFavoriteOperationGate,
 ) {
     suspend operator fun invoke(
         sessionSnapshot: FavoriteSessionSnapshot,
         comicIds: Collection<Int>,
         folderId: Int,
     ): FavoritesBatchResult {
+        if (localOperationGate.isTransitioning()) {
+            return FavoritesBatchResult(0, comicIds.distinct().size, "收藏同步期间暂不可修改收藏夹")
+        }
+        if (localMode.isLocalMode) {
+            return FavoritesBatchResult(succeeded = 0, failed = comicIds.distinct().size, message = com.par9uet.jm.core.model.LOCAL_MODE_UNAVAILABLE_MESSAGE)
+        }
         val distinctIds = comicIds.distinct()
         var succeeded = 0
         var failed = 0
@@ -135,11 +200,17 @@ class MoveFavorites(
 class CreateFavoriteFolder(
     private val remoteMutation: FavoriteRemoteMutation,
     private val session: FavoriteSession,
+    private val localMode: com.par9uet.jm.core.model.ConnectionModeStatus,
+    private val localOperationGate: LocalFavoriteOperationGate,
 ) {
     suspend operator fun invoke(
         sessionSnapshot: FavoriteSessionSnapshot,
         name: String,
     ): NetWorkResult<Unit> {
+        if (localOperationGate.isTransitioning()) return NetWorkResult.Error("收藏同步期间暂不可修改收藏夹")
+        if (localMode.isLocalMode) {
+            return NetWorkResult.Error(com.par9uet.jm.core.model.LOCAL_MODE_UNAVAILABLE_MESSAGE)
+        }
         return session.withBoundRemoteSession(sessionSnapshot) {
             when (val result = remoteMutation.createFolder(name)) {
                 is NetWorkResult.Error -> result
@@ -156,11 +227,17 @@ class DeleteFavoriteFolder(
     private val remoteMutation: FavoriteRemoteMutation,
     private val localMutation: FavoriteLocalMutation,
     private val session: FavoriteSession,
+    private val localMode: com.par9uet.jm.core.model.ConnectionModeStatus,
+    private val localOperationGate: LocalFavoriteOperationGate,
 ) {
     suspend operator fun invoke(
         sessionSnapshot: FavoriteSessionSnapshot,
         folderId: Int,
     ): NetWorkResult<Unit> {
+        if (localOperationGate.isTransitioning()) return NetWorkResult.Error("收藏同步期间暂不可修改收藏夹")
+        if (localMode.isLocalMode) {
+            return NetWorkResult.Error(com.par9uet.jm.core.model.LOCAL_MODE_UNAVAILABLE_MESSAGE)
+        }
         return session.withBoundRemoteSession(sessionSnapshot) {
             when (val result = remoteMutation.deleteFolder(folderId)) {
                 is NetWorkResult.Error -> result
@@ -179,12 +256,18 @@ class RenameFavoriteFolder(
     private val remoteMutation: FavoriteRemoteMutation,
     private val localMutation: FavoriteLocalMutation,
     private val session: FavoriteSession,
+    private val localMode: com.par9uet.jm.core.model.ConnectionModeStatus,
+    private val localOperationGate: LocalFavoriteOperationGate,
 ) {
     suspend operator fun invoke(
         sessionSnapshot: FavoriteSessionSnapshot,
         folderId: Int,
         name: String,
     ): NetWorkResult<Unit> {
+        if (localOperationGate.isTransitioning()) return NetWorkResult.Error("收藏同步期间暂不可修改收藏夹")
+        if (localMode.isLocalMode) {
+            return NetWorkResult.Error(com.par9uet.jm.core.model.LOCAL_MODE_UNAVAILABLE_MESSAGE)
+        }
         return session.withBoundRemoteSession(sessionSnapshot) {
             when (val result = remoteMutation.renameFolder(folderId, name)) {
                 is NetWorkResult.Error -> result
@@ -224,11 +307,8 @@ class ObserveLocalFavorite(
         session.accountIdFlow
             .distinctUntilChanged()
             .flatMapLatest { accountId ->
-                if (accountId <= 0) {
-                    flowOf(false)
-                } else {
-                    localQuery.observeIsFavorite(accountId, albumId)
-                }
+                if (accountId <= 0) flowOf(false)
+                else localQuery.observeIsFavorite(accountId, albumId)
             }
             .distinctUntilChanged()
 }

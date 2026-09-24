@@ -3,6 +3,8 @@ package com.par9uet.jm.favorites.sync
 import com.par9uet.jm.core.network.NetWorkResult
 import com.par9uet.jm.core.network.NetworkErrorKind
 import com.par9uet.jm.favorites.TestFavoriteSession
+import com.par9uet.jm.favorites.FakeConnectionMode
+import com.par9uet.jm.core.model.ConnectionModeStatus
 import com.par9uet.jm.favorites.model.FavoriteSessionSnapshot
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -25,6 +27,115 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class FavoriteSyncControllerTest {
+    @Test
+    fun `first login builds full cache and notifies only after success`() = runTest {
+        val session = TestFavoriteSession()
+        val gate = CompletableDeferred<Unit>()
+        val requests = mutableListOf<Request>()
+        var cacheReady = false
+        var notifications = 0
+        val controller = controller(backgroundScope, session, requests, operation = { _, _, _, _ ->
+            gate.await()
+            cacheReady = true
+            success()
+        }, hasFullSnapshot = { cacheReady }, onCacheInitialized = { notifications++ })
+
+        controller.initializeForLogin()
+        runCurrent()
+        assertEquals(listOf(Request(7, FAVORITE_SCOPE_ALL, true)), requests)
+        assertEquals(0, notifications)
+
+        gate.complete(Unit)
+        runCurrent()
+        assertEquals(1, notifications)
+        controller.initializeForLogin()
+        runCurrent()
+        assertEquals(1, requests.size)
+        assertEquals(1, notifications)
+    }
+
+    @Test
+    fun `first login waits for an existing sync then builds full cache`() = runTest {
+        val session = TestFavoriteSession()
+        val gate = CompletableDeferred<Unit>()
+        val requests = mutableListOf<Request>()
+        var notifications = 0
+        val controller = controller(backgroundScope, session, requests, operation = { _, _, force, _ ->
+            if (!force) gate.await()
+            success()
+        }, onCacheInitialized = { notifications++ })
+
+        controller.request(FavoriteSyncRequestKind.MANUAL, folderId = 3)
+        runCurrent()
+        controller.initializeForLogin()
+        runCurrent()
+        assertEquals(listOf(Request(7, 3, false)), requests)
+
+        gate.complete(Unit)
+        runCurrent()
+        assertEquals(listOf(Request(7, 3, false), Request(7, FAVORITE_SCOPE_ALL, true)), requests)
+        assertEquals(1, notifications)
+    }
+
+    @Test
+    fun `failed initial cache build does not announce completion`() = runTest {
+        val requests = mutableListOf<Request>()
+        var notifications = 0
+        val controller = controller(backgroundScope, TestFavoriteSession(), requests,
+            operation = { _, _, _, _ -> NetWorkResult.Error("offline") },
+            onCacheInitialized = { notifications++ })
+
+        controller.initializeForLogin()
+        runCurrent()
+
+        assertEquals(listOf(Request(7, FAVORITE_SCOPE_ALL, true)), requests)
+        assertEquals(0, notifications)
+        assertFalse(controller.state.value.isSyncing)
+    }
+
+    @Test
+    fun `account switch cancels initial cache completion message`() = runTest {
+        val session = TestFavoriteSession()
+        val gate = CompletableDeferred<Unit>()
+        val requests = mutableListOf<Request>()
+        var notifications = 0
+        val controller = controller(backgroundScope, session, requests, operation = { _, _, _, _ ->
+            gate.await()
+            success()
+        }, onCacheInitialized = { notifications++ })
+
+        controller.initializeForLogin()
+        runCurrent()
+        session.switchAccount(8)
+        runCurrent()
+        gate.complete(Unit)
+        runCurrent()
+
+        assertEquals(listOf(Request(7, FAVORITE_SCOPE_ALL, true)), requests)
+        assertEquals(0, notifications)
+    }
+
+    @Test
+    fun `entering local mode cancels an active remote sync and rejects new requests`() = runTest {
+        val session = TestFavoriteSession()
+        val mode = FakeConnectionMode()
+        val gate = CompletableDeferred<Unit>()
+        val requests = mutableListOf<Request>()
+        val controller = controller(backgroundScope, session, requests, operation = { _, _, _, _ ->
+            gate.await()
+            success()
+        }, localMode = mode)
+        controller.request(FavoriteSyncRequestKind.MANUAL)
+        runCurrent()
+        assertTrue(controller.state.value.isSyncing)
+        mode.setLocalModeEnabled(7, true)
+        runCurrent()
+        assertFalse(controller.state.value.isSyncing)
+        controller.request(FavoriteSyncRequestKind.MANUAL)
+        runCurrent()
+        assertEquals(1, requests.size)
+    }
+
     @Test
     fun `renewal retries auth failure only once and keeps sync active until finished`() = runTest {
         val session = TestFavoriteSession()
@@ -327,6 +438,9 @@ class FavoriteSyncControllerTest {
         ) -> NetWorkResult<FavoriteSyncReport>,
         intervalMillis: Long = 100L,
         timeSource: () -> Long = { 0L },
+        localMode: ConnectionModeStatus = com.par9uet.jm.favorites.alwaysNetworkLocalModeStatus(),
+        hasFullSnapshot: suspend (Int) -> Boolean = { false },
+        onCacheInitialized: () -> Unit = {},
     ): FavoriteSyncController = FavoriteSyncController(
         session,
         { snapshot: FavoriteSessionSnapshot, folder: Int, force: Boolean,
@@ -335,7 +449,10 @@ class FavoriteSyncControllerTest {
             operation(snapshot.accountId, folder, force, progress)
         },
         applicationScope,
+        localMode,
         FavoriteAutoSyncCoordinator(intervalMillis, timeSource),
+        hasFullSnapshot,
+        onCacheInitialized,
     )
 
     private fun success() = NetWorkResult.Success(

@@ -17,6 +17,7 @@ import com.par9uet.jm.R
 
 const val DOWNLOAD_NOTIFICATION_CHANNEL_ID = "download_progress"
 const val UPDATE_DOWNLOADED_CHANNEL_ID = "update_downloaded"
+const val LOCAL_MODE_SYNC_CHANNEL_ID = "local_mode_sync"
 const val COMIC_CACHE_NOTIFICATION_ID_BASE = 20_000
 const val APP_UPDATE_NOTIFICATION_ID = 10_001
 const val APP_UPDATE_PENDING_INTENT_REQUEST_CODE = 10_101
@@ -43,6 +44,14 @@ fun ensureAppNotificationChannels(context: Context) {
         enableVibration(true)
     }
     manager.createNotificationChannel(updateChannel)
+    manager.createNotificationChannel(NotificationChannel(
+        LOCAL_MODE_SYNC_CHANNEL_ID,
+        "收藏同步",
+        NotificationManager.IMPORTANCE_LOW,
+    ).apply {
+        description = "本地模式切换网络模式时的收藏同步进度"
+        setSound(null, null)
+    })
 }
 
 /**
@@ -111,6 +120,52 @@ fun cancelProgressNotification(context: Context, notificationId: Int) {
 }
 
 const val CACHE_MIGRATION_NOTIFICATION_ID = 19_940
+const val LOCAL_MODE_SYNC_NOTIFICATION_ID = 19_941
+const val LOCAL_MODE_SYNC_RESULT_NOTIFICATION_ID = 19_942
+
+fun localModeSyncNotification(context: Context, stage: String): Notification {
+    ensureAppNotificationChannels(context)
+    val openApp = PendingIntent.getActivity(
+        context,
+        LOCAL_MODE_SYNC_NOTIFICATION_ID,
+        launcherActivityIntent(context).apply {
+            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        },
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+    return NotificationCompat.Builder(context, LOCAL_MODE_SYNC_CHANNEL_ID)
+        .setSmallIcon(R.drawable.ic_download_notification)
+        .setContentTitle("正在切换到网络模式")
+        .setContentText(stage)
+        .setContentIntent(openApp)
+        .setOnlyAlertOnce(true)
+        .setOngoing(true)
+        .setProgress(0, 0, true)
+        .build()
+}
+
+@SuppressLint("MissingPermission")
+fun showLocalModeSyncResultNotification(context: Context, success: Boolean) {
+    if (!canPostNotification(context)) return
+    val openApp = PendingIntent.getActivity(
+        context,
+        LOCAL_MODE_SYNC_RESULT_NOTIFICATION_ID,
+        launcherActivityIntent(context).apply {
+            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        },
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+    val notification = NotificationCompat.Builder(context, LOCAL_MODE_SYNC_CHANNEL_ID)
+        .setSmallIcon(R.drawable.ic_download_notification)
+        .setContentTitle(if (success) "已切换到网络模式" else "收藏同步未完成")
+        .setContentText(if (success) "收藏夹已同步到远端" else "仍处于本地模式，可稍后重试")
+        .setContentIntent(openApp)
+        .setAutoCancel(true)
+        .build()
+    runCatching {
+        NotificationManagerCompat.from(context).notify(LOCAL_MODE_SYNC_RESULT_NOTIFICATION_ID, notification)
+    }
+}
 
 /**
  * 缓存目录迁移的前台通知。放在这里和其余通知构造待在一起，Worker 只负责把进度交出来，

@@ -24,6 +24,9 @@ internal class FavoriteLocalSyncStore(
     private val termDao: FavoriteMetadataTermDao,
     private val syncStateDao: FavoriteSyncStateDao,
 ) : FavoriteLocalSync {
+    override suspend fun hasFullSnapshot(accountId: Int): Boolean =
+        syncStateDao.get(accountId, FAVORITE_SCOPE_ALL)?.lastForceRefreshAt?.let { it > 0L } == true
+
     override suspend fun reconcileLightweightSnapshot(
         accountId: Int,
         scopeFolderId: Int,

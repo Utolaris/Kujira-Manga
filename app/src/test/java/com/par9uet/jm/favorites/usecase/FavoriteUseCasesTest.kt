@@ -7,6 +7,12 @@ import com.par9uet.jm.favorites.model.FavoriteSession
 import com.par9uet.jm.favorites.model.FavoriteSessionSnapshot
 import com.par9uet.jm.core.network.AuthFailure
 import com.par9uet.jm.core.network.NetWorkResult
+import com.par9uet.jm.favorites.alwaysNetworkLocalModeStatus
+import com.par9uet.jm.favorites.inMemoryLocalChanges
+import com.par9uet.jm.favorites.FakeConnectionMode
+import com.par9uet.jm.storage.LocalFavoriteChange
+import com.par9uet.jm.storage.LocalFavoriteChangeManager
+import com.par9uet.jm.storage.LocalFavoriteChangeStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
@@ -19,6 +25,81 @@ class FavoriteUseCasesTest {
     private val sessionSnapshot = FavoriteSessionSnapshot(accountId = 42, generation = 0)
 
     @Test
+    fun `transition rejects favorite edits without recording intents or contacting remote`() = runTest {
+        val gate = LocalFavoriteOperationGate()
+        val mode = FakeConnectionMode(true)
+        val changes = inMemoryLocalChanges()
+        val remote = RecordingRemoteMutation()
+        val local = RecordingLocalMutation()
+        assertTrue(gate.beginTransition())
+
+        val collect = CollectFavorite(remote, local, session, mode, changes, gate)(
+            sessionSnapshot, Comic.create(11, "Comic", emptyList()),
+        )
+        val uncollect = UncollectFavorites(remote, local, session, mode, changes, gate)(
+            sessionSnapshot, listOf(11),
+        )
+
+        assertTrue(collect is NetWorkResult.Error)
+        assertEquals("收藏同步期间暂不可修改收藏夹", uncollect.message)
+        assertTrue(changes.snapshot(42).orEmpty().isEmpty())
+        assertTrue(remote.collectedIds.isEmpty())
+        assertTrue(remote.uncollectedIds.isEmpty())
+        assertTrue(local.addedFavorites.isEmpty())
+        assertTrue(local.removedIds.isEmpty())
+        gate.endTransition()
+    }
+
+    @Test
+    fun `local mode records the latest intent without calling remote mutation`() = runTest {
+        val mode = FakeConnectionMode(true)
+        val changes = inMemoryLocalChanges()
+        val remote = RecordingRemoteMutation()
+        val local = RecordingLocalMutation()
+        val comic = Comic.create(11, "Comic", emptyList())
+
+        assertTrue(CollectFavorite(remote, local, session, mode, changes, LocalFavoriteOperationGate())(sessionSnapshot, comic) is NetWorkResult.Success)
+        assertEquals(FavoritesBatchResult(1, 0), UncollectFavorites(remote, local, session, mode, changes, LocalFavoriteOperationGate())(sessionSnapshot, listOf(11)))
+        assertEquals(listOf(11 to false), changes.snapshot(42)?.map { it.albumId to it.collect })
+        assertTrue(remote.collectedIds.isEmpty())
+        assertTrue(remote.uncollectedIds.isEmpty())
+    }
+
+    @Test
+    fun `stale local mode snapshot does not record another account's action`() = runTest {
+        val mode = FakeConnectionMode(true)
+        val changes = inMemoryLocalChanges()
+        val local = RecordingLocalMutation()
+        session.switchAccount(43)
+
+        val result = CollectFavorite(RecordingRemoteMutation(), local, session, mode, changes, LocalFavoriteOperationGate())(
+            sessionSnapshot,
+            Comic.create(11, "Comic", emptyList()),
+        )
+
+        assertTrue(result is NetWorkResult.Error)
+        assertTrue(changes.snapshot(42).orEmpty().isEmpty())
+        assertTrue(local.addedFavorites.isEmpty())
+    }
+
+    @Test
+    fun `failed intent persistence leaves local snapshot untouched`() = runTest {
+        val mode = FakeConnectionMode(true)
+        val changes = LocalFavoriteChangeManager(object : LocalFavoriteChangeStore {
+            override fun getOrNull(): List<LocalFavoriteChange> = emptyList()
+            override fun set(items: List<LocalFavoriteChange>): Boolean = false
+        })
+        val local = RecordingLocalMutation()
+        val remote = RecordingRemoteMutation()
+        val comic = Comic.create(11, "Comic", emptyList())
+
+        assertTrue(CollectFavorite(remote, local, session, mode, changes, LocalFavoriteOperationGate())(sessionSnapshot, comic) is NetWorkResult.Error)
+        assertEquals(FavoritesBatchResult(0, 1), UncollectFavorites(remote, local, session, mode, changes, LocalFavoriteOperationGate())(sessionSnapshot, listOf(11)))
+        assertTrue(local.addedFavorites.isEmpty())
+        assertTrue(local.removedIds.isEmpty())
+    }
+
+    @Test
     fun `collect preserves the real remote error and does not write local state`() = runTest {
         val expected = NetWorkResult.Error(
             message = "server rejected collect",
@@ -29,7 +110,7 @@ class FavoriteUseCasesTest {
         val local = RecordingLocalMutation()
         val comic = Comic.create(id = 11, name = "Comic", authorList = listOf("Author"))
 
-        val result = CollectFavorite(remote, local, session)(sessionSnapshot, comic)
+        val result = CollectFavorite(remote, local, session, alwaysNetworkLocalModeStatus(), inMemoryLocalChanges(), LocalFavoriteOperationGate())(sessionSnapshot, comic)
 
         assertEquals(expected, result)
         assertEquals(listOf(11), remote.collectedIds)
@@ -42,7 +123,7 @@ class FavoriteUseCasesTest {
         val local = RecordingLocalMutation()
         val staleSnapshot = FavoriteSessionSnapshot(accountId = 7, generation = 3)
 
-        val result = MoveFavorites(remote, local, session)(staleSnapshot, listOf(1), folderId = 7)
+        val result = MoveFavorites(remote, local, session, alwaysNetworkLocalModeStatus(), LocalFavoriteOperationGate())(staleSnapshot, listOf(1), folderId = 7)
 
         assertEquals(FavoritesBatchResult(succeeded = 0, failed = 1), result)
         assertTrue(remote.movedIds.isEmpty())
@@ -64,7 +145,7 @@ class FavoriteUseCasesTest {
             NetWorkResult.Success(Unit)
         }
 
-        val result = UncollectFavorites(remote, local, session)(
+        val result = UncollectFavorites(remote, local, session, alwaysNetworkLocalModeStatus(), inMemoryLocalChanges(), LocalFavoriteOperationGate())(
             sessionSnapshot,
             listOf(1, 2, 3),
         )
@@ -85,7 +166,7 @@ class FavoriteUseCasesTest {
             NetWorkResult.Success(Unit)
         }
 
-        val result = MoveFavorites(remote, local, session)(sessionSnapshot, listOf(11), folderId = 7)
+        val result = MoveFavorites(remote, local, session, alwaysNetworkLocalModeStatus(), LocalFavoriteOperationGate())(sessionSnapshot, listOf(11), folderId = 7)
 
         // Remote reported success but the account switched mid-flight: the local commit must be
         // rejected and the failure counted rather than written to the new account state.
@@ -100,15 +181,15 @@ class FavoriteUseCasesTest {
 
         assertEquals(
             NetWorkResult.Success(Unit),
-            CreateFavoriteFolder(remote, session)(sessionSnapshot, "New"),
+            CreateFavoriteFolder(remote, session, alwaysNetworkLocalModeStatus(), LocalFavoriteOperationGate())(sessionSnapshot, "New"),
         )
         assertEquals(
             NetWorkResult.Success(Unit),
-            DeleteFavoriteFolder(remote, local, session)(sessionSnapshot, 7),
+            DeleteFavoriteFolder(remote, local, session, alwaysNetworkLocalModeStatus(), LocalFavoriteOperationGate())(sessionSnapshot, 7),
         )
         assertEquals(
             NetWorkResult.Success(Unit),
-            RenameFavoriteFolder(remote, local, session)(sessionSnapshot, 7, "Renamed"),
+            RenameFavoriteFolder(remote, local, session, alwaysNetworkLocalModeStatus(), LocalFavoriteOperationGate())(sessionSnapshot, 7, "Renamed"),
         )
 
         // Each folder operation opened exactly one bound batch against the captured account.
@@ -116,7 +197,7 @@ class FavoriteUseCasesTest {
         assertTrue(session.boundBatchesStarted.all { it.first == 42 })
 
         // A snapshot from another account never reaches the remote mutation.
-        val staleCreate = CreateFavoriteFolder(remote, session)(
+        val staleCreate = CreateFavoriteFolder(remote, session, alwaysNetworkLocalModeStatus(), LocalFavoriteOperationGate())(
             FavoriteSessionSnapshot(accountId = 43, generation = 9),
             "Never",
         )
@@ -131,7 +212,7 @@ class FavoriteUseCasesTest {
         }
         val local = RecordingLocalMutation()
 
-        val result = UncollectFavorites(remote, local, session)(sessionSnapshot, listOf(1, 2, 1))
+        val result = UncollectFavorites(remote, local, session, alwaysNetworkLocalModeStatus(), inMemoryLocalChanges(), LocalFavoriteOperationGate())(sessionSnapshot, listOf(1, 2, 1))
 
         assertEquals(FavoritesBatchResult(succeeded = 1, failed = 1), result)
         assertEquals(listOf(1, 2), remote.uncollectedIds)
@@ -145,7 +226,7 @@ class FavoriteUseCasesTest {
         }
         val local = RecordingLocalMutation()
 
-        val result = MoveFavorites(remote, local, session)(sessionSnapshot, listOf(1, 2, 1), folderId = 7)
+        val result = MoveFavorites(remote, local, session, alwaysNetworkLocalModeStatus(), LocalFavoriteOperationGate())(sessionSnapshot, listOf(1, 2, 1), folderId = 7)
 
         assertEquals(FavoritesBatchResult(succeeded = 1, failed = 1), result)
         assertEquals(listOf(1, 2), remote.movedIds)
@@ -159,15 +240,15 @@ class FavoriteUseCasesTest {
 
         assertEquals(
             NetWorkResult.Success(Unit),
-            CreateFavoriteFolder(remote, session)(sessionSnapshot, "New"),
+            CreateFavoriteFolder(remote, session, alwaysNetworkLocalModeStatus(), LocalFavoriteOperationGate())(sessionSnapshot, "New"),
         )
         assertEquals(
             NetWorkResult.Success(Unit),
-            DeleteFavoriteFolder(remote, local, session)(sessionSnapshot, 7),
+            DeleteFavoriteFolder(remote, local, session, alwaysNetworkLocalModeStatus(), LocalFavoriteOperationGate())(sessionSnapshot, 7),
         )
         assertEquals(
             NetWorkResult.Success(Unit),
-            RenameFavoriteFolder(remote, local, session)(sessionSnapshot, 7, "Renamed"),
+            RenameFavoriteFolder(remote, local, session, alwaysNetworkLocalModeStatus(), LocalFavoriteOperationGate())(sessionSnapshot, 7, "Renamed"),
         )
 
         assertEquals(listOf(7), local.removedFolderIds)

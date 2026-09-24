@@ -22,6 +22,9 @@ interface FavoriteLocalMutation {
 
 /** L4 snapshot operations used by the complete synchronization molecule. */
 interface FavoriteLocalSync {
+    /** A completed full snapshot is the per-account cache initialization marker. */
+    suspend fun hasFullSnapshot(accountId: Int): Boolean
+
     suspend fun reconcileLightweightSnapshot(
         accountId: Int,
         scopeFolderId: Int,

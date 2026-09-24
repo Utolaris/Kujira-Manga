@@ -33,6 +33,8 @@ class LoadLocalChapterTest {
             }, io)
             val result = loader(11)
             assertEquals(100, result.groupId)
+            assertEquals(task.groupName.ifBlank { task.name }, result.comicName)
+            assertEquals(task.authorList, result.authorList)
             assertEquals(listOf("第一章", "第 2 章"), result.chapters.map { it.name })
             assertEquals(listOf("/old/0.webp", "/old/1.webp"), result.imagePaths)
         }

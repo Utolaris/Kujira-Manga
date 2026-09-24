@@ -31,7 +31,10 @@ internal fun Throwable.toFavoriteSyncError(): NetWorkResult.Error {
     val authException = causes.filterIsInstance<AuthenticatedSessionRequiredException>().firstOrNull()
     val formBodyNull = isFormBodyNullParameter()
     val chain = causeChainText()
+    // 本地模式拦截不是登录失效：不得再报「登录已失效」。
+    val localModeBlocked = causes.any { it is com.par9uet.jm.core.network.LocalModeUnavailableException }
     val kind = when {
+        localModeBlocked -> NetworkErrorKind.Unknown
         authException != null || response?.errorCode == 401 ->
             NetworkErrorKind.Authentication
         causes.any { it is ParseResponseException } -> NetworkErrorKind.Parsing
@@ -39,8 +42,9 @@ internal fun Throwable.toFavoriteSyncError(): NetWorkResult.Error {
         causes.any { it is NetworkException || it is IOException } -> NetworkErrorKind.Network
         else -> NetworkErrorKind.Unknown
     }
-    val message = when (kind) {
-        NetworkErrorKind.Network -> {
+    val message = when {
+        localModeBlocked -> com.par9uet.jm.core.model.LOCAL_MODE_UNAVAILABLE_MESSAGE
+        kind == NetworkErrorKind.Network -> {
             val detail = causes.firstOrNull { it is NetworkException || it is IOException }
                 ?.message?.replace('\n', ' ')?.take(120).orEmpty()
             buildString {
@@ -48,7 +52,7 @@ internal fun Throwable.toFavoriteSyncError(): NetWorkResult.Error {
                 if (detail.isNotBlank()) append("：").append(detail)
             }
         }
-        NetworkErrorKind.Authentication -> {
+        kind == NetworkErrorKind.Authentication -> {
             val detail = when {
                 authException != null -> authException.message?.replace('\n', ' ')?.take(160)
                     ?: chain.take(160)
@@ -60,7 +64,7 @@ internal fun Throwable.toFavoriteSyncError(): NetWorkResult.Error {
                 if (detail.isNotBlank()) append("：").append(detail)
             }
         }
-        NetworkErrorKind.Server -> {
+        kind == NetworkErrorKind.Server -> {
             val status = response?.errorCode?.takeIf { it > 0 }?.toString().orEmpty()
             val serverMsg = response?.message?.replace('\n', ' ')?.take(120).orEmpty()
             buildString {
@@ -70,7 +74,7 @@ internal fun Throwable.toFavoriteSyncError(): NetWorkResult.Error {
                 if (serverMsg.isBlank() && status.isBlank()) append("，请稍后重试")
             }
         }
-        NetworkErrorKind.Parsing -> {
+        kind == NetworkErrorKind.Parsing -> {
             val parseMsg = causes.firstOrNull { it is ParseResponseException }
                 ?.message?.replace('\n', ' ')?.take(120).orEmpty()
             buildString {
@@ -78,7 +82,7 @@ internal fun Throwable.toFavoriteSyncError(): NetWorkResult.Error {
                 if (parseMsg.isNotBlank()) append("：").append(parseMsg)
             }
         }
-        NetworkErrorKind.Unknown -> {
+        else -> {
             val msg = this.message?.replace('\n', ' ')?.take(200)
             if (formBodyNull) "请求构造失败，已保留登录状态，请稍后重试"
             else if (!msg.isNullOrBlank()) "收藏同步失败：$msg" else "收藏同步失败，请重试（$chain）"

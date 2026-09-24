@@ -59,6 +59,9 @@ class FavoritesViewModel(
     private val renameFavoriteFolder: RenameFavoriteFolder,
     private val downloadSelectedFavorites: DownloadSelectedFavorites,
     private val syncController: FavoriteSyncRequester,
+    private val localMode: com.par9uet.jm.core.model.ConnectionModeStatus,
+    private val localModeExitScheduler: com.par9uet.jm.core.model.LocalModeExitScheduler,
+    private val localFavoriteOperationGate: com.par9uet.jm.favorites.usecase.LocalFavoriteOperationGate,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(FavoritesUiState())
     val uiState = _uiState.asStateFlow()
@@ -161,6 +164,20 @@ class FavoritesViewModel(
     )
 
     fun onIntent(intent: FavoritesIntent) {
+        if (localFavoriteOperationGate.isTransitioning() && when (intent) {
+                FavoritesIntent.ManualSync, FavoritesIntent.ForceRefresh, FavoritesIntent.SyncRetried,
+                FavoritesIntent.MoveSelected, FavoritesIntent.UncollectSelected,
+                is FavoritesIntent.MoveConfirmed, FavoritesIntent.UncollectConfirmed,
+                FavoritesIntent.FolderManagementOpened, FavoritesIntent.CreateFolderOpened,
+                is FavoritesIntent.RenameFolderOpened, is FavoritesIntent.DeleteFolderOpened,
+                is FavoritesIntent.CreateFolderSubmitted, is FavoritesIntent.RenameFolderSubmitted,
+                FavoritesIntent.DeleteFolderConfirmed -> true
+                else -> false
+            }
+        ) {
+            toastManager.showAsync("收藏同步期间暂不可修改收藏夹")
+            return
+        }
         when (intent) {
             FavoritesIntent.Entered -> {
                 if (visibilityPolicy.onVisibilityChanged(true)) requestAutomaticSync()
@@ -174,13 +191,23 @@ class FavoritesViewModel(
                     requestAutomaticSync()
                 }
             }
-            FavoritesIntent.ManualSync -> syncController.request(
-                kind = FavoriteSyncRequestKind.MANUAL,
-                folderId = _uiState.value.selectedFolderId,
-            )
-            FavoritesIntent.ForceRefresh -> syncController.request(FavoriteSyncRequestKind.FORCE)
+            FavoritesIntent.ManualSync -> {
+                // 本地模式下点同步 = 主动结束本地模式并立刻补偿到远端（见本地模式说明弹窗）。
+                if (localMode.isLocalMode) {
+                    if (!localModeExitScheduler.request()) toastManager.showAsync("无法启动收藏同步，请重试")
+                } else {
+                    viewModelScope.launch {
+                        if (allowNetworkFeature()) syncController.request(
+                            kind = FavoriteSyncRequestKind.MANUAL,
+                            folderId = _uiState.value.selectedFolderId,
+                        )
+                    }
+                }
+            }
+            FavoritesIntent.ForceRefresh -> if (allowNetworkFeature()) syncController.request(FavoriteSyncRequestKind.FORCE)
             FavoritesIntent.SyncErrorDismissed -> _uiState.update { it.copy(syncErrorVisible = false) }
             FavoritesIntent.SyncRetried -> {
+                if (!allowNetworkFeature()) return
                 val force = _uiState.value.sync.isForceRefresh
                 _uiState.update { it.copy(syncErrorVisible = false) }
                 syncController.request(
@@ -216,13 +243,13 @@ class FavoritesViewModel(
             is FavoritesIntent.ComicSelectionToggled -> toggleSelected(intent.comicId)
             FavoritesIntent.SelectionCleared -> clearSelection()
             FavoritesIntent.DownloadSelected -> downloadSelected()
-            FavoritesIntent.MoveSelected -> transitionModal(FavoritesIntent.MoveSelected)
+            FavoritesIntent.MoveSelected -> if (allowNetworkFeature()) transitionModal(FavoritesIntent.MoveSelected)
             FavoritesIntent.UncollectSelected -> transitionModal(FavoritesIntent.UncollectSelected)
             is FavoritesIntent.MoveConfirmed -> moveSelected(intent.folderId)
             FavoritesIntent.UncollectConfirmed -> uncollectSelected()
             FavoritesIntent.ModalDismissed -> transitionModal(FavoritesIntent.ModalDismissed)
 
-            FavoritesIntent.FolderManagementOpened -> transitionModal(FavoritesIntent.FolderManagementOpened)
+            FavoritesIntent.FolderManagementOpened -> if (allowNetworkFeature()) transitionModal(FavoritesIntent.FolderManagementOpened)
             FavoritesIntent.FolderManagementDismissed -> transitionModal(FavoritesIntent.FolderManagementDismissed)
             FavoritesIntent.CreateFolderOpened -> transitionModal(FavoritesIntent.CreateFolderOpened)
             is FavoritesIntent.RenameFolderOpened -> transitionModal(intent)
@@ -364,7 +391,7 @@ class FavoritesViewModel(
             if (result.succeeded > 0) {
                 com.par9uet.jm.ui.haptics.AppHaptics.deleteMulti()
             }
-            toastManager.showAsync(favoriteBatchMessage(result.succeeded, result.failed, "取消收藏"))
+            toastManager.showAsync(result.message ?: favoriteBatchMessage(result.succeeded, result.failed, "取消收藏"))
             clearSelection()
         }
     }
@@ -480,4 +507,10 @@ class FavoritesViewModel(
     }
 
     private fun currentAccountId(): Int = favoriteSession.currentAccountId()
+
+    private fun allowNetworkFeature(): Boolean {
+        if (!localMode.isLocalMode) return true
+        toastManager.showAsync(com.par9uet.jm.core.model.LOCAL_MODE_UNAVAILABLE_MESSAGE)
+        return false
+    }
 }

@@ -481,13 +481,16 @@ class FavoritesViewModelTest {
             contentPreferences = FakeLocalSettings(),
             localQuery = query,
             toastManager = ToastManager(),
-            uncollectFavorites = UncollectFavorites(remote, local, session),
-            moveFavorites = MoveFavorites(remote, local, session),
-            createFavoriteFolder = CreateFavoriteFolder(remote, session),
-            deleteFavoriteFolder = DeleteFavoriteFolder(remote, local, session),
-            renameFavoriteFolder = RenameFavoriteFolder(remote, local, session),
+            uncollectFavorites = UncollectFavorites(remote, local, session, com.par9uet.jm.favorites.alwaysNetworkLocalModeStatus(), com.par9uet.jm.favorites.inMemoryLocalChanges(), com.par9uet.jm.favorites.usecase.LocalFavoriteOperationGate()),
+            moveFavorites = MoveFavorites(remote, local, session, com.par9uet.jm.favorites.alwaysNetworkLocalModeStatus(), com.par9uet.jm.favorites.usecase.LocalFavoriteOperationGate()),
+            createFavoriteFolder = CreateFavoriteFolder(remote, session, com.par9uet.jm.favorites.alwaysNetworkLocalModeStatus(), com.par9uet.jm.favorites.usecase.LocalFavoriteOperationGate()),
+            deleteFavoriteFolder = DeleteFavoriteFolder(remote, local, session, com.par9uet.jm.favorites.alwaysNetworkLocalModeStatus(), com.par9uet.jm.favorites.usecase.LocalFavoriteOperationGate()),
+            renameFavoriteFolder = RenameFavoriteFolder(remote, local, session, com.par9uet.jm.favorites.alwaysNetworkLocalModeStatus(), com.par9uet.jm.favorites.usecase.LocalFavoriteOperationGate()),
+            localFavoriteOperationGate = com.par9uet.jm.favorites.usecase.LocalFavoriteOperationGate(),
             downloadSelectedFavorites = DownloadSelectedFavorites(query, NoOpFavoriteDownloader()),
             syncController = sync,
+            localMode = com.par9uet.jm.favorites.alwaysNetworkLocalModeStatus(),
+            localModeExitScheduler = com.par9uet.jm.core.model.LocalModeExitScheduler { true },
         )
         return TestEnvironment(viewModel, session, remote, local, sync, events)
     }
@@ -543,6 +546,8 @@ class FavoritesViewModelTest {
             requests += SyncRequest(kind, folderId)
             events += "sync:$kind:$folderId"
         }
+
+        override suspend fun initializeForLogin() = Unit
     }
 
     private class RecordingRemoteMutation(
@@ -638,6 +643,7 @@ class FavoritesViewModelTest {
 
         override suspend fun getComics(accountId: Int, albumIds: Collection<Int>): List<Comic> =
             emptyList()
+
     }
 
     private class EmptyPagingSource : PagingSource<Int, Comic>() {

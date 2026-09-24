@@ -32,6 +32,10 @@ class PostStartupCoordinator(
                 refreshRemoteConfig = { koin.get<RemoteConfigManager>().refresh() },
                 verifyUser = {
                     val userManager = koin.get<UserManager>()
+                    if (koin.get<com.par9uet.jm.session.LocalModeGate>().isLocalMode) {
+                        // 本地模式不做探活/自动签到，避免夜间 401 风暴。
+                        return@runAuthenticatedStartupTasks
+                    }
                     userManager.verifyStoredLogin()
                     userManager.autoSignInIfNeeded(
                         enabled = koin.get<LocalSettingManager>().currentAutoSignInEnabled(),
@@ -54,6 +58,9 @@ class PostStartupCoordinator(
         }
         launchTask("阅读历史") {
             koin.get<ReadHistoryManager>().load()
+        }
+        launchTask("本地浏览历史") {
+            koin.get<com.par9uet.jm.storage.LocalBrowseHistoryManager>().load()
         }
         launchTask("通知渠道") {
             ensureAppNotificationChannels(koin.get())
