@@ -251,9 +251,11 @@ data/ repository/ retrofit/  历史命名保留；本轮列出的历史依赖环
   `favorites/usecase/SyncFavorites` 负责远端分页、元数据补齐和受会话保护的本地提交。
   手动登录后若该账号尚无成功的全量快照，控制器异步构建一次，提交成功才提示“收藏夹初始化完成。”；
   已有快照、失败或账号切换均不重复提示，登录导航不等待同步。
-- 本地模式按账号保存在 `LocalSetting.localModeAccountIds`，`session/LocalModeGate` 将当前账号与设置合成只读模式状态。
+- **本地模式（实验性）**按账号保存在 `LocalSetting.localModeAccountIds`，`session/LocalModeGate` 将当前账号与设置合成只读模式状态。
+  UI 文案统一标「实验性」——这是夜间账号风控下的妥协方案，不是长期产品形态。
   `favorites/usecase` 将每次新增或取消收藏写为该账号的待同步意图，`storage/LocalFavoriteChangeManager` 只在加密存储写入成功后确认；
-  `session/LocalModeCoordinator` 在切回网络模式时先确认登录态（已手动登录时复用当前会话，否则重登），再推送收藏意图并执行 `SyncFavorites` 全量刷新；全部成功后才关闭该账号的本地模式并清除本地浏览历史。切换期间 `LocalFavoriteOperationGate` 直接拒绝收藏修改；补偿或刷新失败时仍留在本地模式，未完成的意图供稍后重试。设置页确认后由 `worker/LocalModeExitWorker` 运行前台任务和常驻进度通知，离开设置或退到后台不会取消。再次进入本地模式前也会清理旧历史。开启时间按账号保存，自动恢复从次日白天开始。
+  `session/LocalModeCoordinator` 在切回网络模式时先确认登录态（已手动登录时复用当前会话，否则重登），再推送收藏意图并执行 `SyncFavorites` 全量刷新；全部成功后才关闭该账号的本地模式并清除本地浏览历史。切换期间 `LocalFavoriteOperationGate` 直接拒绝收藏修改（Collect / Uncollect / Move / 建删改文件夹共用同一实例，构造注入、禁止默认新建）；补偿或刷新失败时仍留在本地模式，未完成的意图供稍后重试。设置页确认后由 `worker/LocalModeExitWorker` 运行前台任务和常驻进度通知，离开设置或退到后台不会取消。再次进入本地模式前也会清理旧历史。开启时间按账号保存，自动恢复从次日白天开始。
+  **强制对齐**（`forceAlignFavoritesWithRemote`）顺序与退出一致：先 relogin → 在闸门内拉远端全量 → **成功后**才 `clearAll` 待同步意图并关本地模式；失败保留意图与模式。本地模式拦截抛 `core/network/LocalModeUnavailableException`（不是鉴权失败）。
   这是普通异步同步任务入口之外的切换流程。其他账号的模式和历史不受影响。
 - `favorites/data/FavoriteStore` 保留 Room 事务及 DAO 操作，纯 SQL 构造、同步规划和实体映射分别位于
   `favorites/data/FavoriteQueries`、`favorites/data/FavoriteSyncPlanner` 和 `favorites/data/FavoriteMappers`。

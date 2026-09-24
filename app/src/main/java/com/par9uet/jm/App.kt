@@ -164,7 +164,7 @@ fun App(
                 activity.requestNotificationPermissionIfNeeded()
                 if (!localModeColdNoticeShown && connectionModeStatus.isLocalMode) {
                     localModeColdNoticeShown = true
-                    toastManager.showAsync("当前处于本地模式")
+                    toastManager.showAsync("当前处于本地模式（实验性）")
                 }
             }
         }
@@ -416,8 +416,8 @@ private fun MainAppContent(
                     com.par9uet.jm.ui.glass.GlassConfirmDialog(
                         visible = nightLocalModePromptAccountId != null,
                         title = "登录态频繁失效",
-                        message = "夜间风控可能导致登录被踢。可切换到本地模式，继续使用收藏与历史（仅存本地）。",
-                        confirmText = "进入本地模式",
+                        message = "夜间风控可能导致登录被踢。可切换到本地模式（实验性），继续使用收藏与历史（仅存本地）。",
+                        confirmText = "进入本地模式（实验性）",
                         dismissText = "暂不",
                         onConfirm = {
                             val accountId = nightLocalModePromptAccountId

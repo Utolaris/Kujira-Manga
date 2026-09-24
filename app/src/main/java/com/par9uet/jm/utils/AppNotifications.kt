@@ -158,7 +158,7 @@ fun showLocalModeSyncResultNotification(context: Context, success: Boolean) {
     val notification = NotificationCompat.Builder(context, LOCAL_MODE_SYNC_CHANNEL_ID)
         .setSmallIcon(R.drawable.ic_download_notification)
         .setContentTitle(if (success) "已切换到网络模式" else "收藏同步未完成")
-        .setContentText(if (success) "收藏夹已同步到远端" else "仍处于本地模式，可稍后重试")
+        .setContentText(if (success) "收藏夹已同步到远端" else "仍处于本地模式（实验性），可稍后重试")
         .setContentIntent(openApp)
         .setAutoCancel(true)
         .build()

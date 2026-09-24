@@ -43,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.par9uet.jm.ui.components.CommonScaffold
+import com.par9uet.jm.ui.glass.GlassConfirmDialog
 import com.par9uet.jm.ui.glass.GlassModal
 import com.par9uet.jm.ui.viewModel.DohLatencyUi
 import com.par9uet.jm.ui.viewModel.DohServerUi
@@ -62,6 +63,7 @@ fun DohSettingScreen(
     val latency by viewModel.latency.collectAsState()
     val testingAll by viewModel.testingAll.collectAsState()
     var showCustomDialog by remember { mutableStateOf(false) }
+    var showIpv6Warning by remember { mutableStateOf(false) }
     var customName by remember { mutableStateOf(doh.customServerName) }
     var customUrl by remember { mutableStateOf(doh.customServerUrl) }
     var customError by remember { mutableStateOf("") }
@@ -81,6 +83,19 @@ fun DohSettingScreen(
     CommonScaffold(
         title = "DoH",
         overlayContent = {
+            GlassConfirmDialog(
+                visible = showIpv6Warning,
+                title = "优先尝试 IPv6",
+                message = "此功能需要你的 VPN 开启了 IPv6 功能后才能生效，如果您不了解，不要打开此开关。",
+                confirmText = "仍要开启",
+                dismissText = "取消",
+                onConfirm = {
+                    showIpv6Warning = false
+                    viewModel.setPreferIpv6(true)
+                },
+                onDismiss = { showIpv6Warning = false },
+                surfaceId = "doh-prefer-ipv6-warning",
+            )
             GlassModal(
                 visible = showCustomDialog,
                 onDismissRequest = { showCustomDialog = false },
@@ -172,9 +187,12 @@ fun DohSettingScreen(
                         )
                         DohSwitchRow(
                             title = "优先尝试 IPv6",
-                            summary = "关闭时只使用 IPv4，适合没有 IPv6 路由的设备",
+                            summary = "关闭时只使用 IPv4，适合没有 IPv6 路由的设备；开启前请确认 VPN 已启用 IPv6",
                             checked = doh.preferIpv6,
-                            onCheckedChange = viewModel::setPreferIpv6,
+                            onCheckedChange = { enable ->
+                                if (enable) showIpv6Warning = true
+                                else viewModel.setPreferIpv6(false)
+                            },
                         )
                         Surface(
                             shape = MaterialTheme.shapes.large,

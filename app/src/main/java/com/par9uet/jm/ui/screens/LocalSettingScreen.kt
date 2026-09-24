@@ -190,7 +190,7 @@ fun LocalSettingScreen(
             com.par9uet.jm.ui.glass.GlassConfirmDialog(
                 visible = showForceRefreshConfirm,
                 title = "强制刷新收藏夹",
-                message = "如果您认为收藏夹内容存在异常，可以执行此流程，这将会强制让收藏夹和远端对齐，本地的尚未同步的收藏漫画可能丢失。使用此功能将关闭本地模式。",
+                message = "如果您认为收藏夹内容存在异常，可以执行此流程，这将会强制让收藏夹和远端对齐，本地的尚未同步的收藏漫画可能丢失。使用此功能将关闭本地模式（实验性）。",
                 confirmText = "执行",
                 dismissText = "取消",
                 onConfirm = {
@@ -212,7 +212,7 @@ fun LocalSettingScreen(
             com.par9uet.jm.ui.glass.GlassConfirmDialog(
                 visible = showExitLocalModeConfirm,
                 title = "切换到网络模式",
-                message = "将重新登录并同步本地收藏。同步期间可退出设置或将应用放到后台，但暂时不能修改收藏夹；完成后才切换到网络模式。本地模式期间的历史观看会被远端覆盖。",
+                message = "将结束本地模式（实验性），重新登录并同步本地收藏。同步期间可退出设置或将应用放到后台，但暂时不能修改收藏夹；完成后才切换到网络模式。本地模式期间的历史观看会被远端覆盖。",
                 confirmText = "开始同步",
                 onConfirm = {
                     showExitLocalModeConfirm = false
@@ -337,7 +337,7 @@ fun LocalSettingScreen(
                 SettingsSection(title = "\u8fde\u63a5") {
                     SettingsSwitchRow(
                         icon = Icons.Rounded.CloudOff,
-                        title = "本地模式",
+                        title = "本地模式（实验性）",
                         value = isLocalMode,
                         enabled = !isSyncingLocalFavorites,
                         valueText = if (isSyncingLocalFavorites) {

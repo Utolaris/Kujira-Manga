@@ -10,8 +10,8 @@ interface ConnectionModeStatus {
     val isLocalModeFlow: StateFlow<Boolean>
 }
 
-/** 本地模式下需要登录态能力的统一提示。 */
-const val LOCAL_MODE_UNAVAILABLE_MESSAGE = "本地模式下该功能不可用"
+/** 本地模式（实验性）下需要登录态能力的统一提示。 */
+const val LOCAL_MODE_UNAVAILABLE_MESSAGE = "本地模式（实验性）下该功能不可用"
 
 /** 切回网络模式并完成本地→远端补偿同步。实现在 session/LocalModeCoordinator。 */
 interface LocalModeExit {

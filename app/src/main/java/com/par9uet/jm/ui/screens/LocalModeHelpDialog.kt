@@ -39,12 +39,13 @@ fun LocalModeHelpDialog(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                text = "本地模式",
+                text = "本地模式（实验性）",
                 style = MaterialTheme.typography.headlineSmall,
             )
             Text(
-                text = "本地模式是面对夜间账号风控时的手段，本地模式下，历史记录单独处理，您收藏的漫画，将会在本地模式关闭时同步到云端。" +
-                    "如果您手动点击收藏夹的同步按钮，这会结束本地模式，并且立刻同步到远端。",
+                text = "本地模式（实验性）是面对夜间账号风控时的妥协手段。开启后历史记录单独处理，您收藏的漫画会在关闭本地模式时同步到云端。" +
+                    "如果您手动点击收藏夹的同步按钮，这会结束本地模式，并且立刻同步到远端。" +
+                    "该功能仍在实验阶段，行为可能随版本调整。",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
