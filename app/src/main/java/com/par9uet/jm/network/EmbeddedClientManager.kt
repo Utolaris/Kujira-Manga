@@ -70,6 +70,7 @@ class EmbeddedClientManager(
         data class Success(
             val userInfo: JmUserInfo,
             val sessionCookies: List<Cookie>,
+            val jwtToken: String?,
         ) : EmbeddedLoginResult()
 
         data class Failure(
@@ -140,10 +141,12 @@ class EmbeddedClientManager(
     ): EmbeddedLoginResult {
         val loginHost = activeApiHost
         val loginBusinessCode = ThreadLocal<Int?>()
+        val loginJwtToken = ThreadLocal<String?>()
         loginBusinessCode.set(null)
         val candidate = createClient(
             persistCookies = false,
             loginBusinessCode = loginBusinessCode,
+            loginJwtToken = loginJwtToken,
             clientSessionGeneration = null,
             loginHost = loginHost,
         )
@@ -168,7 +171,7 @@ class EmbeddedClientManager(
             if (sessionCookies.isEmpty()) {
                 logError("Login", "verifyCandidate: SDK login returned empty cookies — not a usable session")
             }
-            EmbeddedLoginResult.Success(userInfo, sessionCookies)
+            EmbeddedLoginResult.Success(userInfo, sessionCookies, loginJwtToken.get())
         } catch (e: CancellationException) {
             throw e
         } catch (e: ResponseException) {
@@ -181,6 +184,7 @@ class EmbeddedClientManager(
             EmbeddedLoginResult.Failure(e, loginBusinessCode.get())
         } finally {
             loginBusinessCode.remove()
+            loginJwtToken.remove()
             closeAsync(candidate)
         }
     }
@@ -225,7 +229,7 @@ class EmbeddedClientManager(
      *
      * @param username 仅用于日志核对，不写入 SDK 客户端。
      */
-    fun activateCandidateSession(cookies: List<Cookie>, username: String? = null): Boolean {
+    fun activateCandidateSession(cookies: List<Cookie>, jwtToken: String?, username: String? = null): Boolean {
         val cookieNames = cookies.map { it.name }
         log(
             "Login",
@@ -251,7 +255,7 @@ class EmbeddedClientManager(
                 }
                 try {
                     shared.client.setCookies(cookies)
-                    if (!cookieStorage.set(cookies)) {
+                    if (!cookieStorage.setSession(cookies, jwtToken)) {
                         shared.client.setCookies(previous)
                         logError("Login", "activateCandidateSession: storage failed; retained previous cookies")
                         return false
@@ -310,6 +314,7 @@ class EmbeddedClientManager(
     private fun createClient(
         persistCookies: Boolean,
         loginBusinessCode: ThreadLocal<Int?>,
+        loginJwtToken: ThreadLocal<String?>? = null,
         clientSessionGeneration: Long?,
         loginHost: String? = null,
     ): JmApiClient {
@@ -347,15 +352,17 @@ class EmbeddedClientManager(
         val clientWithCookieInjection = context.client.newBuilder()
             .dns(dohManager)
             .addInterceptor { chain ->
-                // SDK 补不上的两件应用层小事：
+                // SDK 补不上的应用层差异：
                 // 1. 官方 app 的 fetchGet 恒补 lang，SDK 只在少数方法发；
                 // 2. SDK 把 User-Agent 硬编码成 Android 9 / Chrome 91（全设备同一串），
-                //    这里换成设备真实的 WebView UA。
+                //    这里换成设备真实的 WebView UA；
+                // 3. SDK 用旧版 token 盐/版本及 URL 表单，改用官方签名和 FormData。
                 val request = chain.request()
                     .withEmbeddedLoginHost(loginHost, domainManager.domains)
                     .withEmbeddedLang(domainManager.domains, languageProvider.language())
                     .withEmbeddedSearchDate(domainManager.domains)
                     .withEmbeddedUserAgent(userAgentProvider.userAgent())
+                    .withOfficialApiRequest(domainManager.domains)
                 if (domainPinning == null) return@addInterceptor chain.proceed(request)
                 // 每次尝试都记一次结果，用于判断「被固定的域名是不是真的崩了」。
                 try {
@@ -373,7 +380,7 @@ class EmbeddedClientManager(
             .addInterceptor { chain ->
                 val response = chain.proceed(chain.request())
                 // Business-code inspection must run after BridgeInterceptor decompresses JSON.
-                captureLoginBusinessCode(response.request, response, loginBusinessCode)
+                captureLoginBusinessCode(response.request, response, loginBusinessCode, loginJwtToken)
                 response
             }
             .addNetworkInterceptor { chain ->
@@ -397,9 +404,8 @@ class EmbeddedClientManager(
                         )
                     } else emptyList()
                     sentCookieNames = allowed.map { it.name }
-                    original.newBuilder().removeHeader("Cookie").apply {
-                        if (allowed.isNotEmpty()) header("Cookie", allowed.joinToString("; ") { "${it.name}=${it.value}" })
-                    }.build()
+                    val jwt = if (isCurrentSession(clientSessionGeneration)) cookieStorage.bearerToken() else null
+                    original.withEmbeddedAuthHeaders(allowed, jwt, domainManager.domains)
                 } else original
                 val response = chain.proceed(request)
                 if (response.code == 401) {
@@ -496,6 +502,7 @@ class EmbeddedClientManager(
         request: okhttp3.Request,
         response: okhttp3.Response,
         businessCode: ThreadLocal<Int?>,
+        loginJwtToken: ThreadLocal<String?>?,
     ) {
         if (request.url.pathSegments.lastOrNull() != "login") return
         try {
@@ -514,6 +521,7 @@ class EmbeddedClientManager(
                 val json = JsonParser.parseString(jsonCandidate).asJsonObject
                 val code = json.get("code")?.takeUnless { it.isJsonNull }?.asInt
                 businessCode.set(code)
+                loginJwtToken?.set(officialLoginJwt(json, request.header("Tokenparam")))
                 log("Login", "login businessCode=$code")
             } else {
                 logError("Login", "login response is not JSON after decode; businessCode not captured")

@@ -3,6 +3,7 @@ package com.par9uet.jm.network
 import okhttp3.Cookie
 import okhttp3.HttpUrl
 import okhttp3.Headers
+import okhttp3.Request
 
 /** Keep response-header AVS out of the candidate jar; SDK login writes the JSON `s` itself. */
 internal fun Headers.withoutEmbeddedSessionCookie(): Headers = newBuilder().apply {
@@ -19,6 +20,19 @@ internal fun Headers.withoutEmbeddedSessionCookie(): Headers = newBuilder().appl
  * 请求侧见 [embeddedCookiesForRequest]，响应侧见 [mergeEmbeddedResponseCookies]。
  */
 internal const val EMBEDDED_SESSION_COOKIE_NAME = "AVS"
+
+/** Replace SDK/stale auth headers, and send the committed session only to trusted API hosts. */
+internal fun Request.withEmbeddedAuthHeaders(
+    cookies: List<Cookie>,
+    bearerToken: String?,
+    trustedDomains: Collection<String>,
+): Request =
+    newBuilder().removeHeader("Cookie").removeHeader("Authorization").apply {
+        if (url.isHttps && url.host in trustedDomains) {
+            if (cookies.isNotEmpty()) header("Cookie", cookies.joinToString("; ") { "${it.name}=${it.value}" })
+            if (!bearerToken.isNullOrBlank()) header("Authorization", "Bearer $bearerToken")
+        }
+    }.build()
 
 /**
  * AVS 可能挂在登录站点域名上（如 18comic.vip），而收藏等业务请求打到 SDK 轮换的 API 域名。

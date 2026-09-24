@@ -40,7 +40,9 @@ class LocalSettingManager(
     AppearancePreferences,
     AppearanceEditor,
     ApiEndpointPreference,
-    ContentLanguagePreferences {
+    ContentLanguagePreferences,
+    ConnectionModePreferences,
+    ConnectionModeEditor {
     private val _localSettingState = MutableStateFlow(LocalSetting())
     private val _securityLoadBlocked = MutableStateFlow(false)
     val securityLoadBlocked = _securityLoadBlocked.asStateFlow()
@@ -54,6 +56,7 @@ class LocalSettingManager(
     override val prefetchCount = _projectingState { it.prefetchCount }
     override val onboardingCompleted = _projectingState { it.onboardingCompleted }
     override val nsfwWarningDismissed = _projectingState { it.nsfwWarningDismissed }
+    override val localModeHelpDismissed = _projectingState { it.localModeHelpDismissed }
     override val cacheNotification = _projectingState(::toCacheNotificationSetting)
     override val misc = _projectingState(::toMiscSettingsState)
     override val appLock = _projectingState(::toAppLockState)
@@ -65,6 +68,8 @@ class LocalSettingManager(
     override val editor: AppearanceEditor get() = this
     override val apiEndpoint = _projectingState { it.api }
     override val appLanguage = _projectingState { coerceAppLanguage(it.appLanguage) }
+    override val localModeAccountIds = _projectingState { it.localModeAccountIds.orEmpty() }
+    override val localModeEnteredAtByAccount = _projectingState { it.localModeEnteredAtByAccount.orEmpty() }
 
     private fun <T> _projectingState(selector: (LocalSetting) -> T): MutableStateFlow<T> {
         val flow = MutableStateFlow(selector(_localSettingState.value))
@@ -92,6 +97,30 @@ class LocalSettingManager(
 
     fun updateAutoSignInEnabled(enabled: Boolean) =
         updateSetting { it.copy(autoSignInEnabled = enabled) }
+
+    override fun setLocalModeEnabled(accountId: Int, enabled: Boolean): Boolean {
+        if (accountId <= 0) return false
+        return updateSetting { current ->
+            current.copy(
+                localModeAccountIds = if (enabled) {
+                    (current.localModeAccountIds.orEmpty() + accountId).distinct()
+                } else {
+                    current.localModeAccountIds.orEmpty() - accountId
+                },
+                localModeEnteredAtByAccount = if (enabled) {
+                    current.localModeEnteredAtByAccount.orEmpty() + (accountId to System.currentTimeMillis())
+                } else {
+                    current.localModeEnteredAtByAccount.orEmpty() - accountId
+                },
+            )
+        }
+    }
+
+    override fun nightLocalModePromptDate(): String =
+        _localSettingState.value.nightLocalModePromptDate.orEmpty()
+
+    override fun setNightLocalModePromptDate(date: String): Boolean =
+        updateSetting { it.copy(nightLocalModePromptDate = date) }
 
     /** 冷启动静默检查更新开关；检查失败由协调器静默吞掉，不弹错。 */
     fun setAutoCheckUpdateEnabled(enabled: Boolean) =
@@ -148,6 +177,9 @@ class LocalSettingManager(
 
     fun dismissNsfwWarning() =
         updateSetting { it.copy(nsfwWarningDismissed = true) }
+
+    fun dismissLocalModeHelp() =
+        updateSetting { it.copy(localModeHelpDismissed = true) }
 
     fun applyTheme(theme: String) =
         updateSetting { it.copy(theme = theme) }
@@ -457,6 +489,7 @@ class LocalSettingManager(
      * so a failed disk write never looks like a saved preference (privacy toggles included).
      * @return true only when the new value was persisted.
      */
+    @Synchronized
     private fun updateSetting(update: (LocalSetting) -> LocalSetting): Boolean {
         val next = update(_localSettingState.value)
         return when (persistence.persist(next)) {
@@ -468,6 +501,7 @@ class LocalSettingManager(
         }
     }
 
+    @Synchronized
     private fun ensureLoaded() {
         try {
             when (val restored = persistence.load()) {

@@ -67,6 +67,31 @@ private const val SESSION_RECOVERY_WINDOW_STEP_MS = 10 * 60 * 1000L
 /** Automatic recovery errors must never remove an existing local identity. */
 class UserManagerSessionTest {
     @Test
+    fun repeatedOriginal401sTriggerNightPromptEvenWhenNoReloginFails() = runBlocking {
+        val mode = com.par9uet.jm.favorites.FakeConnectionMode()
+        val zone = java.time.ZoneId.of("Asia/Shanghai")
+        val start = java.time.LocalDateTime.of(2026, 9, 24, 22, 0)
+            .atZone(zone).toInstant().toEpochMilli()
+        var wallClock = start
+        val prompt = com.par9uet.jm.session.NightLocalModePrompt(mode, mode, { wallClock }, zone)
+        val cookies = FakeCookieStorage(listOf(avsCookie("session")))
+        val readiness = SessionReadinessHolder()
+        val manager = UserManager(FakeUserStorage(user(7, "accountA")), cookies, GateUserRepository(cookies), readiness, prompt, mode)
+        readiness.set(SessionReadiness.Authenticated)
+        val snapshot = manager.currentSessionSnapshot()
+
+        repeat(3) {
+            wallClock = start + it * 10_000L
+            try {
+                manager.withBoundRemoteSession(snapshot.accountId, snapshot.generation) {
+                    throw AuthenticatedSessionRequiredException("HTTP 401")
+                }
+            } catch (_: AuthenticatedSessionRequiredException) { }
+        }
+        assertEquals("2026-09-24", mode.promptDate)
+    }
+
+    @Test
     fun identityWithoutCredentialsRequiresLoginInsteadOfCancellingRequest() = runBlocking {
         val cookies = FakeCookieStorage(listOf(avsCookie("expired")))
         val repository = GateUserRepository(cookies)
@@ -324,7 +349,7 @@ class UserManagerSessionTest {
         val repository = GateUserRepository(cookies)
         val readiness = SessionReadinessHolder()
         var clock = 0L
-        val manager = UserManager(storage, cookies, repository, readiness) { clock }
+        val manager = UserManager(storage, cookies, repository, readiness, com.par9uet.jm.favorites.fakeNightPrompt(), com.par9uet.jm.favorites.FakeConnectionMode()) { clock }
         val snapshot = manager.currentSessionSnapshot()
         repository.completeVerify(NetWorkResult.Error(
             EXPLICIT_CREDENTIAL_REJECTION_MESSAGE, code = 401,
@@ -352,7 +377,7 @@ class UserManagerSessionTest {
         ) }
         val readiness = SessionReadinessHolder()
         var clock = 0L
-        val manager = UserManager(FakeUserStorage(user(1, "accountA")), cookies, repository, readiness) { clock }
+        val manager = UserManager(FakeUserStorage(user(1, "accountA")), cookies, repository, readiness, com.par9uet.jm.favorites.fakeNightPrompt(), com.par9uet.jm.favorites.FakeConnectionMode()) { clock }
         val gate = AuthenticatedSessionGate(readiness)
         var calls = 0
         suspend fun rejectedRequest() {
@@ -388,7 +413,7 @@ class UserManagerSessionTest {
         ))
         val readiness = SessionReadinessHolder()
         var clock = 0L
-        val manager = UserManager(FakeUserStorage(user(1, "accountA")), cookies, repository, readiness) { clock }
+        val manager = UserManager(FakeUserStorage(user(1, "accountA")), cookies, repository, readiness, com.par9uet.jm.favorites.fakeNightPrompt(), com.par9uet.jm.favorites.FakeConnectionMode()) { clock }
         val snapshot = manager.currentSessionSnapshot()
         var calls = 0
         try {
@@ -483,6 +508,7 @@ class UserManagerSessionTest {
                     }
                 },
                 scope,
+                com.par9uet.jm.favorites.alwaysNetworkLocalModeStatus(),
             )
             controller.request(com.par9uet.jm.favorites.sync.FavoriteSyncRequestKind.MANUAL)
             withTimeout(2_000) {
@@ -731,7 +757,7 @@ class UserManagerSessionTest {
         cookieStorage: CookieStorage,
         repository: UserRepository,
         readiness: SessionReadinessHolder = SessionReadinessHolder(),
-    ) = UserManager(userStorage, cookieStorage, repository, readiness)
+    ) = UserManager(userStorage, cookieStorage, repository, readiness, com.par9uet.jm.favorites.fakeNightPrompt(), com.par9uet.jm.favorites.FakeConnectionMode())
 
     @Test
     fun staleProbeCannotOverwriteNewerManualLogin() = runBlocking {
@@ -829,7 +855,7 @@ class UserManagerSessionTest {
         val repository = GateUserRepository(cookieStorage)
         val readiness = SessionReadinessHolder()
         var clock = 0L
-        val manager = UserManager(userStorage, cookieStorage, repository, readiness) { clock }
+        val manager = UserManager(userStorage, cookieStorage, repository, readiness, com.par9uet.jm.favorites.fakeNightPrompt(), com.par9uet.jm.favorites.FakeConnectionMode()) { clock }
         val snapshot = manager.currentSessionSnapshot()
 
         val verifier = launch { manager.verifyStoredLogin() }

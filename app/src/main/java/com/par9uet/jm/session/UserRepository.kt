@@ -12,6 +12,7 @@ import okhttp3.Cookie
 data class CandidateSession(
     val loginResponse: LoginResponse,
     val embeddedCookies: List<Cookie> = emptyList(),
+    val jwtToken: String? = null,
 )
 
 /**

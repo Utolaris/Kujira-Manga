@@ -45,6 +45,8 @@ class UserManager(
     private val cookieStorage: CookieStorage,
     private val userRepository: UserRepository,
     private val sessionReadinessHolder: SessionReadinessHolder,
+    private val nightLocalModePrompt: NightLocalModePrompt,
+    private val connectionMode: com.par9uet.jm.storage.ConnectionModePreferences,
     /** 单调时钟：校时或时区变化不能延长/跳过冷却；测试可注入。 */
     private val nowMillis: () -> Long = { System.nanoTime() / 1_000_000L },
 ) : AuthenticatedRequestExecutor {
@@ -130,6 +132,9 @@ class UserManager(
                         ?.let { lastRecovery = it.copy(failureStreak = 0) }
                 }
             } catch (error: AuthenticatedSessionRequiredException) {
+                if (error !is com.par9uet.jm.core.network.LocalModeUnavailableException) {
+                    nightLocalModePrompt.recordAuthFailure(accountId)
+                }
                 if (cached?.result is NetWorkResult.Success) {
                     val failure = temporarySessionFailure(error)
                     recordRecovery(accountId, generation, failure)
@@ -152,6 +157,16 @@ class UserManager(
 
     override suspend fun <T> execute(block: suspend () -> T): T {
         val snapshot = currentSessionSnapshot()
+        val syncRequest = coroutineContext[LocalModeSyncRequest.Key]
+        val verifiedLocalSync = syncRequest?.accountId == snapshot.accountId &&
+            syncRequest.generation == snapshot.generation
+        if (snapshot.accountId in connectionMode.localModeAccountIds.value && !verifiedLocalSync) {
+            logError(
+                "LocalMode",
+                "execute blocked by local mode account=${snapshot.accountId} gen=${snapshot.generation}",
+            )
+            throw com.par9uet.jm.core.network.LocalModeUnavailableException()
+        }
         if (snapshot.accountId <= 0) throw AuthenticatedSessionRequiredException()
         fun isCurrent() = isCurrentSession(snapshot.accountId, snapshot.generation)
         val result = withAuthenticationRecovery(
@@ -273,6 +288,13 @@ class UserManager(
             val recovery = when (result) {
                 is NetWorkResult.Error -> {
                     logError("Login", "自动恢复失败 origin=$origin；保留身份并暂停认证请求")
+                    // 只把认证类失败算作「401/被踢」；网络抖动不触发夜间引导。
+                    if (result.kind == NetworkErrorKind.Authentication ||
+                        result.authFailure == AuthFailure.InvalidCredentials ||
+                        result.code == 401
+                    ) {
+                        nightLocalModePrompt.recordAuthFailure(accountId)
+                    }
                     temporarySessionFailure(result.cause).copy(code = result.code)
                 }
                 is NetWorkResult.Success -> {
@@ -296,13 +318,21 @@ class UserManager(
     suspend fun login(username: String, password: String): NetWorkResult<CandidateSession> {
         cancelBackgroundJob()
         val generation = beginManualLogin()
+        log("Login", "login begin generation=$generation")
         val result = userRepository.login(username, password)
-        return commitLoginResult(
+        val committed = commitLoginResult(
             generation = generation,
             password = password,
             result = result,
             clearUserOnError = false,
         )
+        when (committed) {
+            is NetWorkResult.Error ->
+                logError("Login", "login failed generation=$generation: ${committed.message} code=${committed.code}")
+            is NetWorkResult.Success ->
+                log("Login", "login committed uid=${committed.data.loginResponse.uid} generation=$generation")
+        }
+        return committed
     }
 
     /** Probe saved cookies without login; recover only after explicit authentication rejection. */
@@ -342,6 +372,9 @@ class UserManager(
                 }
 
                 is NetWorkResult.Error -> {
+                    if (probe.kind == NetworkErrorKind.Authentication) {
+                        nightLocalModePrompt.recordAuthFailure(snapshot.user.id)
+                    }
                     if (probe.kind != NetworkErrorKind.Authentication) {
                         // 临时失败保留缓存身份与已持久化的会话；仍按“已认证”对待，
                         // 避免收藏等请求在探活失败后一直空等。

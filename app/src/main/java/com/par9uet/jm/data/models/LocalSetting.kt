@@ -105,6 +105,15 @@ data class LocalSetting(
     val cacheBudgetMb: Int = 1024,
     // true = 已下载漫画不受缓存总配额限制（默认）
     val downloadExemptFromCacheLimit: Boolean = true,
+    // 每个已登录账号独立保留本地模式，切换账号时不会混用收藏和历史。
+    // Gson 读取旧设置时缺字段会给 null，使用方统一按空列表处理。
+    val localModeAccountIds: List<Int>? = emptyList(),
+    // 本地模式开启时间：用于避免白天手动开启后立刻自动切回；旧设置缺字段按可尝试恢复处理。
+    val localModeEnteredAtByAccount: Map<Int, Long>? = emptyMap(),
+    // 夜间 401 弹窗去重（本地日期 yyyy-MM-dd）。Gson 缺字段会写 null，读取方必须 orEmpty。
+    val nightLocalModePromptDate: String? = null,
+    // 手动开启本地模式前的说明弹窗：true = 用户点过「不再显示」。
+    val localModeHelpDismissed: Boolean = false,
 )
 
 const val COLOR_PALETTE_PRESET_DEFAULT = "default"

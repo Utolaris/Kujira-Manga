@@ -54,7 +54,8 @@ class RetrofitCookieIsolationTest {
                 }
                 val request = server.takeRequest()
                 assertNull(request.headers["Cookie"])
-                assertNotNull(request.headers["token"])
+                assertEquals("${API_TS},2.1.8", request.headers["Tokenparam"])
+                assertEquals(API_TOKEN_HASH, request.headers["Token"])
             }
         }
     }

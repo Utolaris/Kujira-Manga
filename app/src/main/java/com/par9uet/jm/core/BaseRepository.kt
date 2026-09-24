@@ -46,6 +46,12 @@ open class BaseRepository {
             throw error
         } catch (error: SessionRecoveryException) {
             error.error
+        } catch (error: com.par9uet.jm.core.network.LocalModeUnavailableException) {
+            return@withContext NetWorkResult.Error(
+                message = com.par9uet.jm.core.model.LOCAL_MODE_UNAVAILABLE_MESSAGE,
+                kind = NetworkErrorKind.Unknown,
+                cause = error,
+            )
         } catch (error: AuthenticatedSessionRequiredException) {
             // 没有可用会话：这是「需要登录」，不是网络故障。必须带上 Authentication，
             // 否则上层（如收藏弹窗按 errorKind == Authentication 判断）只会显示成普通错误，

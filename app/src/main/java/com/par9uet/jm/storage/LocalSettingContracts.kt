@@ -48,6 +48,7 @@ interface ReaderPreferences {
 interface AppExperiencePreferences {
     val onboardingCompleted: StateFlow<Boolean>
     val nsfwWarningDismissed: StateFlow<Boolean>
+    val localModeHelpDismissed: StateFlow<Boolean>
 }
 
 /** Explicit persistence boundary used by backup export; UI features should use narrow flows. */
@@ -86,6 +87,26 @@ data class MiscSettingsState(
      */
     val tabletLayoutEnabled: Boolean? = null,
 )
+
+/**
+ * 连接模式（网络 / 本地）。本地模式下收藏与历史观看只落本地；
+ * 需要登录态的能力由门禁统一提示不可用。
+ */
+interface ConnectionModePreferences {
+    val localModeAccountIds: StateFlow<List<Int>>
+    val localModeEnteredAtByAccount: StateFlow<Map<Int, Long>>
+}
+
+interface ConnectionModeEditor {
+    /** @return true only when the new mode was persisted. */
+    fun setLocalModeEnabled(accountId: Int, enabled: Boolean): Boolean
+
+    /** 夜间弹窗去重用的本地日期键（yyyy-MM-dd）；空串表示尚未弹过。 */
+    fun nightLocalModePromptDate(): String
+
+    /** @return true only when the prompt date was persisted. */
+    fun setNightLocalModePromptDate(date: String): Boolean
+}
 
 interface MiscSettingsPreferences {
     val misc: StateFlow<MiscSettingsState>

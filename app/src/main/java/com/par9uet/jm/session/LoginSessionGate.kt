@@ -7,7 +7,7 @@ import com.par9uet.jm.utils.logError
 import okhttp3.Cookie
 
 /**
- * 登录「真的成功」的最低标准：SDK 返回了账号身份，且带回了可提交的会话 cookie。
+ * 登录「真的成功」的最低标准：SDK 返回了账号身份，且带回了有效 AVS 会话 cookie。
  * 不满足时不得把 SessionReadiness 标成 Authenticated。
  */
 object LoginSessionGate {
@@ -30,8 +30,11 @@ object LoginSessionGate {
                 message = "登录未完成：服务端未返回用户名",
                 kind = NetworkErrorKind.Authentication,
             )
-            verified.embeddedCookies.isEmpty() -> NetWorkResult.Error(
-                message = "登录未完成：服务端未返回会话 Cookie",
+            verified.embeddedCookies.none {
+                it.name.equals("AVS", ignoreCase = true) &&
+                    it.value.isNotBlank() && it.expiresAt > System.currentTimeMillis()
+            } -> NetWorkResult.Error(
+                message = "登录未完成：服务端未返回有效 AVS 会话 Cookie",
                 kind = NetworkErrorKind.Authentication,
             )
             else -> null

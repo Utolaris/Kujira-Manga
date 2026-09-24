@@ -13,6 +13,6 @@ fun redactSensitiveJson(raw: String): String {
 }
 
 private val SENSITIVE_JSON_FIELD_REGEX = Regex(
-    "(\"(?:password|passwd|pass|pwd|token|access_token|refresh_token|cookie|cookies)\"\\s*:\\s*\")[^\"]*(\")",
+    "(\"(?:password|passwd|pass|pwd|token|jwttoken|access_token|refresh_token|cookie|cookies|s)\"\\s*:\\s*\")[^\"]*(\")",
     RegexOption.IGNORE_CASE,
 )

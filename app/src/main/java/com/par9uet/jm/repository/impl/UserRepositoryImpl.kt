@@ -78,6 +78,7 @@ class UserRepositoryImpl(
                         val candidate = CandidateSession(
                             loginResponse = result.userInfo.toLoginResponse(),
                             embeddedCookies = result.sessionCookies,
+                            jwtToken = result.jwtToken,
                         )
                         log(
                             LoginSessionGate.TAG,
@@ -130,6 +131,7 @@ class UserRepositoryImpl(
         }
         return embeddedClientManager.activateCandidateSession(
             cookies = verified.embeddedCookies,
+            jwtToken = verified.jwtToken,
             username = verified.loginResponse.username,
         )
     }
