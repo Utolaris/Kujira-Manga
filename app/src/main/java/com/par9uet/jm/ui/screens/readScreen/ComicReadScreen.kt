@@ -68,7 +68,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.data.models.ComicChapter
 import com.par9uet.jm.session.SessionReadiness
-import com.par9uet.jm.utils.log
+
 import com.par9uet.jm.ui.glass.GlassCaptureHost
 import com.par9uet.jm.ui.glass.GlassBackdropMode
 import com.par9uet.jm.ui.glass.GlassModal
@@ -173,12 +173,6 @@ fun ComicReadScreen(
         }
     }
 
-    // [GlassDiag] 临时诊断：给这次实测划出边界，并记录阅读模式。
-    DisposableEffect(comicId, readMode) {
-        log("ReaderDiag", "===== 进入阅读器 comicId=$comicId 阅读模式=$readMode 本地=$localOnly =====")
-        onDispose { log("ReaderDiag", "===== 离开阅读器 comicId=$comicId =====") }
-    }
-
     // Metadata and pages arrive independently. Restore only once both the real history key and
     // page count exist; a callback captured before metadata loaded otherwise always restored 0.
     LaunchedEffect(comicId, size, readHistoryComicId, loading) {
@@ -207,7 +201,10 @@ fun ComicReadScreen(
     DisposableEffect(lifecycleOwner, comicId) {
         val observer = LifecycleEventObserver { _, event ->
             // Process death need not call onDispose. ON_STOP is the durable background checkpoint.
-            if (event == Lifecycle.Event.ON_STOP) saveProgress()
+            if (event == Lifecycle.Event.ON_STOP) {
+                saveProgress()
+                comicReadViewModel.hideToolBar()
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {

@@ -30,7 +30,7 @@ import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.ui.theme.ExtendedColorScheme
 import com.par9uet.jm.ui.theme.ExtendedTheme
 import com.par9uet.jm.ui.theme.LocalExtendedColors
-import com.par9uet.jm.utils.log
+
 import kotlin.math.roundToInt
 
 /**
@@ -162,7 +162,7 @@ internal class GlassCaptureHostView(context: Context) :
         // make the host redraw forever and Compose instrumentation never reaches idle.
         sourceComposeView.onSourceInvalidated = {
             if (!isCapturingSource) {
-                sourceCapture.markDirty("源内容 invalidate")
+                sourceCapture.markDirty()
             }
         }
 
@@ -206,7 +206,7 @@ internal class GlassCaptureHostView(context: Context) :
     ) {
         sourceContentState.value = sourceContent
         overlayContentState.value = overlayContent
-        sourceCapture.markDirty("setContents")
+        sourceCapture.markDirty()
         invalidate()
     }
 
@@ -214,7 +214,7 @@ internal class GlassCaptureHostView(context: Context) :
         if (backdropMode == mode) return
         backdropMode = mode
         backdropViews.values.forEach { it.setBackdropMode(mode) }
-        sourceCapture.markDirty("backdropMode=$mode")
+        sourceCapture.markDirty()
         invalidate()
     }
 
@@ -242,7 +242,7 @@ internal class GlassCaptureHostView(context: Context) :
         isDarkTheme = colorScheme.background.luminance() < 0.5f
         setBackgroundColor(colorScheme.background.toArgb())
         if (themeChanged) {
-            sourceCapture.markDirty("主题变化")
+            sourceCapture.markDirty()
             backdropViews.forEach { (surfaceId, view) ->
                 val style = registeredSurfaces[surfaceId]?.style ?: GlassSurfaceStyle.Default
                 view.setColors(colorsFor(style.material))
@@ -265,24 +265,12 @@ internal class GlassCaptureHostView(context: Context) :
             bounds = bounds,
         )
         if (registeredSurfaces[surfaceId] == next) return
-        val previous = registeredSurfaces[surfaceId]
         val firstSurface = registeredSurfaces.isEmpty()
         registeredSurfaces[surfaceId] = next
-        // [GlassDiag] 临时诊断：注册面数的真实跳变 + 是否走了"第一个玻璃面必须重录"的分支。
-        if (previous == null || previous.bounds == null) {
-            log(
-                "GlassDiag",
-                "[host] 注册面 id=$surfaceId firstSurface=$firstSurface " +
-                    "之前有没有 bounds=${previous?.bounds != null} " +
-                    "bounds=${bounds.left.roundToInt()},${bounds.top.roundToInt()} " +
-                    "${bounds.width.roundToInt()}x${bounds.height.roundToInt()} " +
-                    "alpha=${alpha.coerceIn(0f, 1f)} 现有面=${registeredSurfaces.keys}",
-            )
-        }
         if (firstSurface) {
             // Capture is skipped while no surface is registered; the first glass panel must
             // force a fresh source record or it would sample an empty/stale display list.
-            sourceCapture.markDirty("第一个玻璃面注册")
+            sourceCapture.markDirty()
         }
         backdropViews[surfaceId]?.let { applySurfaceVisuals(it, next) }
         scheduleSurfaceSync()
@@ -323,37 +311,9 @@ internal class GlassCaptureHostView(context: Context) :
     }
 
     override fun removeSurface(surfaceId: String) {
-        // [GlassDiag] 临时诊断：注销时机对不上会留下无 bounds 的幽灵注册。
-        log(
-            "GlassDiag",
-            "[host] 注销面 id=$surfaceId 有注册=${registeredSurfaces.containsKey(surfaceId)} " +
-                "有背板=${backdropViews.containsKey(surfaceId)} 其余面=${registeredSurfaces.keys - surfaceId}",
-        )
         registeredSurfaces.remove(surfaceId)
         backdropViews.remove(surfaceId)?.let(::removeView)
         scheduleSurfaceSync()
-        dumpGlassState("注销后")
-    }
-
-    /** [GlassDiag] 临时诊断：把宿主 + 各背板的当前状态打一行，便于逐次对比。 */
-    internal fun dumpGlassState(label: String) {
-        val surfaces = registeredSurfaces.entries.joinToString(" ") { (id, r) ->
-            val b = r.bounds
-            "$id(alpha=${"%.2f".format(r.alpha)},bounds=${
-                if (b == null) "null" else "${b.width.roundToInt()}x${b.height.roundToInt()}"
-            })"
-        }
-        val backdrops = backdropViews.entries.joinToString(" ") { (id, v) ->
-            "$id(drawList=${v.regionHasDisplayList()})"
-        }
-        log(
-            "GlassDiag",
-            "[state] $label mode=$backdropMode gen=${sourceCapture.generation} " +
-                "captureAvailable=${sourceCapture.nativeCaptureAvailable} " +
-                "captureDirty=${sourceCapture.isDirtyForDiagnostics} " +
-                "sharedDrawList=${sourceCapture.sharedHasDisplayList()} " +
-                "面=[$surfaces] 背板=[$backdrops]",
-        )
     }
 
     fun dispose() {
@@ -368,7 +328,7 @@ internal class GlassCaptureHostView(context: Context) :
 
     override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {
         super.onSizeChanged(width, height, oldWidth, oldHeight)
-        sourceCapture.markDirty("宿主尺寸变化 $oldWidth x $oldHeight → $width x $height")
+        sourceCapture.markDirty()
         backdropViews.values.forEach { it.markSurfacePositionChanged() }
         scheduleSurfaceSync()
         invalidate()
@@ -386,8 +346,6 @@ internal class GlassCaptureHostView(context: Context) :
             val generationBefore = sourceCapture.generation
             sourceCapture.recordIfNeeded()
             if (sourceCapture.generation != generationBefore) {
-                // [GlassDiag] 临时诊断：gen 真的前进了才记，说明这一帧重录成功。
-                log("GlassDiag", "[host] 本帧重录成功 gen=$generationBefore → ${sourceCapture.generation}")
                 // Backdrop views only notice a new source generation while drawing, so they
                 // must be redrawn in this same frame to keep the glass in sync.
                 backdropViews.values.forEach { view ->
@@ -424,8 +382,6 @@ internal class GlassCaptureHostView(context: Context) :
             .filter { it !in activeIds }
             .toList()
             .forEach { surfaceId ->
-                // [GlassDiag] 临时诊断
-                log("GlassDiag", "[host] 移除原生背板 id=$surfaceId 原因=已不在注册表")
                 backdropViews.remove(surfaceId)?.let(::removeView)
             }
 
@@ -438,8 +394,6 @@ internal class GlassCaptureHostView(context: Context) :
 
             val view = backdropViews.getOrPut(surfaceId) {
                 layoutChanged = true
-                // [GlassDiag] 临时诊断：新建背板 = 全新实例，lastSourceGeneration 从 -1 起算。
-                log("GlassDiag", "[host] 新建原生背板 id=$surfaceId mode=$backdropMode")
                 GlassBackdropView(context, registration.style, surfaceId, backdropMode).also {
                     it.setSource(sourceCapture, sourceComposeView)
                     it.setColors(colorsFor(registration.style.material))
@@ -476,8 +430,6 @@ internal class GlassCaptureHostView(context: Context) :
         }
         if (layoutChanged) {
             requestLayout()
-            // [GlassDiag] 临时诊断：背板发生过增删/挪位就打个状态快照。
-            dumpGlassState("背板同步后")
         }
     }
 

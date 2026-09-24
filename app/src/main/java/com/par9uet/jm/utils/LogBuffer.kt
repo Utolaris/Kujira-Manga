@@ -1,41 +1,40 @@
 package com.par9uet.jm.utils
 
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-
+/**
+ * 内存日志环形缓冲。导出走 [LogExporter] 的结构化 JSON，不是纯文本拼接。
+ */
 data class LogEntry(
-    val timestamp: String,
+    val timestampMillis: Long,
     val tag: String,
     val message: String,
-    val level: String
+    val level: String,
+    val seq: Int,
 ) {
-    val formatted: String get() = "[$timestamp][$level][$tag] $message"
+    /** ISO-8601，导出与排序用。 */
+    val timestamp: String get() = formatIso(timestampMillis)
+
+    /** 日志页展示用的短时间戳。 */
+    val formatted: String get() = "[${formatClock(timestampMillis)}][$level][$tag] $message"
 }
 
 object LogBuffer {
     private const val MAX_ENTRIES = 500
-    // [GlassDiag] 临时诊断：诊断 tag 的行另行留存，避免被高频业务日志（封面/解码）挤出环形缓冲，
-    // 导致实测完导出时证据已经消失。定位完删除本段。
-    private const val MAX_DIAG_ENTRIES = 800
-    private val DIAG_TAGS = listOf("GlassDiag", "ReaderDiag")
-    private val entries = mutableListOf<LogEntry>()
-    private val diagEntries = mutableListOf<LogEntry>()
-    private val dateFormatter = SimpleDateFormat("MM-dd HH:mm:ss", Locale.ROOT)
+    private val entries = ArrayDeque<LogEntry>()
+    private var nextSeq = 0
 
     @Synchronized
     fun append(tag: String, message: String, level: String = "D") {
-        val time = dateFormatter.format(Date())
-        val entry = LogEntry(time, tag, message, level)
-        entries.add(entry)
-        if (entries.size > MAX_ENTRIES) {
-            entries.removeAt(0)
-        }
-        if (DIAG_TAGS.any { tag.startsWith(it) }) {
-            diagEntries.add(entry)
-            if (diagEntries.size > MAX_DIAG_ENTRIES) {
-                diagEntries.removeAt(0)
-            }
+        entries.addLast(
+            LogEntry(
+                timestampMillis = System.currentTimeMillis(),
+                tag = tag,
+                message = message,
+                level = level,
+                seq = nextSeq++,
+            ),
+        )
+        while (entries.size > MAX_ENTRIES) {
+            entries.removeFirst()
         }
     }
 
@@ -45,24 +44,22 @@ object LogBuffer {
     }
 
     @Synchronized
-    fun getLogs(): List<LogEntry> {
-        return mergedEntries()
-    }
-
-    @Synchronized
-    fun getLogText(): String {
-        return mergedEntries().joinToString("\n") { it.formatted }
-    }
-
-    /** [GlassDiag] 临时诊断：诊断行按时间并入普通行，导出时保持可读的先后顺序。 */
-    private fun mergedEntries(): List<LogEntry> {
-        if (diagEntries.isEmpty()) return entries.toList()
-        return (entries + diagEntries).distinct().sortedBy { it.timestamp }
-    }
+    fun getLogs(): List<LogEntry> = entries.toList()
 
     @Synchronized
     fun clear() {
         entries.clear()
-        diagEntries.clear()
+        nextSeq = 0
     }
 }
+
+internal fun formatIso(millis: Long): String =
+    java.time.Instant.ofEpochMilli(millis)
+        .atZone(java.time.ZoneId.systemDefault())
+        .toOffsetDateTime()
+        .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX"))
+
+internal fun formatClock(millis: Long): String =
+    java.time.Instant.ofEpochMilli(millis)
+        .atZone(java.time.ZoneId.systemDefault())
+        .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss.SSS"))

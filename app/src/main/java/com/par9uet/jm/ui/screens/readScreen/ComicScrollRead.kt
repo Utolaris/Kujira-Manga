@@ -186,7 +186,6 @@ fun ComicScrollRead(
                 .collect {
                     // 读的是状态而不是组合期算好的布尔，否则这里会一直看到旧值。
                     if (programmaticScrollDepth.intValue > 0) return@collect
-                    log("lazyListState.firstVisibleItemIndex currentIndexState = $currentIndexState it = $it")
                     if (currentIndexState != it) {
                         currentIndexState = it
                         onUpdateSliderValue(it.toFloat())

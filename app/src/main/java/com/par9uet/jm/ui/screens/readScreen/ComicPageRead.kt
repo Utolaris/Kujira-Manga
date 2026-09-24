@@ -43,7 +43,7 @@ fun ComicPageRead(
     var isProgrammaticScroll by remember { mutableStateOf(false) }
     var clickTargetIndex by remember { mutableIntStateOf(-1) }
 
-    // 点击翻页：等待 animateScrollToPage 动画完成后再更新状态
+    // 点击模式翻页：等待 animateScrollToPage 动画完成后再更新状态
     LaunchedEffect(clickTargetIndex) {
         if (clickTargetIndex < 0) return@LaunchedEffect
         if (list.isEmpty()) {
@@ -104,6 +104,7 @@ fun ComicPageRead(
             onNormalTap = { position, viewportSize ->
                 val screenWidth = viewportSize.width
                 when {
+                    !tapOnly -> comicReadViewModel.triggerToolBar()
                     list.isEmpty() -> comicReadViewModel.triggerToolBar()
 
                     position.x < screenWidth / 3f -> {

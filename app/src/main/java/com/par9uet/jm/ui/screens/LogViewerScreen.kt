@@ -134,13 +134,13 @@ fun LogViewerScreen() {
         actions = {
             IconButton(
                 onClick = {
-                    val visibleText = logs.joinToString("\n") { it.formatted }
-                    if (visibleText.isEmpty()) {
+                    val snapshot = LogBuffer.getLogs()
+                    if (snapshot.isEmpty()) {
                         Toast.makeText(context, "暂无日志可导出", Toast.LENGTH_SHORT).show()
                         return@IconButton
                     }
                     val result = runCatching {
-                        LogExporter.export(context, visibleText)
+                        LogExporter.export(context, snapshot)
                     }
                     val message = result.fold(
                         onSuccess = { "已导出：${it.absolutePath}" },
@@ -151,7 +151,7 @@ fun LogViewerScreen() {
             ) {
                 Icon(
                     imageVector = Icons.Default.FileDownload,
-                    contentDescription = "导出可见日志",
+                    contentDescription = "导出日志 JSON",
                 )
             }
         },

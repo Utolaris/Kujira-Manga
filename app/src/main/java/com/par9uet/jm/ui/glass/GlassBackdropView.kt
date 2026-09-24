@@ -113,13 +113,6 @@ internal class GlassBackdropView(
         sourceView = newSourceView
         lastSourceGeneration = -1
         sourceRegionDirty = true
-        // [GlassDiag] 临时诊断：新背板从 last=-1 起算，理论上第一帧必录。
-        log(
-            "GlassDiag",
-            "[surface:$surfaceId] 绑定共享底图 mode=$backdropMode " +
-                "native=${nativeRenderState != null} 自身尺寸=${width}x$height " +
-                "当前 gen=${newSource.generation}",
-        )
         invalidate()
     }
 
@@ -154,7 +147,6 @@ internal class GlassBackdropView(
         canvas.drawRoundRect(surfaceRect, cornerRadiusPx(), cornerRadiusPx(), shadowPaint)
 
         val sharedSource = source
-        // [GlassDiag] 临时诊断：把两个分支的条件先算出来，便于原样记录"这一帧到底走了哪条路"。
         val canAttempt = canAttemptNativeRender()
         val sourceAvailable = sharedSource?.nativeCaptureAvailable == true
         val hardwareAccelerated = canvas.isHardwareAccelerated
@@ -172,11 +164,9 @@ internal class GlassBackdropView(
                 contentSeenGeneration = sourceGeneration
             } else if (contentSeenGeneration == sourceGeneration) {
                 contentSeenGeneration = -1
-                sharedSource.markDirty("共享底图在 gen=$sourceGeneration 变为空")
+                sharedSource.markDirty()
             }
         }
-        var recorded = false
-        var drewBlur = false
         if (
             canAttempt &&
             sharedSource != null &&
@@ -185,20 +175,18 @@ internal class GlassBackdropView(
             (sourceRegionDirty || lastSourceGeneration != sharedSource.generation)
         ) {
             recordSourceRegion(sharedSource)
-            recorded = !sourceRegionDirty
         }
 
         if (
             canAttempt &&
+            sharedSource != null &&
             sourceAvailable &&
             hardwareAccelerated &&
             !sourceRegionDirty &&
-            lastSourceGeneration == sharedSource?.generation
+            lastSourceGeneration == sharedSource.generation
         ) {
             drawNativeBackdrop(canvas)
-            drewBlur = true
         }
-        diagLogDecision(sharedSource, recorded, drewBlur, canAttempt, sourceAvailable, hardwareAccelerated)
 
         // On API 30 this translucent tint is the complete fallback. On API 31+ it is drawn over
         // the blurred source RenderNode, keeping the same material geometry on every device.
@@ -211,40 +199,6 @@ internal class GlassBackdropView(
         drawDirectionalStroke(canvas, topStrokePaint, clipTop = true)
         drawDirectionalStroke(canvas, bottomStrokePaint, clipTop = false)
     }
-
-    // [GlassDiag] 临时诊断：仅在决策签名变化时记一行，避免逐帧刷屏。
-    private var lastDiagSignature: String? = null
-
-    @Suppress("LongParameterList")
-    private fun diagLogDecision(
-        sharedSource: GlassCaptureSource?,
-        recorded: Boolean,
-        drewBlur: Boolean,
-        canAttempt: Boolean,
-        sourceAvailable: Boolean,
-        hardwareAccelerated: Boolean,
-    ) {
-        val signature = "$recorded|$drewBlur|$canAttempt|$sourceAvailable|$hardwareAccelerated|" +
-            "$sourceRegionDirty|$lastSourceGeneration|${sharedSource?.generation}|$alpha"
-        if (signature == lastDiagSignature) return
-        lastDiagSignature = signature
-        log(
-            "GlassDiag",
-            "[surface:$surfaceId] recorded=$recorded 画了模糊=$drewBlur " +
-                "可尝试=$canAttempt 底图可用=$sourceAvailable 硬件加速=$hardwareAccelerated " +
-                "区域脏=$sourceRegionDirty last=$lastSourceGeneration gen=${sharedSource?.generation} " +
-                "区域有显示列表=${regionHasDisplayList()} 共享有显示列表=${sharedSource?.sharedHasDisplayList()} " +
-                "alpha=$alpha mode=$backdropMode 自身尺寸=${width}x$height",
-        )
-    }
-
-    /** [GlassDiag] 临时诊断：这个背板自己录下来的区域节点里到底有没有内容。 */
-    internal fun regionHasDisplayList(): Boolean =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            nativeRenderState?.renderNode?.hasDisplayList() == true
-        } else {
-            false
-        }
 
     /** 原生模糊当前是否可尝试：退避窗口内直接跳过，避免每帧都撞同一个 GPU 失败。 */
     private fun canAttemptNativeRender(): Boolean =
@@ -307,13 +261,6 @@ internal class GlassBackdropView(
             )
             lastSourceGeneration = sharedSource.generation
             sourceRegionDirty = false
-            // [GlassDiag] 临时诊断：每次真正录制都记一行（只在 gen 变化时发生，量可控）。
-            log(
-                "GlassDiag",
-                "[surface:$surfaceId] 已录制区域 ${captureWidth}x$captureHeight " +
-                    "源内偏移=($captureLeftInSource,$captureTopInSource) gen=${sharedSource.generation} " +
-                    "源节点有显示列表=${sharedSource.sharedHasDisplayList()}",
-            )
             if (nativeFailureStreak > 0) {
                 nativeFailureStreak = 0
                 if (reportedDegraded) {
