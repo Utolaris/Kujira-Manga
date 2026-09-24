@@ -1,6 +1,6 @@
 # Kujira-Manga
 
-[JM](https://jmcomic.plus) 第三方 Android 客户端。
+[JM](https://18comic.vip) 第三方 Android 客户端。
 
 本项目参考了以下两个开源仓库，并在此基础上进行了**大量魔改**（架构分层、界面、阅读器、下载与缓存、隐私入口等均已大幅重写，功能与行为与上游可能不一致）：
 
