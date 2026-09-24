@@ -7,6 +7,13 @@ on:
   push:
     branches:
       - dev
+    # 文档/元数据-only 变更不触发发布构建；见 docs/release-flow.md。
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".gitignore"
+      - "Lab/**"
+      - "**/.DS_Store"
   workflow_dispatch:
 
 permissions:

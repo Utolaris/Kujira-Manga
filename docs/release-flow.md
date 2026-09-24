@@ -46,6 +46,9 @@ canary  ──(发版时 ff/merge)──►  dev  ──push──►  GitHub Ac
 
 - 路径：`.github/workflows/dev-release.yml`
 - **仅**在分支 `dev` 的 `push`（或手动 `workflow_dispatch`）时运行；`canary` 不跑发布构建。
+- **路径过滤**：仅文档/元数据（`**.md`、`docs/**`、`.gitignore`、`Lab/**` 等）的 push **不会**触发构建；
+  动到 `app/`、Gradle、`version.properties`、workflow 本身或其它会影响 APK 的文件才会。
+  需要纯文档变更也验证工具链时，用 `workflow_dispatch` 手动跑。
 - Action 版本（2026-09-24 对齐最新 major；改 workflow 前先更新本表）：
 
   | Action | 版本 | 用途 |
