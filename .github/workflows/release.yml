@@ -1,26 +1,22 @@
-# Dev Release CI（仅 dev 分支）
+# Release CI（仅 canary 分支）
+# 当且仅当 CHANGELOG.md 变更时触发；不再自动生成更新内容文本。
 # Action 版本钉最新 major，清单见 docs/release-flow.md；升级前先改文档再改本文件。
 
-name: Dev Release
+name: Release
 
 on:
   push:
     branches:
-      - dev
-    # 文档/元数据-only 变更不触发发布构建；见 docs/release-flow.md。
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
-      - ".gitignore"
-      - "Lab/**"
-      - "**/.DS_Store"
+      - canary
+    paths:
+      - "CHANGELOG.md"
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: dev-release-${{ github.ref }}
+  group: release-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -114,17 +110,6 @@ jobs:
           code="$(grep '^VERSION_CODE=' version.properties | cut -d= -f2- | tr -d '[:space:]')"
           echo "version_name=${name}" >> "$GITHUB_OUTPUT"
           echo "version_code=${code}" >> "$GITHUB_OUTPUT"
-          body="dist/release-notes.md"
-          awk -v ver="${name}" '
-            BEGIN { p=0 }
-            $0 == "# v" ver { p=1; print; next }
-            p==1 && /^# v[0-9]/ { exit }
-            p==1 { print }
-          ' CHANGELOG.md > "${body}"
-          if [ ! -s "${body}" ]; then
-            printf '# v%s\n\nCI build %s (%s)\n' "${name}" "${GITHUB_SHA::7}" "$(date -u +%Y-%m-%d)" > "${body}"
-          fi
-          echo "notes=${body}" >> "$GITHUB_OUTPUT"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v7
@@ -133,12 +118,12 @@ jobs:
           path: dist/*.apk
           if-no-files-found: error
 
-      - name: Create or update draft GitHub Release
+      # draft 正文留空：更新内容由维护者在确认产物后手写发布，CI 不自动生成。
+      - name: Create draft GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ steps.apk.outputs.version_name }}
           name: v${{ steps.apk.outputs.version_name }}
-          body_path: ${{ steps.apk.outputs.notes }}
           files: dist/*.apk
           draft: true
           fail_on_unmatched_files: true

@@ -59,7 +59,7 @@ eval "$(./scripts/android signing-env)"
 若 `apk-sign` 报「未签名」或证书是 debug 证书，说明环境变量没注入成功，
 Gradle 会静默产出未签名 APK —— 别急着上传。
 
-## GitHub Actions（dev 分支 CI）
+## GitHub Actions（canary 分支 Release CI）
 
 发版构建默认由 CI 完成：密钥库以 base64 放在仓库 Secret `RELEASE_KEYSTORE_BASE64`，
 密码在 `KUJIRA_MANGA_RELEASE_STORE_PASSWORD` / `KUJIRA_MANGA_RELEASE_KEY_PASSWORD`。

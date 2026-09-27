@@ -4,15 +4,14 @@
 
 | 分支 | 角色 |
 |---|---|
-| `canary` | **日常开发**默认分支（GitHub default）。功能合入、单测通过后进这里。 |
-| `dev` | **发版专用**。发版时把 `canary` 当前代码同步到 `dev` 并推送；该分支拥有独有 CI。 |
+| `canary` | **日常开发**默认分支（GitHub default）。功能合入、单测通过后进这里；发版也在此分支完成。 |
 | `main` | 历史稳定线，当前不再作为开发入口（保持兼容，不主动改写）。 |
 | 临时分支 | `feat/*`、`fix/*`、`chore/*` 等；合入 `canary` 后删除，不要长期留远端。 |
 
 ```text
-canary  ──(发版时 ff/merge)──►  dev  ──push──►  GitHub Actions（最新 major）  ──►  Release APK
-   ▲                                 │
-   └── 日常开发 / PR 合入            └── draft Release，人工/AI 发布
+canary  ──(改动 CHANGELOG.md 并 push)──►  GitHub Actions  ──►  draft Release + APK
+   ▲                                         │
+   └── 日常开发 / PR 合入                    └── 人工确认产物后发布并写更新内容
 ```
 
 ## 发版流程（标准）
@@ -25,30 +24,24 @@ canary  ──(发版时 ff/merge)──►  dev  ──push──►  GitHub Ac
    - `version.properties`：`VERSION_NAME` / `VERSION_CODE`
    - `CHANGELOG.md`：在顶部新增该版本章节（用户可见说明）
    - 同步 README 中的「当前版本」等过期字段
-3. **同步到 `dev` 并推送**：
+3. **推送全部代码到远端**：
    ```bash
-   git checkout canary && git pull
-   git checkout dev || git checkout -b dev
-   git merge --ff-only canary   # 或明确记录的 merge
-   git push origin canary dev
+   git push origin canary
    ```
-4. **CI 构建**：`dev` 推送后触发 `.github/workflows/dev-release.yml`  
-   - GitHub Actions 一律钉 **当前最新 major**（见下表），避免 Node 运行时弃用警告；升级时先改本文再改 workflow
-   - 使用仓库 Secrets 签名，产出 Release APK  
-   - 上传 Actions Artifact，并创建/更新对应 tag 的 **draft** GitHub Release
-5. **发布 APK**：核对 draft Release 附件与 `CHANGELOG.md` 对应章节后：
+   `CHANGELOG.md` 有改动时 CI 会自动构建（通常超过 5 分钟）。
+4. **确认产物**：Actions 上传 APK Artifact，并创建/更新对应 tag 的 **draft** GitHub Release（正文为空）。
+5. **发布**：核对 draft Release 附件与 `CHANGELOG.md` 对应章节后，写好更新内容并发布：
    ```bash
-   gh release edit "vX.Y.Z" --draft=false
+   gh release edit "vX.Y.Z" --body-file <更新内容.md> --draft=false
    ```
    无 CI 签名时的兜底（本地签名）仍见 [release-signing.md](./release-signing.md)。
 
-## dev 独有 CI
+## Release CI
 
-- 路径：`.github/workflows/dev-release.yml`
-- **仅**在分支 `dev` 的 `push`（或手动 `workflow_dispatch`）时运行；`canary` 不跑发布构建。
-- **路径过滤**：仅文档/元数据（`**.md`、`docs/**`、`.gitignore`、`Lab/**` 等）的 push **不会**触发构建；
-  动到 `app/`、Gradle、`version.properties`、workflow 本身或其它会影响 APK 的文件才会。
-  需要纯文档变更也验证工具链时，用 `workflow_dispatch` 手动跑。
+- 路径：`.github/workflows/release.yml`
+- **当且仅当** `CHANGELOG.md` 被改动的 `push` 到 `canary` 时运行（或手动 `workflow_dispatch`）。
+  改代码但不动 `CHANGELOG.md` **不会**触发；需要纯代码变更也验证工具链时，用 `workflow_dispatch` 手动跑。
+- CI **不自动生成更新内容文本**：draft Release 正文留空，由维护者在确认产物后手写。
 - Action 版本（2026-09-24 对齐最新 major；改 workflow 前先更新本表）：
 
   | Action | 版本 | 用途 |

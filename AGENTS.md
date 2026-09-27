@@ -10,7 +10,7 @@
 | `docs/android-cli.md` | 统一调试 CLI |
 | `docs/instrumented-tests.md` | 真机插桩测试 |
 | `docs/release-signing.md` | 本地签名与密钥 |
-| `docs/release-flow.md` | 分支模型、dev CI 与发版流程 |
+| `docs/release-flow.md` | 分支模型、Release CI 与发版流程 |
 
 根目录：`ARCHITECTURE.md`（架构）、`CHANGELOG.md`（版本）、`README.md`（用户向）。
 
@@ -49,9 +49,17 @@
 
 ## 分支与发版
 
-- **日常开发在 `canary`**；推送前跑相关单测。
-- **发版走 `dev`**：发版时将 `canary` 同步到 `dev` 并推送；`dev` 独有 GitHub Actions CI
-  （官方/社区 Actions 钉**最新 major**，清单见 `docs/release-flow.md`）构建签名 Release APK 并生成 draft Release。完整流程见
-  `docs/release-flow.md`。
+- **日常开发在 `canary`**；推送前跑相关单测。发版也在 `canary` 完成。
+- **Release CI** 在 `canary` 上、**当且仅当** `CHANGELOG.md` 有改动的 push 时触发
+  （官方/社区 Actions 钉**最新 major**，清单见 `docs/release-flow.md`），构建签名 Release APK 并生成 draft Release
+  （正文留空，不自动生成更新内容）。完整流程见 `docs/release-flow.md`。
 - 发版前：更新 `version.properties` 与 `CHANGELOG.md`；安全/架构变更后同步核对 `ARCHITECTURE.md`。
 - 临时分支合入 `canary` 后删除；CI/密钥/流程变更先改文档与 workflow。
+
+### 发布 Release
+
+当用户要求发布 release 时：
+
+1. 更新 `CHANGELOG.md`（顶部新增该版本章节）与 `version.properties`。
+2. 推送全部代码到远端（`canary`）。`CHANGELOG.md` 变更会触发 CI 自动构建，耗时通常超过 5 分钟。
+3. 确认产物正确（APK Artifact 与 draft Release 附件）后，发布 release 并写更新内容。
