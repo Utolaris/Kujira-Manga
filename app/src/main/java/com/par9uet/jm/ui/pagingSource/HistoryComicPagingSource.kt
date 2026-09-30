@@ -6,6 +6,7 @@ import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.session.UserRepository
 import com.par9uet.jm.core.network.NetWorkResult
 import com.par9uet.jm.contentfilter.filterBlockedTags
+import kotlinx.coroutines.CancellationException
 
 class HistoryComicPagingSource(
     private val userRepository: UserRepository,
@@ -15,8 +16,14 @@ class HistoryComicPagingSource(
 
     override suspend fun load(params: LoadParams<Int>): LoadResult<Int, Comic> {
         val currentPage = params.key ?: 1
-        return when (val data =
-            userRepository.getHistoryComicList(currentPage)) {
+        val result = try {
+            userRepository.getHistoryComicList(currentPage)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            return LoadResult.Error(error)
+        }
+        return when (val data = result) {
             is NetWorkResult.Error -> {
                 LoadResult.Error(Exception(data.message))
             }

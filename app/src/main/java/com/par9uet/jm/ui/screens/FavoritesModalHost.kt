@@ -23,10 +23,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Bookmarks
 import androidx.compose.material.icons.rounded.Cancel
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -72,6 +74,9 @@ import com.par9uet.jm.ui.navigation.LocalMainNavController
 /** 移动收藏夹列表：固定行高，最多可见 5 行，其余靠滑动。 */
 private val MoveFolderRowHeight = 52.dp
 private const val MoveFolderVisibleRows = 5
+
+/** 管理收藏夹列表：限制可见高度，夹多时滚动，避免居中弹窗被撑满全屏。 */
+private val ManageFolderVisibleHeight = 360.dp
 
 /** Renders every Favorites modal from the single ViewModel-owned modal state. */@OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -206,50 +211,50 @@ internal fun FavoritesModalHost(favoritesViewModel: FavoritesViewModel) {
         }
     }
 
+    // 管理弹窗内的「选中」只用于改名/删除，不切换当前收藏夹。
+    var manageSelectedFolderId by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(activeModal, folders) {
+        if (activeModal !is FavoritesModal.FolderManagement) {
+            manageSelectedFolderId = null
+        } else if (manageSelectedFolderId != null && manageSelectedFolderId !in folders) {
+            manageSelectedFolderId = null
+        }
+    }
+    val manageSelectedNumericId = manageSelectedFolderId?.toIntOrNull()
+    val canManageSelected = manageSelectedNumericId != null && manageSelectedNumericId != 0
+
     GlassModal(
         visible = activeModal is FavoritesModal.FolderManagement,
         onDismissRequest = {
             favoritesViewModel.onIntent(FavoritesIntent.FolderManagementDismissed)
         },
         surfaceId = "favorites-manage-folder-glass-modal",
-        alignment = Alignment.BottomCenter,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 12.dp),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 24.dp),
-        ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(24.dp)) {
             Text(
                 "管理收藏夹",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
             )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                "点击文件夹名称可切换当前收藏夹，右侧按钮可重命名或删除。",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
             Spacer(modifier = Modifier.height(16.dp))
             LazyColumn(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = ManageFolderVisibleHeight),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 items(folders.entries.toList(), key = { it.key }) { (folderId, folderName) ->
+                    val numericFolderId = folderId.toIntOrNull()
+                    val isManagedSelection = manageSelectedFolderId == folderId
+                    val isActiveFolder = selectedFolderId == numericFolderId
                     Surface(
                         shape = MaterialTheme.shapes.medium,
-                        color = if (selectedFolderId == folderId.toIntOrNull()) {
+                        color = if (isManagedSelection) {
                             MaterialTheme.colorScheme.secondaryContainer
                         } else {
                             Color.Transparent
                         },
-                        onClick = {
-                            favoritesViewModel.onIntent(
-                                FavoritesIntent.FolderSelected(folderId.toIntOrNull() ?: 0)
-                            )
-                        },
+                        onClick = { manageSelectedFolderId = folderId },
                     ) {
                         Row(
                             modifier = Modifier
@@ -271,33 +276,17 @@ internal fun FavoritesModalHost(favoritesViewModel: FavoritesViewModel) {
                             Text(
                                 folderName,
                                 style = MaterialTheme.typography.bodyLarge,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f),
                             )
-                            if (folderId != "0") {
-                                IconButton(onClick = {
-                                    favoritesViewModel.onIntent(
-                                        FavoritesIntent.RenameFolderOpened(
-                                            folderId = folderId.toIntOrNull() ?: 0,
-                                            folderName = folderName,
-                                        )
-                                    )
-                                }) {
-                                    Icon(Icons.Rounded.Edit, contentDescription = "重命名")
-                                }
-                                IconButton(onClick = {
-                                    favoritesViewModel.onIntent(
-                                        FavoritesIntent.DeleteFolderOpened(
-                                            folderId = folderId.toIntOrNull() ?: 0,
-                                            folderName = folderName,
-                                        )
-                                    )
-                                }) {
-                                    Icon(
-                                        Icons.Rounded.Delete,
-                                        contentDescription = "删除",
-                                        tint = MaterialTheme.colorScheme.error,
-                                    )
-                                }
+                            if (isActiveFolder) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Check,
+                                    contentDescription = "当前收藏夹",
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
                             }
                         }
                     }
@@ -314,6 +303,51 @@ internal fun FavoritesModalHost(favoritesViewModel: FavoritesViewModel) {
                 Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("新建收藏夹")
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        val folderId = manageSelectedNumericId ?: return@OutlinedButton
+                        val folderName = folders[manageSelectedFolderId].orEmpty()
+                        favoritesViewModel.onIntent(
+                            FavoritesIntent.RenameFolderOpened(
+                                folderId = folderId,
+                                folderName = folderName,
+                            )
+                        )
+                    },
+                    enabled = canManageSelected,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Icon(Icons.Rounded.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("改名")
+                }
+                OutlinedButton(
+                    onClick = {
+                        val folderId = manageSelectedNumericId ?: return@OutlinedButton
+                        val folderName = folders[manageSelectedFolderId].orEmpty()
+                        favoritesViewModel.onIntent(
+                            FavoritesIntent.DeleteFolderOpened(
+                                folderId = folderId,
+                                folderName = folderName,
+                            )
+                        )
+                    },
+                    enabled = canManageSelected,
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Icon(Icons.Rounded.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("删除")
+                }
             }
         }
     }

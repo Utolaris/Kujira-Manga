@@ -28,6 +28,21 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * 应用锁：窗口失焦即上锁。部分机型上「回桌面再立刻点回来」可能不完整投递
+     * ON_PAUSE，或状态尚未重组；失焦比生命周期更早、更稳。
+     */
+    private var onWindowFocusLost: (() -> Unit)? = null
+
+    fun setOnWindowFocusLostListener(listener: (() -> Unit)?) {
+        onWindowFocusLost = listener
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus) onWindowFocusLost?.invoke()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 

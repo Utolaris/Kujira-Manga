@@ -5,6 +5,7 @@ import androidx.paging.PagingState
 import com.par9uet.jm.data.models.Comment
 import com.par9uet.jm.session.UserRepository
 import com.par9uet.jm.core.network.NetWorkResult
+import kotlinx.coroutines.CancellationException
 
 class HistoryCommentPagingSource(
     private val userRepository: UserRepository,
@@ -14,7 +15,14 @@ class HistoryCommentPagingSource(
 
     override suspend fun load(params: LoadParams<Int>): LoadResult<Int, Comment> {
         val currentPage = params.key ?: 1
-        return when (val data = userRepository.getHistoryCommentList(currentPage, userId)) {
+        val result = try {
+            userRepository.getHistoryCommentList(currentPage, userId)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            return LoadResult.Error(error)
+        }
+        return when (val data = result) {
             is NetWorkResult.Error -> {
                 LoadResult.Error(Exception(data.message))
             }

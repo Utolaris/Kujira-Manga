@@ -163,7 +163,23 @@ class SearchViewModelTest {
 
     @Test
     fun searchOrderChangeUpdatesFilterAndClearsPendingComicId() = runTest(scheduler) {
-        val vm = buildVm(FakeComicRepository())
+        val repository = object : ComicRepository by FakeComicRepository() {
+            override suspend fun getComicList(
+                page: Int, order: ComicSearchOrderFilter, searchContent: String,
+                year: String, month: String,
+            ): NetWorkResult<ComicSearchPage> = NetWorkResult.Success(ComicSearchPage(emptyList(), 1, 42))
+        }
+        val vm = buildVm(repository)
+        val presenter = object : PagingDataPresenter<Comic>(StandardTestDispatcher(scheduler)) {
+            override suspend fun presentPagingDataEvent(event: PagingDataEvent<Comic>) = Unit
+        }
+        vm.submitSearch("single result", emptyList())
+        val collector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            vm.searchComicPager.collectLatest(presenter::collectFrom)
+        }
+        runCurrent()
+        assertEquals(42, vm.searchComicIdState.value)
+        collector.cancel()
 
         assertEquals(ComicSearchOrderFilter.NEWEST, vm.searchComicFilterState.value.order)
 

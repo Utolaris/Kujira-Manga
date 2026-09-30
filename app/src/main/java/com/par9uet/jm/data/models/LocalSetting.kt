@@ -114,6 +114,8 @@ data class LocalSetting(
     val nightLocalModePromptDate: String? = null,
     // 手动开启本地模式前的说明弹窗：true = 用户点过「不再显示」。
     val localModeHelpDismissed: Boolean = false,
+    // 全局高斯模糊水平 0-100；50 = 平衡（默认）。旧 JSON 缺字段时由存储层回填 50。
+    val glassBlurLevel: Int = 50,
 )
 
 const val COLOR_PALETTE_PRESET_DEFAULT = "default"

@@ -4,6 +4,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -65,6 +66,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -579,6 +581,7 @@ private fun AllGridColumnSliderDialog(
         }
     }
 
+    @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     fun SliderRow(
         icon: ImageVector,
@@ -612,6 +615,25 @@ private fun AllGridColumnSliderDialog(
                 onValueChange = onChange,
                 valueRange = 0f..6f,
                 steps = 5,
+                thumb = {
+                    // 与「高斯模糊」滑条同款圆球游标
+                    val primary = MaterialTheme.colorScheme.primary
+                    Surface(
+                        modifier = Modifier.size(24.dp),
+                        shape = CircleShape,
+                        color = primary,
+                        border = BorderStroke(2.dp, MaterialTheme.colorScheme.surface),
+                        shadowElevation = 3.dp,
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Box(
+                                modifier = Modifier
+                                    .size(5.dp)
+                                    .background(MaterialTheme.colorScheme.onPrimary, CircleShape)
+                            )
+                        }
+                    }
+                },
             )
         }
     }

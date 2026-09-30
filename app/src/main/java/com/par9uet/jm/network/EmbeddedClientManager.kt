@@ -423,21 +423,17 @@ class EmbeddedClientManager(
                 if (persistCookies && clientSessionGeneration != null &&
                     request.url.isHttps && request.url.host in domainManager.domains
                 ) {
-                    val stored = cookieStorage.getOrNull()
-                    if (stored != null) {
-                        synchronized(this) {
-                            if (isCurrentSession(clientSessionGeneration)) {
-                                // mergeEmbeddedResponseCookies：响应可以更新 theme/__cflb/ipm5 这类
-                                // 非会话 cookie，但**不能**改写或新增会话令牌 AVS。
-                                // 原实现只判「打在可信域」，不判请求是否需要会话，等于让任意公开响应
-                                // 都能污染持久化会话快照；而请求侧在同名 AVS 之间按顺序取第一个，
-                                // 选到旧值就表现为「登录成功却持续 401」。
-                                val merged = mergeEmbeddedResponseCookies(
-                                    stored,
-                                    Cookie.parseAll(request.url, response.headers),
-                                )
-                                if (stored.toSet() != merged.toSet()) cookieStorage.set(merged)
-                            }
+                    synchronized(this) {
+                        if (isCurrentSession(clientSessionGeneration)) {
+                            // mergeEmbeddedResponseCookies：响应可以更新 theme/__cflb/ipm5 这类
+                            // 非会话 cookie，但**不能**改写或新增会话令牌 AVS。
+                            // 原实现只判「打在可信域」，不判请求是否需要会话，等于让任意公开响应
+                            // 都能污染持久化会话快照；而请求侧在同名 AVS 之间按顺序取第一个，
+                            // 选到旧值就表现为「登录成功却持续 401」。
+                            persistEmbeddedResponseCookies(
+                                cookieStorage,
+                                Cookie.parseAll(request.url, response.headers),
+                            )
                         }
                     }
                 }

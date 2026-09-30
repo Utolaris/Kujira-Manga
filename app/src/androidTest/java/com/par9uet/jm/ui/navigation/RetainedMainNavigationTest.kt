@@ -4,6 +4,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.navigation.NavHostController
@@ -36,7 +37,10 @@ class RetainedMainNavigationTest {
         compose.runOnIdle { nav.navigate(route) }
         compose.onNodeWithText(if (route.startsWith("local")) "Local reader" else "Online reader").assertIsDisplayed()
         compose.runOnIdle { visible.value = false }
-        compose.waitUntil(10_000) { true }
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText(if (route.startsWith("local")) "Local reader" else "Online reader")
+                .fetchSemanticsNodes().isEmpty()
+        }
         restoration.emulateSavedInstanceStateRestore()
         compose.runOnIdle { visible.value = true }
         compose.onNodeWithText(if (route.startsWith("local")) "Local reader" else "Online reader").assertIsDisplayed()

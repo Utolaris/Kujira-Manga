@@ -4,6 +4,7 @@ import okhttp3.Cookie
 import okhttp3.HttpUrl
 import okhttp3.Headers
 import okhttp3.Request
+import com.par9uet.jm.storage.CookieStorage
 
 /** Keep response-header AVS out of the candidate jar; SDK login writes the JSON `s` itself. */
 internal fun Headers.withoutEmbeddedSessionCookie(): Headers = newBuilder().apply {
@@ -101,3 +102,10 @@ internal fun mergeEmbeddedResponseCookies(
     received = received.filterNot { it.name == EMBEDDED_SESSION_COOKIE_NAME },
     now = now,
 )
+
+/** Caller has already validated the response host and holds the current session lock. */
+internal fun persistEmbeddedResponseCookies(storage: CookieStorage, received: List<Cookie>) {
+    val stored = storage.getOrNull() ?: return
+    val merged = mergeEmbeddedResponseCookies(stored, received)
+    if (stored.toSet() != merged.toSet()) storage.set(merged)
+}

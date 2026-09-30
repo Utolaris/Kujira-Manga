@@ -5,7 +5,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import okhttp3.Cookie
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -145,31 +144,38 @@ class TemporaryUnavailableHistoryTest {
     }
 
     @Test
-    fun `cookie storage getOrNull null means skip merge write`() {
-        var unavailable = true
-        val writes = mutableListOf<List<Cookie>>()
+    fun `cookie response merge preserves the unreadable session and merges after recovery`() {
         val cookies = listOf(
-            Cookie.Builder().name("AVS").value("x").domain("example.com").build(),
+            Cookie.Builder().name("AVS").value("previous").domain("example.com").build(),
         )
+        val writes = mutableListOf<List<Cookie>>()
+        var disk = cookies
+        var unavailable = true
         val storage = object : CookieStorage {
             override val state = kotlinx.coroutines.flow.MutableStateFlow<List<Cookie>?>(null)
             override fun set(cookieStore: List<Cookie>): Boolean {
                 writes += cookieStore
-                return !unavailable
+                disk = cookieStore
+                return true
             }
-            override fun get(): List<Cookie> = getOrNull().orEmpty()
-            override fun getOrNull(): List<Cookie>? = if (unavailable) null else cookies
-            override fun remove() {
-                writes.add(emptyList())
-            }
+            override fun get(): List<Cookie> = disk
+            override fun getOrNull(): List<Cookie>? = if (unavailable) null else disk
+            override fun remove() { writes.add(emptyList()); disk = emptyList() }
         }
+        val theme = Cookie.Builder().name("theme").value("dark").domain("example.com").build()
+        val injectedToken = cookies.single().newBuilder().value("untrusted-response-token").build()
+        val received = listOf(theme, injectedToken)
 
-        assertNull(storage.getOrNull())
-        // Production merge path: only write when getOrNull() is non-null.
-        val stored = storage.getOrNull() ?: listOf()
-        if (storage.getOrNull() != null) {
-            storage.set(stored)
-        }
-        assertTrue(writes.isEmpty())
+        com.par9uet.jm.network.persistEmbeddedResponseCookies(storage, received)
+        assertTrue("The actual response persistence path must skip an unreadable baseline", writes.isEmpty())
+        assertEquals(cookies, disk)
+
+        unavailable = false
+        com.par9uet.jm.network.persistEmbeddedResponseCookies(storage, received)
+        assertEquals(listOf(cookies + theme), writes)
+        assertEquals(cookies + theme, disk)
+        // Repeating the same response must not rewrite an unchanged snapshot.
+        com.par9uet.jm.network.persistEmbeddedResponseCookies(storage, received)
+        assertEquals(1, writes.size)
     }
 }

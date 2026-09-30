@@ -43,7 +43,7 @@ class GlassCaptureHostSettleTest {
 
     private val sourceText = mutableStateOf("静态内容")
     private val drawCount = AtomicInteger(0)
-    private var observing = false
+    @Volatile private var observing = false
     private val backdropMode = mutableStateOf(GlassBackdropMode.Blur)
 
     @Test
@@ -92,8 +92,9 @@ class GlassCaptureHostSettleTest {
 
     @Test
     fun staticSourceStopsSchedulingDraws() {
+        org.junit.Assume.assumeTrue("Native blur capture requires API 31", android.os.Build.VERSION.SDK_INT >= 31)
         startHost()
-        compose.waitUntil(10_000) { true }
+        waitForCapture()
 
         startDrawObserver()
         Thread.sleep(700)
@@ -108,20 +109,23 @@ class GlassCaptureHostSettleTest {
 
     @Test
     fun sourceContentChangeStillRefreshesTheCapture() {
+        org.junit.Assume.assumeTrue("Native blur capture requires API 31", android.os.Build.VERSION.SDK_INT >= 31)
         startHost()
-        compose.waitUntil(10_000) { true }
+        waitForCapture()
+        val before = captureGeneration()
+        compose.runOnIdle { sourceText.value = "内容已变化" }
+        compose.waitUntil(10_000) { captureGeneration() > before }
+        assertTrue("Source content must update the actual capture", captureGeneration() > before)
+    }
 
-        startDrawObserver()
-        val before = drawCount.get()
-        sourceText.value = "内容已变化"
-        var changed = false
-        compose.runOnIdle { changed = true }
-        compose.waitUntil(10_000) { changed }
-        Thread.sleep(400)
-        val after = drawCount.get()
-        observing = false
+    private fun captureGeneration(): Int {
+        var generation = 0
+        compose.runOnUiThread { generation = captureHost().sourceCaptureGeneration }
+        return generation
+    }
 
-        assertTrue("源内容变化后没有任何新绘制（before=$before, after=$after），玻璃将显示旧内容", after > before)
+    private fun waitForCapture() {
+        compose.waitUntil(10_000) { captureGeneration() > 0 }
     }
 
     private fun startHost() {

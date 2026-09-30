@@ -65,6 +65,24 @@ fun <T : Any> PullRefreshAndLoadMoreGrid(
             horizontalArrangement = horizontalArrangement,
             contentPadding = contentPadding
         ) {
+            // 历史页回前台自动刷新失败时保留已有列表，并给首屏/刷新错误提供重试入口。
+            val refreshError = lazyPagingItems.loadState.refresh as? LoadState.Error
+            if (refreshError != null) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Column(
+                        Modifier.fillMaxWidth().padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(
+                            refreshError.error.message ?: "加载失败，请重试",
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        Button(onClick = { lazyPagingItems.retry() }) {
+                            Text("重试")
+                        }
+                    }
+                }
+            }
             items(
                 lazyPagingItems.itemCount,
                 // 业务 id 可能在分页膨胀/竞态下重复；LazyGrid 对重复 key 会直接崩溃。
@@ -112,7 +130,7 @@ fun <T : Any> PullRefreshAndLoadMoreGrid(
                 }
 
                 is LoadState.NotLoading -> {
-                    if (appendState.endOfPaginationReached) {
+                    if (appendState.endOfPaginationReached && refreshError == null) {
                         item(span = { GridItemSpan(maxLineSpan) }) {
                             Box(
                                 Modifier

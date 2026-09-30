@@ -1,6 +1,7 @@
 package com.par9uet.jm.ui.glass
 
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -9,6 +10,25 @@ enum class GlassBackdropMode {
     Blur,
     Frosted,
 }
+
+/**
+ * 全局高斯模糊水平（0-100）。50 = 平衡（[GlassMaterialStyle.DefaultBlurRadius]）。
+ * 由设置 → 调色板提供；0 接近透明，100 更实。
+ */
+val LocalGlassBlurLevel = staticCompositionLocalOf { 50 }
+
+/** 按全局水平解析出实际模糊半径：50 → 基准值，0 → 无模糊，100 → 两倍。 */
+fun blurRadiusForLevel(level: Int, base: Dp = GlassMaterialStyle.DefaultBlurRadius): Dp {
+    val scale = level.coerceIn(0, 100) / 50f
+    return base * scale
+}
+
+/** 把 [LocalGlassBlurLevel] 应用到本材质的模糊半径。 */
+fun GlassMaterialStyle.withBlurLevel(level: Int): GlassMaterialStyle =
+    copy(blurRadius = blurRadiusForLevel(level))
+
+fun GlassSurfaceStyle.withBlurLevel(level: Int): GlassSurfaceStyle =
+    copy(material = material.withBlurLevel(level))
 
 /**
  * Shared material constants for every glass consumer.

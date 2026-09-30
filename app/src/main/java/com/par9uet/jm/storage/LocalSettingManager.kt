@@ -65,6 +65,7 @@ class LocalSettingManager(
     override val theme = _projectingState { it.theme }
     override val launcherDisguiseId = _projectingState { it.launcherDisguise }
     override val colorPalette = _projectingState(::toColorPaletteState)
+    override val glassBlurLevel = _projectingState { it.glassBlurLevel.coerceIn(0, 100) }
     override val editor: AppearanceEditor get() = this
     override val apiEndpoint = _projectingState { it.api }
     override val appLanguage = _projectingState { coerceAppLanguage(it.appLanguage) }
@@ -265,6 +266,10 @@ class LocalSettingManager(
     }
 
     /** Confirming a custom color switches the palette to custom in the same transition. */
+    override fun setGlassBlurLevel(level: Int) {
+        updateSetting { it.copy(glassBlurLevel = level.coerceIn(0, 100)) }
+    }
+
     override fun applyCustomColors(primary: String?, secondary: String?, tertiary: String?, error: String?) {
         updateSetting {
             val hasAnyCustomColor = primary != null || secondary != null ||

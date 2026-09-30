@@ -16,9 +16,7 @@ class UserManagerFavoriteSession(
         userManager.recoverExpiredSession(
             accountId = snapshot.accountId,
             generation = snapshot.generation,
-            // 这个适配器只服务收藏夹同步链路（`FavoriteSyncController` 是 `FavoriteSession`
-            // 端口上 `recoverExpiredSession` 的唯一调用方），所以来源就地固定，
-            // 不必污染端口签名、也不必改各测试替身。
+            // 收藏操作与收藏夹同步共用恢复通道和冷却窗口。
             origin = AuthAttemptOrigin.SYNC_RECOVERY,
         )
 

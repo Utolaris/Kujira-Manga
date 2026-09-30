@@ -67,8 +67,8 @@ import org.koin.dsl.binds
 import org.koin.dsl.module
 
 /**
- * Single source of truth for LocalSettingManager's interface aliases; the Koin wiring smoke test
- * binds the same list so tests cannot drift from production wiring.
+ * Interface aliases for LocalSettingManager. The wiring test loads appModule directly so
+ * missing production bindings fail when consumers resolve their settings interfaces.
  */
 val LOCAL_SETTING_MANAGER_ALIASES = arrayOf(
     ContentPreferences::class,

@@ -76,7 +76,7 @@ adb shell am instrument -w -r -e package <包名> \
   kujira.manga.debug.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
-## 测试集（当前 24 个类 / 约 76 条）
+## 测试集
 
 | 包 | 类 | 真机上要什么 |
 | --- | --- | --- |
@@ -92,7 +92,8 @@ adb shell am instrument -w -r -e package <包名> \
 | reader.atom | `LocalChapterFilesDeviceTest` | 三种历史布局、自然排序、ZIP |
 | storage | `SessionPersistenceTest`、`OfficialAuthSessionPersistenceTest` | 会话落盘；加密 JWT 与 AVS 成对持久化 |
 | store | `FavoriteStoreSyncTest` | 收藏同步与 Room 事务（测试包仍在 `store`，主源码 `store` 已拆到领域包） |
-| ui / ui.glass / ui.navigation / ui.viewModel | `FavoriteSyncGridTest`、`MainNavigationFlowTest`、`NavigationInteractionTest`、`SearchResultRefreshContentTest`、`GlassCaptureHostSettleTest`、`RetainedMainNavigationTest`、`ReaderFavoriteMutationTest` | Compose 必须 RESUMED；Glass 静态源要能收敛 |
+| network | `AppHttpClientDoHDeviceTest` | 真实图片健康探测必须调用注入的 DNS，禁止绕过到系统 DNS |
+| ui / ui.glass / ui.navigation / ui.viewModel | `FavoriteSyncGridTest`、`MainNavigationFlowTest`、`NavigationInteractionTest`、`SearchResultRefreshContentTest`、`PagingRefreshRetryTest`、`GlassCaptureHostSettleTest`、`RetainedMainNavigationTest`、`ReaderFavoriteMutationTest` | Compose 必须 RESUMED；Glass 静态源要能收敛；分页网格刷新失败应保留列表并可重试（组件测试，不代表真实 App 后台恢复验证） |
 | worker | `DownloadComicWorkerContractTest`、`CacheMigrationWorkerContractTest`、`LocalModeExitNotificationTest` | 真实 `WorkerParameters`；本地模式同步的常驻通知 |
 
 ## 调试要点

@@ -12,6 +12,7 @@ import com.par9uet.jm.favorites.model.FavoriteLocalQuery
 import com.par9uet.jm.favorites.model.FavoriteSession
 import com.par9uet.jm.favorites.model.FavoriteSessionSnapshot
 import com.par9uet.jm.favorites.usecase.CollectFavorite
+import com.par9uet.jm.favorites.usecase.LocalFavoriteOperationGate
 import com.par9uet.jm.favorites.usecase.ObserveLocalFavorite
 import com.par9uet.jm.favorites.usecase.UncollectFavorites
 import com.par9uet.jm.reader.ReaderImagePipeline
@@ -133,6 +134,7 @@ class ReaderFavoriteMutationTest {
             NightLocalModePrompt(connectionMode, promptEditor),
             connectionMode,
         )
+        val localOperationGate = LocalFavoriteOperationGate()
         val viewModel = ComicReadViewModel(
             repository, koin.get<ReaderImagePipeline>(), koin.get<ReaderPreferences>(),
             com.par9uet.jm.reader.molecule.LoadLocalChapter(
@@ -141,8 +143,8 @@ class ReaderFavoriteMutationTest {
             ),
             ToastManager(), ReadHistoryManager(ReadHistoryStorage(secureStorage)),
             session, ObserveLocalFavorite(localQuery, session),
-            CollectFavorite(remote, mutations, session, modeStatus, localChanges),
-            UncollectFavorites(remote, mutations, session, modeStatus, localChanges),
+            CollectFavorite(remote, mutations, session, modeStatus, localChanges, localOperationGate),
+            UncollectFavorites(remote, mutations, session, modeStatus, localChanges, localOperationGate),
             koin.get<DownloadManager>(),
             userManager, ReaderResumeManager(secureStorage), modeStatus, localBrowseHistory,
         )

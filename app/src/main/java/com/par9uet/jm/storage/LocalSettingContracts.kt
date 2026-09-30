@@ -185,6 +185,8 @@ interface AppearancePreferences {
     /** auto | light | dark */
     val theme: StateFlow<String>
     val colorPalette: StateFlow<ColorPaletteState>
+    /** 全局高斯模糊水平 0-100；50 = 平衡。 */
+    val glassBlurLevel: StateFlow<Int>
     /** Currently selected launcher alias id ([LauncherDisguise]). */
     val launcherDisguiseId: StateFlow<String>
     val editor: AppearanceEditor
@@ -206,4 +208,7 @@ interface AppearanceEditor {
 
     /** Atomic custom-color confirm: switches the palette to custom in the same transition. */
     fun applyCustomColors(primary: String?, secondary: String?, tertiary: String?, error: String?)
+
+    /** 全局高斯模糊水平（0-100）；写入前收口到合法范围。 */
+    fun setGlassBlurLevel(level: Int)
 }

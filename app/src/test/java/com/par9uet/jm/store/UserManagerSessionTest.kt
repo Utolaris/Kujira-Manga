@@ -41,6 +41,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Cookie
@@ -544,6 +545,7 @@ class UserManagerSessionTest {
         assertEquals(1, requestCalls)
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun canceledAuthenticatedWaitNeverExecutesTheRequest() = runTest {
         val readiness = SessionReadinessHolder().apply {
@@ -555,8 +557,12 @@ class UserManagerSessionTest {
             gate.run { requestCalls++ }
         }
 
+        runCurrent()
+        assertFalse(request.isCompleted)
+        assertEquals(0, requestCalls)
         request.cancelAndJoin()
         readiness.set(SessionReadiness.Authenticated)
+        runCurrent()
 
         assertTrue(request.isCancelled)
         assertEquals(0, requestCalls)

@@ -2,6 +2,8 @@ package com.par9uet.jm.cache
 
 import java.io.File
 import java.nio.file.Files
+import java.nio.file.attribute.PosixFilePermission
+import java.io.IOException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -39,24 +41,26 @@ class CacheConfigWriteTest {
     }
 
     @Test
-    fun `failed replace leaves the previous committed index readable`() {
+    fun `failed staging leaves the previous committed index readable`() {
         val dir = Files.createTempDirectory("config-atomic-fail").toFile()
+        val permissions = Files.getPosixFilePermissions(dir.toPath())
         try {
             val config = File(dir, "config.json")
             config.writeText("previous")
-            // Destination is a directory: the temp file is written fully, then the move fails.
-            // The previous sibling file (not this path) is what a real torn write would hit;
-            // here we only assert the failed attempt does not invent a partial config.json
-            // under a name the reader would treat as valid, and does not leave .tmp litter
-            // in the parent after cleanup.
-            val blocked = File(dir, "blocked")
-            assertTrue(blocked.mkdir())
-            assertThrows(Exception::class.java) {
-                writeTextAtomically(blocked, "partial")
+            // Existing target remains writable; staging a sibling must fail. A direct
+            // overwrite would succeed and destroy the previously committed content.
+            Files.setPosixFilePermissions(dir.toPath(), setOf(
+                PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_EXECUTE,
+            ))
+            org.junit.Assume.assumeFalse("Requires an unprivileged POSIX filesystem", Files.isWritable(dir.toPath()))
+            assertTrue(config.canWrite())
+            assertThrows(IOException::class.java) {
+                writeTextAtomically(config, "replacement")
             }
             assertEquals("previous", config.readText())
-            assertEquals(listOf("blocked", "config.json"), dir.list()!!.sorted())
+            assertEquals(listOf("config.json"), dir.list()!!.sorted())
         } finally {
+            Files.setPosixFilePermissions(dir.toPath(), permissions)
             dir.deleteRecursively()
         }
     }

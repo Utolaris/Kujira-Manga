@@ -1,13 +1,9 @@
 package com.par9uet.jm.di
 
-import com.par9uet.jm.data.models.LocalSetting
 import com.par9uet.jm.core.network.NetWorkResult
 import com.par9uet.jm.network.DohManager
 import com.par9uet.jm.repository.RemoteSettingRepository
 import com.par9uet.jm.retrofit.interceptor.BaseUrlInterceptor
-import com.par9uet.jm.storage.LocalSettingLoadResult
-import com.par9uet.jm.storage.LocalSettingPersistence
-import com.par9uet.jm.storage.StorageWriteResult
 import com.par9uet.jm.storage.ApiEndpointPreference
 import com.par9uet.jm.storage.AppExperiencePreferences
 import com.par9uet.jm.storage.AppSecurityEditor
@@ -28,13 +24,8 @@ import com.par9uet.jm.storage.RecommendationPreferences
 import com.par9uet.jm.network.RemoteConfigManager
 import com.par9uet.jm.storage.RemoteConfigPreferences
 import com.par9uet.jm.launcher.LauncherIdentityApplier
-import kotlinx.coroutines.flow.StateFlow
 import org.junit.Assert.assertSame
 import org.junit.Test
-import org.koin.core.context.startKoin
-import org.koin.core.context.stopKoin
-import org.koin.dsl.bind
-import org.koin.dsl.binds
 import org.koin.dsl.module
 
 /**
@@ -43,36 +34,32 @@ import org.koin.dsl.module
  * at the same LocalSettingManager singleton.
  */
 class SettingsKoinWiringTest {
-    private fun koinWithSettingsGraph() = startKoin {
+    private fun koinWithSettingsGraph() = org.koin.dsl.koinApplication {
         modules(
+            appModule,
+            retrofitModule,
             module {
-                single { InMemoryLocalSettingPersistence() } bind LocalSettingPersistence::class
-                single { LauncherDisguiseApplierFake() } bind LauncherIdentityApplier::class
-                single { InMemoryRemoteConfigStore() } bind com.par9uet.jm.network.RemoteConfigStore::class
-                val remoteSettingRepository = NoOpRemoteSettingRepository()
+                // Replace only external IO; manager, aliases and consumers come from production.
                 single {
-                    RemoteConfigManager(
-                        // The wiring test only resolves the graph; NetWorkResult.Error is a
-                        // NetWorkResult<Nothing> and satisfies the covariant fetch type.
-                        remoteSettingFetch = com.par9uet.jm.network.RemoteSettingFetch {
-                            NetWorkResult.Error("unused in wiring test")
+                    com.par9uet.jm.storage.SecureStorage(
+                        com.par9uet.jm.storage.InMemorySharedPreferences(),
+                        com.par9uet.jm.storage.InMemorySharedPreferences(),
+                        cryptoManager = com.par9uet.jm.storage.CryptoManager {
+                            javax.crypto.spec.SecretKeySpec(ByteArray(32) { 3 }, "AES")
                         },
-                        store = get(),
                     )
-                } bind RemoteConfigPreferences::class
-                single { remoteSettingRepository } bind RemoteSettingRepository::class
-                // 与 production 完全一致的 alias 列表，防止测试与线上 wiring 漂移。
-                single { LocalSettingManager(get<LocalSettingPersistence>(), get()) }
-                    .binds(com.par9uet.jm.di.LOCAL_SETTING_MANAGER_ALIASES)
-                single { DohManager(get(), get()) }
-                single { BaseUrlInterceptor(get()) }
+                }
+                single<LauncherIdentityApplier> { LauncherDisguiseApplierFake() }
+                single<com.par9uet.jm.network.RemoteConfigStore> { InMemoryRemoteConfigStore() }
+                single<RemoteSettingRepository> { NoOpRemoteSettingRepository() }
             },
         )
     }
 
     @Test
     fun `all narrow settings interfaces resolve to the same LocalSettingManager`() {
-        val koin = koinWithSettingsGraph().koin
+        val application = koinWithSettingsGraph()
+        val koin = application.koin
         try {
             val manager = koin.get<LocalSettingManager>()
             assertSame(manager, koin.get<ContentPreferences>())
@@ -91,9 +78,10 @@ class SettingsKoinWiringTest {
             assertSame(manager, koin.get<MiscSettingsPreferences>())
             assertSame(manager, koin.get<AppExperiencePreferences>())
             assertSame(manager, koin.get<LocalSettingSnapshotProvider>())
+            assertSame(manager, koin.get<com.par9uet.jm.storage.ConnectionModePreferences>())
+            assertSame(manager, koin.get<com.par9uet.jm.storage.ConnectionModeEditor>())
 
             // Interface-consumers receive the same instances as concrete registrations.
-            // The concrete LauncherDisguiseApplier is the sole provider of this alias.
             koin.get<LauncherIdentityApplier>()
             val remoteConfigPrefs = koin.get<RemoteConfigPreferences>()
             assertSame(koin.get<RemoteConfigManager>().remoteImageHost, remoteConfigPrefs.remoteImageHost)
@@ -102,18 +90,8 @@ class SettingsKoinWiringTest {
             koin.get<DohManager>()
             koin.get<BaseUrlInterceptor>()
         } finally {
-            stopKoin()
+            application.close()
         }
-    }
-
-    private class InMemoryLocalSettingPersistence : LocalSettingPersistence {
-        var stored: LocalSetting? = null
-        override fun load() = stored?.let { LocalSettingLoadResult.Success(it) }
-        ?: LocalSettingLoadResult.Missing
-        override fun persist(localSetting: LocalSetting): StorageWriteResult {
-        stored = localSetting
-        return StorageWriteResult.Success
-    }
     }
 
     private class LauncherDisguiseApplierFake : LauncherIdentityApplier {

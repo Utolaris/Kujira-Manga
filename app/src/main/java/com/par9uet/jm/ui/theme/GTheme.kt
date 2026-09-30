@@ -39,6 +39,7 @@ fun AppTheme(
 ) {
     val theme by appearancePreferences.theme.collectAsState()
     val colorPalette by appearancePreferences.colorPalette.collectAsState()
+    val glassBlurLevel by appearancePreferences.glassBlurLevel.collectAsState()
     val context = LocalContext.current
     val isDark = when (theme) {
         "auto" -> isSystemInDarkTheme()
@@ -80,7 +81,10 @@ fun AppTheme(
         }
     }
 
-    CompositionLocalProvider(LocalExtendedColors provides extendedColorScheme) {
+    CompositionLocalProvider(
+        LocalExtendedColors provides extendedColorScheme,
+        com.par9uet.jm.ui.glass.LocalGlassBlurLevel provides glassBlurLevel,
+    ) {
         MaterialTheme(
             colorScheme = colorScheme,
             typography = AppTypography,

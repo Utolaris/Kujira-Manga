@@ -101,6 +101,9 @@ fun App(
     // must not become a path around the existing credential (see applyLocalSetting).
     val showOnboarding = !onboardingCompleted && !securityLoadBlocked && !appLock.enabled
     var isLocked by remember { mutableStateOf(appLock.enabled || securityLoadBlocked) }
+    // 仅当用户在「本次离开前台之后」完成解锁才允许继续用；回前台且仍启用锁则强制上锁。
+    // 解决「回桌面再立刻点回来」时不完整投递 ON_PAUSE、或重组晚于 ON_RESUME 导致的漏锁。
+    val unlockedAfterLeave = remember { mutableStateOf(false) }
     var sessionNsfwDismissed by remember { mutableStateOf(nsfwWarningDismissed) }
 
     // Only the small local state needed to choose the first safe screen is loaded here. All
@@ -112,25 +115,48 @@ fun App(
     }
 
     LaunchedEffect(appLock.enabled) {
-        if (!appLock.enabled && !securityLoadBlocked) isLocked = false
+        if (!appLock.enabled && !securityLoadBlocked) {
+            isLocked = false
+        } else if (appLock.enabled && !unlockedAfterLeave.value) {
+            // 存储后到：启用锁后仍须停在锁屏，不能因首帧时 enabled 尚未就绪而放行。
+            isLocked = true
+        }
     }
     LaunchedEffect(securityLoadBlocked) {
         if (securityLoadBlocked) isLocked = true
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner, appLock.enabled) {
+    val appLockEnabled = appLock.enabled
+    val lockActivity = LocalContext.current.findActivity()
+    DisposableEffect(lifecycleOwner, appLockEnabled, lockActivity) {
         val observer = LifecycleEventObserver { _, event ->
-            // ON_PAUSE (not only ON_STOP): leaving via home/recents must lock before the
-            // window freezes, otherwise the next foreground frame can flash the old UI.
-            if (appLock.enabled &&
-                (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP)
-            ) {
-                isLocked = true
+            when (event) {
+                Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP -> {
+                    unlockedAfterLeave.value = false
+                    if (appLockEnabled) isLocked = true
+                }
+                Lifecycle.Event.ON_RESUME, Lifecycle.Event.ON_START -> {
+                    if (appLockEnabled && !unlockedAfterLeave.value) isLocked = true
+                }
+                else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        lockActivity?.setOnWindowFocusLostListener {
+            // 窗口失焦（回桌面/多任务）与 pause 互补；系统对话框导致的短暂失焦
+            // 不在此处理：仅当已离开 RESUMED 或即将 pause 时由生命周期分支兜底。
+            if (lockActivity.lifecycle.currentState == Lifecycle.State.RESUMED) {
+                // 仍 RESUMED 且失焦：多半是系统对话框，不加锁。
+                return@setOnWindowFocusLostListener
+            }
+            unlockedAfterLeave.value = false
+            if (appLockEnabled) isLocked = true
+        }
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            lockActivity?.setOnWindowFocusLostListener(null)
+        }
     }
 
     // FLAG_SECURE only while actually locked. ON_PAUSE already flips isLocked before the
@@ -230,7 +256,9 @@ fun App(
 
             showOnboarding -> WelcomeScreen(
                 onComplete = {
-                    isLocked = localSettingManager.appLock.value.enabled
+                    val enabled = localSettingManager.appLock.value.enabled
+                    isLocked = enabled
+                    unlockedAfterLeave.value = !enabled
                 }
             )
 
@@ -239,7 +267,10 @@ fun App(
                 correctPassword = appLock.password,
                 correctPattern = appLock.pattern,
                 passwordLength = appLock.passwordLength,
-                onUnlock = { isLocked = false }
+                onUnlock = {
+                    isLocked = false
+                    unlockedAfterLeave.value = true
+                }
             )
         }
         }

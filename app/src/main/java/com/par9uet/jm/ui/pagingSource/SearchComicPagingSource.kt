@@ -9,6 +9,7 @@ import com.par9uet.jm.core.network.NetWorkResult
 import com.par9uet.jm.contentfilter.normalizeSearchExcludedTags
 import com.par9uet.jm.utils.log
 import com.par9uet.jm.utils.logError
+import kotlinx.coroutines.CancellationException
 
 data class SearchComicFilter(
     val order: ComicSearchOrderFilter = ComicSearchOrderFilter.NEWEST,
@@ -64,13 +65,22 @@ class SearchComicPagingSource(
             "请求 page=$currentPage order=${filter.order.value} " +
                 "year=[${filter.year}] month=[${filter.month}] query=[$searchQuery]",
         )
-        return when (val data = comicRepository.getComicList(
-            currentPage,
-            filter.order,
-            searchQuery,
-            filter.year,
-            filter.month,
-        )) {
+        // Paging 不会把 load 抛出的异常转换成 LoadState.Error；恢复/刷新时也要兜住请求异常。
+        val result = try {
+            comicRepository.getComicList(
+                currentPage,
+                filter.order,
+                searchQuery,
+                filter.year,
+                filter.month,
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            logError("SearchComicPagingSource", "请求异常 page=$currentPage: ${error.message}")
+            return LoadResult.Error(error)
+        }
+        return when (val data = result) {
             is NetWorkResult.Error -> {
                 logError(
                     "SearchComicPagingSource",

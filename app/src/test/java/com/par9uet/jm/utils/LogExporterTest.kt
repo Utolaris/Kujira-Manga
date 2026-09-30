@@ -47,12 +47,20 @@ class LogExporterTest {
 
     @Test
     fun `error block is a subset of entries with stable seq`() {
-        val json = LogExporter.toJson(
-            listOf(entry(4, "E", "Login", "boom \"quoted\"")),
-            app,
+        val entries = listOf(
+            entry(3, "D", "Login", "begin"),
+            entry(4, "E", "Login", "boom \"quoted\""),
+            entry(5, "W", "Network", "retry"),
+            entry(6, "E", "Network", "offline"),
         )
-        assertTrue(json.contains("boom \\\"quoted\\\""))
-        assertTrue(json.contains("\"seq\": 4"))
+        val json = com.google.gson.JsonParser.parseString(LogExporter.toJson(entries, app)).asJsonObject
+        val all = json.getAsJsonArray("entries").map { it.asJsonObject }
+        val errors = json.getAsJsonArray("errors").map { it.asJsonObject }
+        assertEquals(listOf(3, 4, 5, 6), all.map { it.get("seq").asInt })
+        assertEquals(listOf(4, 6), errors.map { it.get("seq").asInt })
+        assertTrue(errors.all { it.get("level").asString == "E" })
+        errors.forEach { error -> assertEquals(all.single { it.get("seq") == error.get("seq") }, error) }
+        assertEquals("boom \"quoted\"", errors.first().get("msg").asString)
     }
 
     @Test

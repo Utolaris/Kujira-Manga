@@ -60,7 +60,9 @@ fun GlassSurface(
     content: @Composable BoxScope.() -> Unit,
 ) {
     val registry = LocalGlassSurfaceRegistry.current
-    val currentStyle = rememberUpdatedState(style)
+    val blurLevel = LocalGlassBlurLevel.current
+    val resolvedStyle = style.withBlurLevel(blurLevel)
+    val currentStyle = rememberUpdatedState(resolvedStyle)
     val currentAlpha = rememberUpdatedState(surfaceAlpha.coerceIn(0f, 1f))
     val currentScale = rememberUpdatedState(surfaceScale.coerceAtLeast(0.1f))
 
@@ -82,7 +84,7 @@ fun GlassSurface(
     val fallbackModifier = if (registry == null) {
         Modifier.background(
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            shape = RoundedCornerShape(style.cornerRadius),
+            shape = RoundedCornerShape(resolvedStyle.cornerRadius),
         )
     } else {
         Modifier

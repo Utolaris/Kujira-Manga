@@ -3,6 +3,8 @@ package com.par9uet.jm.download.export
 import android.content.Context
 import android.content.ContextWrapper
 import android.graphics.Bitmap
+import android.graphics.Color
+import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.provider.DocumentsContract
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -55,9 +57,12 @@ class PdfExportDeviceTest {
         context.cacheDir.deleteRecursively()
     }
 
-    private fun page(): Bitmap = Bitmap.createBitmap(64, 96, Bitmap.Config.ARGB_8888).also { bitmaps += it }
+    private fun page(color: Int): Bitmap = Bitmap.createBitmap(64, 96, Bitmap.Config.ARGB_8888).also {
+        it.eraseColor(color)
+        bitmaps += it
+    }
 
-    private fun comicWithPages(id: Int, name: String, pageCount: Int): DownloadComic {
+    private fun comicWithPages(id: Int, name: String, pageCount: Int, color: Int = Color.RED): DownloadComic {
         val task = DownloadComic(
             id = id,
             name = name,
@@ -71,7 +76,7 @@ class PdfExportDeviceTest {
             groupName = name,
         )
         val chapter = files.chapterPath(task)
-        repeat(pageCount) { index -> files.writePage(chapter, index, page()) }
+        repeat(pageCount) { index -> files.writePage(chapter, index, page(color)) }
         return task.copy(zipPath = chapter)
     }
 
@@ -87,6 +92,28 @@ class PdfExportDeviceTest {
     private fun readBytes(uri: String): ByteArray =
         requireNotNull(context.contentResolver.openInputStream(Uri.parse(uri))).use { it.readBytes() }
 
+    private fun assertPdfPages(uri: String, colors: List<Int>) {
+        val descriptor = requireNotNull(context.contentResolver.openFileDescriptor(Uri.parse(uri), "r"))
+        // PdfRenderer owns and closes the descriptor, and rejects unreadable/corrupt PDFs.
+        PdfRenderer(descriptor).use { renderer ->
+            assertEquals("All chapter pages must be exported", colors.size, renderer.pageCount)
+            colors.forEachIndexed { index, expected ->
+                renderer.openPage(index).use { pdfPage ->
+                    val bitmap = Bitmap.createBitmap(pdfPage.width, pdfPage.height, Bitmap.Config.ARGB_8888)
+                    try {
+                        pdfPage.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                        val actual = bitmap.getPixel(bitmap.width / 2, bitmap.height / 2)
+                        for (channel in listOf(Color::red, Color::green, Color::blue)) {
+                            assertTrue("Page $index has wrong content/order", kotlin.math.abs(channel(actual) - channel(expected)) <= 8)
+                        }
+                    } finally {
+                        bitmap.recycle()
+                    }
+                }
+            }
+        }
+    }
+
     @Test
     fun exportedFileIsAReadablePdfWithTheExpectedHeader() {
         val comic = comicWithPages(7001, "导出测试", 2)
@@ -97,6 +124,7 @@ class PdfExportDeviceTest {
         assertTrue("导出结果必须是 PDF：${String(bytes.take(8).toByteArray())}", bytes.size > 500)
         assertEquals("%PDF-", String(bytes.copyOfRange(0, 5), Charsets.US_ASCII))
         assertTrue(uri.endsWith(".pdf"))
+        assertPdfPages(uri, listOf(Color.RED, Color.RED))
     }
 
     @Test
@@ -129,8 +157,8 @@ class PdfExportDeviceTest {
 
     @Test
     fun mergedExportCombinesEveryChapterIntoOnePdf() {
-        val first = comicWithPages(7004, "第一章", 1)
-        val second = comicWithPages(7005, "第二章", 1)
+        val first = comicWithPages(7004, "第一章", 1, Color.RED)
+        val second = comicWithPages(7005, "第二章", 2, Color.BLUE)
 
         val uri = exportComicsToMergedPdf(context, listOf(first, second), tree("merged-${UUID.randomUUID()}"))
 
@@ -138,17 +166,21 @@ class PdfExportDeviceTest {
         assertEquals("%PDF-", String(bytes.copyOfRange(0, 5), Charsets.US_ASCII))
         // 文档 Uri 会对中文路径做百分号编码，比较前先解码。
         assertTrue(URLDecoder.decode(uri, "UTF-8").contains("合并"))
+        assertPdfPages(uri, listOf(Color.RED, Color.BLUE, Color.BLUE))
     }
 
     @Test
     fun separateExportProducesOnePdfPerChapter() {
-        val first = comicWithPages(7006, "分章一", 1)
-        val second = comicWithPages(7007, "分章二", 1)
+        val first = comicWithPages(7006, "分章一", 1, Color.RED)
+        val second = comicWithPages(7007, "分章二", 2, Color.BLUE)
 
         val uris = exportComicsToSeparatePdf(context, listOf(first, second), tree("separate-${UUID.randomUUID()}"))
 
         assertEquals(2, uris.size)
+        assertEquals("Separate chapters must have distinct output files", 2, uris.toSet().size)
         uris.forEach { assertEquals("%PDF-", String(readBytes(it).copyOfRange(0, 5), Charsets.US_ASCII)) }
+        assertPdfPages(uris[0], listOf(Color.RED))
+        assertPdfPages(uris[1], listOf(Color.BLUE, Color.BLUE))
     }
 
     @Test

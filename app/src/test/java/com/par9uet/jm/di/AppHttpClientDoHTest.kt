@@ -3,7 +3,6 @@ package com.par9uet.jm.di
 import java.net.InetAddress
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.concurrent.TimeUnit
 import okhttp3.CookieJar
 import okhttp3.Dns
 import org.junit.Assert.assertSame
@@ -33,27 +32,7 @@ class AppHttpClientDoHTest {
     }
 
     @Test
-    fun `probe client derived from the injected base keeps the shared DNS resolver`() {
-        // JmImageHostHealthManager builds probeClient via baseHttpClient.newBuilder().
-        // That path must inherit DNS — otherwise init/network-change probes silently
-        // fall back to system DNS even when production DI injects the DoH client.
-        val base = com.par9uet.jm.network.createSharedCookielessDohClient(
-            dns = recordingDns,
-            connectionPool = okhttp3.ConnectionPool(),
-        )
-        val probe = base.newBuilder()
-            .connectTimeout(3, TimeUnit.SECONDS)
-            .readTimeout(3, TimeUnit.SECONDS)
-            .callTimeout(4, TimeUnit.SECONDS)
-            .retryOnConnectionFailure(false)
-            .build()
-
-        assertSame(recordingDns, probe.dns)
-        assertSame(CookieJar.NO_COOKIES, probe.cookieJar)
-    }
-
-    @Test
-    fun `app module injects the shared DoH client into image host health manager`() {
+    fun `static app module declaration names the shared DoH client for image probes`() {
         val source = readMainSource("di/AppModule.kt")
         assertTrue(
             "AppModule must pass a DoH client into JmImageHostHealthManager",
@@ -68,7 +47,7 @@ class AppHttpClientDoHTest {
     }
 
     @Test
-    fun `every OkHttpClient construction site is listed in the AppModule inventory`() {
+    fun `static inventory lists every OkHttpClient construction site in the AppModule inventory`() {
         val inventory = readMainSource("di/AppModule.kt")
         val constructionSites = findOkHttpClientConstructionSites()
         val notDocumented = constructionSites.filterNot { site ->

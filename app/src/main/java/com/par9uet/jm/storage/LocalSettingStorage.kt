@@ -146,6 +146,12 @@ internal fun normalizePersisted(savedJson: String, saved: LocalSetting): LocalSe
             // 存量 JSON 没有 appLanguage：全默认参数会生成无参构造，缺失取默认值；
             // 但显式 `"appLanguage":null` 会绕过默认值，这里统一收口到简体。
             appLanguage = coerceAppLanguage(saved.appLanguage),
+            // Gson 缺字段会把 Int 读成 0；没有该键时回退到「平衡」而不是透明。
+            glassBlurLevel = if (savedJson.hasField("glassBlurLevel")) {
+                saved.glassBlurLevel.coerceIn(0, 100)
+            } else {
+                50
+            },
         )
 }
 private fun nullableString(json: String, field: String, value: String?): String? =

@@ -113,6 +113,7 @@ class SettingsViewModel(
     val misc: StateFlow<MiscSettingsState> = localSettingManager.misc
     val blockedTagTemplates = localSettingManager.blockedTagTemplates
     val colorPalette: StateFlow<ColorPaletteState> = appearancePreferences.colorPalette
+    val glassBlurLevel: StateFlow<Int> = appearancePreferences.glassBlurLevel
     val localModeHelpDismissed: StateFlow<Boolean> = localSettingManager.localModeHelpDismissed
 
     fun dismissLocalModeHelp() = localSettingManager.dismissLocalModeHelp()
@@ -132,6 +133,9 @@ class SettingsViewModel(
         tertiary: String?,
         error: String?,
     ) = appearancePreferences.editor.applyCustomColors(primary, secondary, tertiary, error)
+
+    fun setGlassBlurLevel(level: Int) =
+        appearancePreferences.editor.setGlassBlurLevel(level)
 
 
     // Hierarchical combine keeps each combine within its 5-flow typed overload.

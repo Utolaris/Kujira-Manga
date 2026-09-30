@@ -2,10 +2,13 @@ package com.par9uet.jm.ui.screens
 
 import android.os.Build
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -19,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -31,10 +35,13 @@ import androidx.compose.material.icons.rounded.Colorize
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.dynamicLightColorScheme
@@ -51,9 +58,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.par9uet.jm.data.models.COLOR_PALETTE_PRESET_CUSTOM
 import com.par9uet.jm.data.models.COLOR_PALETTE_PRESET_DEFAULT
@@ -109,6 +121,7 @@ fun ColorPaletteScreen(
         }
     }
     val hasCustomOverride = colorPalette.hasCustomOverride
+    val glassBlurLevel by settingsViewModel.glassBlurLevel.collectAsState()
 
     CommonScaffold(
         title = "调色板",
@@ -202,9 +215,106 @@ fun ColorPaletteScreen(
                     }
                 }
             }
+            item {
+                Section(title = "高斯模糊") {
+                    GlassBlurLevelSlider(
+                        level = glassBlurLevel,
+                        onLevelChange = { settingsViewModel.setGlassBlurLevel(it) },
+                    )
+                }
+            }
         }
     }
 
+}
+
+/**
+ * 全局高斯模糊水平滑条：0-100，不显示数字。
+ * 版式对齐「缓存控制」额度滑条：上方三档文案（透明 / 平衡 / 实心），下方游标。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun GlassBlurLevelSlider(
+    level: Int,
+    onLevelChange: (Int) -> Unit,
+) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val availableWidth = maxWidth
+        val thumbSize = 24.dp
+        val labelWidth = (availableWidth / 3f).coerceAtMost(88.dp)
+        val sliderInset = (labelWidth - thumbSize) / 2
+        val primary = MaterialTheme.colorScheme.primary
+        val onPrimary = MaterialTheme.colorScheme.onPrimary
+        val inactiveTrack = MaterialTheme.colorScheme.surfaceVariant
+
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(modifier = Modifier.fillMaxWidth()) {
+                listOf("透明", "平衡", "实心").forEachIndexed { index, label ->
+                    val selected = when (index) {
+                        0 -> level <= 0
+                        1 -> level in 25..75
+                        else -> level >= 100
+                    }
+                    Text(
+                        text = label,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = if (availableWidth < 360.dp) {
+                            MaterialTheme.typography.labelSmall
+                        } else {
+                            MaterialTheme.typography.bodySmall
+                        },
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                        color = if (selected) primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+            Slider(
+                value = level.toFloat(),
+                onValueChange = { onLevelChange(it.toInt().coerceIn(0, 100)) },
+                valueRange = 0f..100f,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = sliderInset),
+                thumb = {
+                    Surface(
+                        modifier = Modifier.size(thumbSize),
+                        shape = CircleShape,
+                        color = primary,
+                        border = BorderStroke(2.dp, MaterialTheme.colorScheme.surface),
+                        shadowElevation = 3.dp,
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Box(modifier = Modifier.size(5.dp).background(onPrimary, CircleShape))
+                        }
+                    }
+                },
+                track = { sliderState ->
+                    Canvas(modifier = Modifier.fillMaxWidth().height(20.dp)) {
+                        val trackHeight = 8.dp.toPx()
+                        val trackTop = (size.height - trackHeight) / 2f
+                        val radius = CornerRadius(trackHeight / 2f)
+                        val trackProgress = (sliderState.value / 100f).coerceIn(0f, 1f)
+                        drawRoundRect(
+                            color = inactiveTrack,
+                            topLeft = Offset(0f, trackTop),
+                            size = Size(size.width, trackHeight),
+                            cornerRadius = radius,
+                        )
+                        if (trackProgress > 0f) {
+                            drawRoundRect(
+                                color = primary,
+                                topLeft = Offset(0f, trackTop),
+                                size = Size(size.width * trackProgress, trackHeight),
+                                cornerRadius = radius,
+                            )
+                        }
+                    }
+                },
+                colors = SliderDefaults.colors(thumbColor = primary),
+            )
+        }
+    }
 }
 
 @Composable

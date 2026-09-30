@@ -7,6 +7,8 @@ import com.par9uet.jm.favorites.data.FavoriteDownloader
 import com.par9uet.jm.favorites.model.FavoriteLocalQuery
 import com.par9uet.jm.favorites.model.FavoriteSession
 import com.par9uet.jm.favorites.model.FavoriteSessionSnapshot
+import com.par9uet.jm.core.SessionRecoveryException
+import com.par9uet.jm.session.withAuthenticationRecovery
 import com.par9uet.jm.core.network.NetWorkResult
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -58,24 +60,34 @@ class CollectFavorite(
         )
         return localOperationGate.withLock {
             if (localOperationGate.isTransitioning()) return@withLock NetWorkResult.Error("收藏同步期间暂不可修改收藏夹")
-            session.withBoundRemoteSession(sessionSnapshot) {
-                when (val result = remoteMutation.collectComic(comic.id)) {
-                    is NetWorkResult.Error -> {
-                        com.par9uet.jm.utils.logError("LocalModeSync", "collect REMOTE failed album=${comic.id}: ${result.message}")
-                        result
-                    }
-                    is NetWorkResult.Success -> {
-                        val committed = session.withCurrentSession(sessionSnapshot) {
-                            localMutation.addFromComic(sessionSnapshot.accountId, comic)
+            // Release the bound session gate before login recovery, then retry once.
+            withAuthenticationRecovery(
+                isCurrent = { session.isCurrent(sessionSnapshot) },
+                recover = { session.recoverExpiredSession(sessionSnapshot) },
+            ) {
+                try {
+                    session.withBoundRemoteSession(sessionSnapshot) {
+                        when (val result = remoteMutation.collectComic(comic.id)) {
+                            is NetWorkResult.Error -> {
+                                com.par9uet.jm.utils.logError("LocalModeSync", "collect REMOTE failed album=${comic.id}: ${result.message}")
+                                result
+                            }
+                            is NetWorkResult.Success -> {
+                                val committed = session.withCurrentSession(sessionSnapshot) {
+                                    localMutation.addFromComic(sessionSnapshot.accountId, comic)
+                                }
+                                com.par9uet.jm.utils.log(
+                                    "LocalModeSync",
+                                    "collect REMOTE ok album=${comic.id} localCommit=${committed != null}",
+                                )
+                                if (committed == null) staleSessionError() else result
+                            }
                         }
-                        com.par9uet.jm.utils.log(
-                            "LocalModeSync",
-                            "collect REMOTE ok album=${comic.id} localCommit=${committed != null}",
-                        )
-                        if (committed == null) staleSessionError() else result
-                    }
+                    } ?: staleSessionError()
+                } catch (error: SessionRecoveryException) {
+                    error.error
                 }
-            } ?: staleSessionError()
+            }
         }
     }
 }
