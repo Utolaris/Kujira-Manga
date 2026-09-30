@@ -186,7 +186,10 @@ class FavoriteSyncControllerTest {
         assertEquals(2, requests.size)
         assertEquals(NetworkErrorKind.Network, controller.state.value.errorKind)
         assertEquals("offline", controller.state.value.errorMessage)
-        assertEquals(7, session.currentAccountId())
+        // 失败的续期也必须释放同步槽，否则收藏会永久停在「同步中」。
+        // （原断言 `assertEquals(7, session.currentAccountId())` 只是复述替身构造值，
+        //  控制器没有任何换账号路径能让它失败。）
+        assertFalse(controller.state.value.isSyncing)
     }
 
     @Test

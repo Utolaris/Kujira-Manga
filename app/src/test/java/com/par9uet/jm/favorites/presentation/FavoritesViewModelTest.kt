@@ -62,6 +62,8 @@ class FavoritesViewModelTest {
         runCurrent()
         // StateFlow 会先吐 initialValue；以订阅稳定后的次数为基线。
         val baselineEmissions = emissions
+        // 基线必须真的非零：否则「同步状态变化不重建 pager」在订阅彻底失效时也会通过。
+        assertTrue("collectComicPager 必须至少发射一次初值", baselineEmissions > 0)
         val viewport = environment.viewModel.uiState.value.viewport
         environment.sync.publish(FavoriteSyncUiState(isSyncing = true))
         runCurrent()
@@ -198,46 +200,45 @@ class FavoritesViewModelTest {
     }
 
     @Test
-    fun `search changed resets viewport`() = runTest(scheduler) {
-        val environment = environment()
-        runCurrent()
-
-        val savedGeneration = environment.viewModel.uiState.value.viewport.resetGeneration
-        environment.viewModel.onIntent(
-            FavoritesIntent.ViewportSaved(4, 6, savedGeneration)
+    fun `viewport returns to the top whenever the search scope changes`() = runTest(scheduler) {
+        data class ScopeChange(
+            val scenario: String,
+            val before: List<FavoritesIntent>,
+            val trigger: List<FavoritesIntent>,
+            val expectedSearchText: String,
         )
-        val previousGeneration = environment.viewModel.uiState.value.viewport.resetGeneration
 
-        environment.viewModel.onIntent(FavoritesIntent.SearchChanged("query"))
+        // 两个入口原来各写一遍逐字相同的四元组断言，改成一张表。
+        listOf(
+            ScopeChange(
+                scenario = "search changed",
+                before = emptyList(),
+                trigger = listOf(FavoritesIntent.SearchChanged("query")),
+                expectedSearchText = "query",
+            ),
+            ScopeChange(
+                scenario = "search exited",
+                before = listOf(FavoritesIntent.SearchEntered, FavoritesIntent.SearchChanged("query")),
+                trigger = listOf(FavoritesIntent.SearchExited),
+                expectedSearchText = "",
+            ),
+        ).forEach { case ->
+            val environment = environment()
+            runCurrent()
+            case.before.forEach(environment.viewModel::onIntent)
 
-        val state = environment.viewModel.uiState.value
-        assertEquals("query", state.filter.searchText)
-        assertEquals(0, state.viewport.firstVisibleItemIndex)
-        assertEquals(0, state.viewport.firstVisibleItemScrollOffset)
-        assertTrue(state.viewport.resetGeneration > previousGeneration)
-    }
+            val savedGeneration = environment.viewModel.uiState.value.viewport.resetGeneration
+            environment.viewModel.onIntent(FavoritesIntent.ViewportSaved(4, 6, savedGeneration))
+            val previousGeneration = environment.viewModel.uiState.value.viewport.resetGeneration
 
-    @Test
-    fun `search exited clears query and resets viewport`() = runTest(scheduler) {
-        val environment = environment()
-        runCurrent()
+            case.trigger.forEach(environment.viewModel::onIntent)
 
-        environment.viewModel.onIntent(FavoritesIntent.SearchEntered)
-        environment.viewModel.onIntent(FavoritesIntent.SearchChanged("query"))
-        val savedGeneration = environment.viewModel.uiState.value.viewport.resetGeneration
-        environment.viewModel.onIntent(
-            FavoritesIntent.ViewportSaved(5, 2, savedGeneration)
-        )
-        val previousGeneration = environment.viewModel.uiState.value.viewport.resetGeneration
-
-        environment.viewModel.onIntent(FavoritesIntent.SearchExited)
-
-        val state = environment.viewModel.uiState.value
-        assertFalse(state.searchActive)
-        assertEquals("", state.filter.searchText)
-        assertEquals(0, state.viewport.firstVisibleItemIndex)
-        assertEquals(0, state.viewport.firstVisibleItemScrollOffset)
-        assertTrue(state.viewport.resetGeneration > previousGeneration)
+            val state = environment.viewModel.uiState.value
+            assertEquals(case.scenario, case.expectedSearchText, state.filter.searchText)
+            assertEquals(case.scenario, 0, state.viewport.firstVisibleItemIndex)
+            assertEquals(case.scenario, 0, state.viewport.firstVisibleItemScrollOffset)
+            assertTrue(case.scenario, state.viewport.resetGeneration > previousGeneration)
+        }
     }
 
     @Test
@@ -283,42 +284,61 @@ class FavoritesViewModelTest {
     }
 
     @Test
-    fun `left without active search preserves viewport`() = runTest(scheduler) {
-        val environment = environment()
-        runCurrent()
+    fun `viewport is preserved when the dataset did not change`() = runTest(scheduler) {
+        data class Preserve(
+            val scenario: String,
+            val saved: Pair<Int, Int>,
+            val trigger: List<FavoritesIntent>,
+        )
 
-        val savedGeneration = environment.viewModel.uiState.value.viewport.resetGeneration
-        environment.viewModel.onIntent(FavoritesIntent.ViewportSaved(100, 4, savedGeneration))
-        val previousGeneration = environment.viewModel.uiState.value.viewport.resetGeneration
+        listOf(
+            Preserve(
+                scenario = "left without active search",
+                saved = 100 to 4,
+                trigger = listOf(FavoritesIntent.Left),
+            ),
+            Preserve(
+                scenario = "entering and exiting an empty search",
+                saved = 60 to 7,
+                trigger = listOf(FavoritesIntent.SearchEntered, FavoritesIntent.SearchExited),
+            ),
+        ).forEach { case ->
+            val environment = environment()
+            runCurrent()
 
-        environment.viewModel.onIntent(FavoritesIntent.Left)
+            val savedGeneration = environment.viewModel.uiState.value.viewport.resetGeneration
+            environment.viewModel.onIntent(
+                FavoritesIntent.ViewportSaved(case.saved.first, case.saved.second, savedGeneration)
+            )
+            val previousGeneration = environment.viewModel.uiState.value.viewport.resetGeneration
 
-        val state = environment.viewModel.uiState.value
-        assertFalse(state.searchActive)
-        assertEquals(FavoritesSelectionState(), state.selection)
-        assertEquals(null, state.modal)
-        assertEquals(100, state.viewport.firstVisibleItemIndex)
-        assertEquals(4, state.viewport.firstVisibleItemScrollOffset)
-        assertEquals(previousGeneration, state.viewport.resetGeneration)
+            case.trigger.forEach(environment.viewModel::onIntent)
+
+            val state = environment.viewModel.uiState.value
+            assertFalse(case.scenario, state.searchActive)
+            assertEquals(case.scenario, FavoritesSelectionState(), state.selection)
+            assertEquals(case.scenario, null, state.modal)
+            assertEquals(case.scenario, case.saved.first, state.viewport.firstVisibleItemIndex)
+            assertEquals(case.scenario, case.saved.second, state.viewport.firstVisibleItemScrollOffset)
+            assertEquals(case.scenario, previousGeneration, state.viewport.resetGeneration)
+        }
     }
 
     @Test
-    fun `entering and exiting an empty search preserves viewport`() = runTest(scheduler) {
+    fun `repeating the same search query does not reset the viewport`() = runTest(scheduler) {
         val environment = environment()
         runCurrent()
+        environment.viewModel.onIntent(FavoritesIntent.SearchChanged("query"))
+        val generation = environment.viewModel.uiState.value.viewport.resetGeneration
+        environment.viewModel.onIntent(FavoritesIntent.ViewportSaved(30, 3, generation))
 
-        val savedGeneration = environment.viewModel.uiState.value.viewport.resetGeneration
-        environment.viewModel.onIntent(FavoritesIntent.ViewportSaved(60, 7, savedGeneration))
-        val previousGeneration = environment.viewModel.uiState.value.viewport.resetGeneration
-
-        environment.viewModel.onIntent(FavoritesIntent.SearchEntered)
-        environment.viewModel.onIntent(FavoritesIntent.SearchExited)
+        // updateSearch 在 query 未变时提前返回：重复下发同一关键词不得把列表打回顶部。
+        environment.viewModel.onIntent(FavoritesIntent.SearchChanged("query"))
 
         val state = environment.viewModel.uiState.value
-        assertFalse(state.searchActive)
-        assertEquals(60, state.viewport.firstVisibleItemIndex)
-        assertEquals(7, state.viewport.firstVisibleItemScrollOffset)
-        assertEquals(previousGeneration, state.viewport.resetGeneration)
+        assertEquals(30, state.viewport.firstVisibleItemIndex)
+        assertEquals(3, state.viewport.firstVisibleItemScrollOffset)
+        assertEquals(generation, state.viewport.resetGeneration)
     }
 
     @Test

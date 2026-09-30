@@ -18,6 +18,7 @@ release-key
 # Agent workspace / local env
 .workbuddy/
 .codex/
+.ua/
 .env*
 !.env.example
 

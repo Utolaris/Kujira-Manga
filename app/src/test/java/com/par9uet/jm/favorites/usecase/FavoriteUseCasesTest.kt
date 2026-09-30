@@ -5,6 +5,7 @@ import com.par9uet.jm.favorites.data.FavoriteLocalMutation
 import com.par9uet.jm.favorites.data.FavoriteRemoteMutation
 import com.par9uet.jm.favorites.model.FavoriteSession
 import com.par9uet.jm.favorites.model.FavoriteSessionSnapshot
+import com.par9uet.jm.core.network.NetworkErrorKind
 import com.par9uet.jm.core.network.AuthFailure
 import com.par9uet.jm.core.network.NetWorkResult
 import com.par9uet.jm.favorites.alwaysNetworkLocalModeStatus
@@ -23,6 +24,70 @@ import org.junit.Test
 class FavoriteUseCasesTest {
     private val session = TestFavoriteSession()
     private val sessionSnapshot = FavoriteSessionSnapshot(accountId = 42, generation = 0)
+
+    @Test
+    fun `collect renews outside bound session and commits only after successful retry`() = runTest {
+        val remote = RecordingRemoteMutation().apply {
+            collectResult = NetWorkResult.Error("expired", code = 401, kind = NetworkErrorKind.Authentication)
+        }
+        val local = RecordingLocalMutation()
+        session.recoverHandler = {
+            assertTrue(!session.boundBatchOpen)
+            assertTrue(local.addedFavorites.isEmpty())
+            remote.collectResult = NetWorkResult.Success(Unit)
+            NetWorkResult.Success(Unit)
+        }
+
+        val result = CollectFavorite(remote, local, session, alwaysNetworkLocalModeStatus(), inMemoryLocalChanges(), LocalFavoriteOperationGate())(
+            sessionSnapshot, Comic.create(11, "Comic", emptyList()),
+        )
+
+        assertTrue(result is NetWorkResult.Success)
+        assertEquals(1, session.recoveryCalls)
+        assertEquals(listOf(11, 11), remote.collectedIds)
+        assertEquals(1, local.addedFavorites.size)
+    }
+
+    @Test
+    fun `persistent 401 retries only once and never commits locally`() = runTest {
+        val expired = NetWorkResult.Error("expired", code = 401, kind = NetworkErrorKind.Authentication)
+        val remote = RecordingRemoteMutation().apply { collectResult = expired }
+        val local = RecordingLocalMutation()
+        session.recoverHandler = { NetWorkResult.Success(Unit) }
+
+        val result = CollectFavorite(remote, local, session, alwaysNetworkLocalModeStatus(), inMemoryLocalChanges(), LocalFavoriteOperationGate())(
+            sessionSnapshot, Comic.create(11, "Comic", emptyList()),
+        )
+
+        assertEquals(expired, result)
+        assertEquals(1, session.recoveryCalls)
+        assertEquals(listOf(11, 11), remote.collectedIds)
+        assertTrue(local.addedFavorites.isEmpty())
+    }
+
+    @Test
+    fun `failed recovery or account switch prevents collect replay`() = runTest {
+        for (switchAccount in listOf(false, true)) {
+            val testSession = TestFavoriteSession()
+            val expired = NetWorkResult.Error("expired", code = 401, kind = NetworkErrorKind.Authentication)
+            val failure = NetWorkResult.Error("稍后重试", kind = NetworkErrorKind.Network)
+            val remote = RecordingRemoteMutation().apply { collectResult = expired }
+            val local = RecordingLocalMutation()
+            testSession.recoverHandler = {
+                if (switchAccount) {
+                    testSession.switchAccount(43)
+                    NetWorkResult.Success(Unit)
+                } else failure
+            }
+            val result = CollectFavorite(remote, local, testSession, alwaysNetworkLocalModeStatus(), inMemoryLocalChanges(), LocalFavoriteOperationGate())(
+                sessionSnapshot, Comic.create(11, "Comic", emptyList()),
+            )
+            assertEquals(if (switchAccount) expired else failure, result)
+            assertEquals(1, testSession.recoveryCalls)
+            assertEquals(listOf(11), remote.collectedIds)
+            assertTrue(local.addedFavorites.isEmpty())
+        }
+    }
 
     @Test
     fun `transition rejects favorite edits without recording intents or contacting remote`() = runTest {
@@ -112,6 +177,7 @@ class FavoriteUseCasesTest {
 
         val result = CollectFavorite(remote, local, session, alwaysNetworkLocalModeStatus(), inMemoryLocalChanges(), LocalFavoriteOperationGate())(sessionSnapshot, comic)
 
+        assertEquals(0, session.recoveryCalls)
         assertEquals(expected, result)
         assertEquals(listOf(11), remote.collectedIds)
         assertTrue(local.addedFavorites.isEmpty())
@@ -175,7 +241,7 @@ class FavoriteUseCasesTest {
     }
 
     @Test
-    fun `folder mutations run inside the bound remote session`() = runTest {
+    fun `folder mutations run inside the bound remote session and commit locally only on success`() = runTest {
         val remote = RecordingRemoteMutation()
         val local = RecordingLocalMutation()
 
@@ -196,6 +262,13 @@ class FavoriteUseCasesTest {
         assertEquals(3, session.boundBatchesStarted.size)
         assertTrue(session.boundBatchesStarted.all { it.first == 42 })
 
+        // 参数必须真的到达远端与本地；只断言「返回值 == 替身硬编码的 Success」等于在测替身。
+        assertEquals(listOf("New"), remote.createdFolderNames)
+        assertEquals(listOf(7), remote.deletedFolderIds)
+        assertEquals(listOf(7 to "Renamed"), remote.renamedFolderArgs)
+        assertEquals(listOf(7), local.removedFolderIds)
+        assertEquals(listOf(7 to "Renamed"), local.renamedFolders)
+
         // A snapshot from another account never reaches the remote mutation.
         val staleCreate = CreateFavoriteFolder(remote, session, alwaysNetworkLocalModeStatus(), LocalFavoriteOperationGate())(
             FavoriteSessionSnapshot(accountId = 43, generation = 9),
@@ -203,6 +276,8 @@ class FavoriteUseCasesTest {
         )
         assertTrue(staleCreate is NetWorkResult.Error)
         assertEquals(listOf("New"), remote.createdFolderNames)
+        // 陈旧快照连绑定批次都不该开。
+        assertEquals(3, session.boundBatchesStarted.size)
     }
 
     @Test
@@ -233,33 +308,19 @@ class FavoriteUseCasesTest {
         assertEquals(listOf(1 to 7), local.movedIds)
     }
 
-    @Test
-    fun `folder mutations keep the local snapshot aligned with successful remote changes`() = runTest {
-        val remote = RecordingRemoteMutation()
-        val local = RecordingLocalMutation()
-
-        assertEquals(
-            NetWorkResult.Success(Unit),
-            CreateFavoriteFolder(remote, session, alwaysNetworkLocalModeStatus(), LocalFavoriteOperationGate())(sessionSnapshot, "New"),
-        )
-        assertEquals(
-            NetWorkResult.Success(Unit),
-            DeleteFavoriteFolder(remote, local, session, alwaysNetworkLocalModeStatus(), LocalFavoriteOperationGate())(sessionSnapshot, 7),
-        )
-        assertEquals(
-            NetWorkResult.Success(Unit),
-            RenameFavoriteFolder(remote, local, session, alwaysNetworkLocalModeStatus(), LocalFavoriteOperationGate())(sessionSnapshot, 7, "Renamed"),
-        )
-
-        assertEquals(listOf(7), local.removedFolderIds)
-        assertEquals(listOf(7 to "Renamed"), local.renamedFolders)
-        assertEquals(listOf("New"), remote.createdFolderNames)
-    }
-
     /** Mimics the UserManager contract: bound work starts only while the snapshot is live. */
     private class TestFavoriteSession(initialAccountId: Int = 42) : FavoriteSession {
         private var accountId = initialAccountId
         private var generation = 0L
+        var recoveryCalls = 0
+        var recoverHandler: suspend () -> NetWorkResult<Unit>? = { null }
+
+        override suspend fun recoverExpiredSession(snapshot: FavoriteSessionSnapshot): NetWorkResult<Unit>? {
+            recoveryCalls++
+            check(!boundBatchOpen)
+            return recoverHandler()
+        }
+
         val boundBatchesStarted = mutableListOf<Pair<Int, Long>>()
 
         override val sessionFlow = kotlinx.coroutines.flow.MutableStateFlow(FavoriteSessionSnapshot(initialAccountId, 0L))
@@ -306,6 +367,8 @@ class FavoriteUseCasesTest {
         val uncollectedIds = mutableListOf<Int>()
         val movedIds = mutableListOf<Int>()
         val createdFolderNames = mutableListOf<String>()
+        val deletedFolderIds = mutableListOf<Int>()
+        val renamedFolderArgs = mutableListOf<Pair<Int, String>>()
         val uncollectResults = mutableMapOf<Int, NetWorkResult<Unit>>()
         val moveResults = mutableMapOf<Int, NetWorkResult<Unit>>()
         var uncollectHandler: (suspend (Int) -> NetWorkResult<Unit>)? = null
@@ -329,10 +392,15 @@ class FavoriteUseCasesTest {
             return NetWorkResult.Success(Unit)
         }
 
-        override suspend fun deleteFolder(folderId: Int): NetWorkResult<Unit> = NetWorkResult.Success(Unit)
+        override suspend fun deleteFolder(folderId: Int): NetWorkResult<Unit> {
+            deletedFolderIds += folderId
+            return NetWorkResult.Success(Unit)
+        }
 
-        override suspend fun renameFolder(folderId: Int, name: String): NetWorkResult<Unit> =
-            NetWorkResult.Success(Unit)
+        override suspend fun renameFolder(folderId: Int, name: String): NetWorkResult<Unit> {
+            renamedFolderArgs += folderId to name
+            return NetWorkResult.Success(Unit)
+        }
 
         override suspend fun moveComicToFolder(comicId: Int, folderId: Int): NetWorkResult<Unit> {
             movedIds += comicId
