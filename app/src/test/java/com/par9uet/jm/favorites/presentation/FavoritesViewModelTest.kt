@@ -4,6 +4,7 @@ import androidx.paging.PagingSource
 import androidx.paging.PagingState
 import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.data.models.TagFilterLogic
+import com.par9uet.jm.favorites.TestFavoriteSession
 import com.par9uet.jm.favorites.data.FavoriteDownloader
 import com.par9uet.jm.favorites.data.FavoriteLocalMutation
 import com.par9uet.jm.favorites.data.FavoriteRemoteMutation
@@ -451,29 +452,12 @@ class FavoritesViewModelTest {
         )
     }
 
-    @Test
-    fun `stale session cannot commit a successful move to local favorites`() = runTest(scheduler) {
-        val environment = environment()
-        runCurrent()
-        val remoteResult = CompletableDeferred<NetWorkResult<Unit>>()
-        environment.remote.moveHandler = { comicId, folderId ->
-            environment.remote.moveStarted.complete(Unit)
-            remoteResult.await()
-        }
-
-        environment.viewModel.onIntent(FavoritesIntent.ComicSelectionToggled(comicId = 11))
-        environment.viewModel.onIntent(FavoritesIntent.MoveSelected)
-        environment.viewModel.onIntent(FavoritesIntent.MoveConfirmed(folderId = 7))
-        runCurrent()
-        assertTrue(environment.remote.moveStarted.isCompleted)
-
-        environment.session.bumpGeneration()
-        remoteResult.complete(NetWorkResult.Success(Unit))
-        advanceUntilIdle()
-
-        assertTrue(environment.local.movedFavorites.isEmpty())
-        assertTrue(environment.sync.requests.isEmpty())
-    }
+    // 原先这里有一条 `stale session cannot commit a successful move to local favorites`：
+    // 它假设「远程调用成功、本地提交尚未发生」的窗口里能插入一次会话转换。真实实现里
+    // 本地提交（withCurrentSession）**也在 withBoundRemoteSession 的会话锁内部**，
+    // 转换必须排队到整批结束，所以这个交错不可能发生——该用例靠弱替身（bound 退化成
+    // current）才成立。真正的契约「批次进行中的会话转换被推迟、批次完整跑在旧账号上」
+    // 已在 FavoriteUseCasesTest 覆盖；批次内 `committed == null` 分支属防御性死代码。
 
     private data class SyncRequest(
         val kind: FavoriteSyncRequestKind,
@@ -482,7 +466,7 @@ class FavoritesViewModelTest {
 
     private data class TestEnvironment(
         val viewModel: FavoritesViewModel,
-        val session: FakeFavoriteSession,
+        val session: TestFavoriteSession,
         val remote: RecordingRemoteMutation,
         val local: RecordingLocalMutation,
         val sync: RecordingSyncRequester,
@@ -491,7 +475,7 @@ class FavoritesViewModelTest {
 
     private fun environment(): TestEnvironment {
         val events = mutableListOf<String>()
-        val session = FakeFavoriteSession()
+        val session = TestFavoriteSession(accountId = 42)
         val remote = RecordingRemoteMutation(events)
         val local = RecordingLocalMutation(events)
         val query = EmptyFavoriteLocalQuery()
@@ -518,39 +502,6 @@ class FavoritesViewModelTest {
     private class FakeLocalSettings : ContentPreferences {
         override val blockedTags: StateFlow<List<String>> =
             MutableStateFlow(emptyList<String>()).asStateFlow()
-    }
-
-    private class FakeFavoriteSession(initialAccountId: Int = 42) : FavoriteSession {
-        private val _accountId = MutableStateFlow(initialAccountId)
-        private var generation = 0L
-
-        private val _session = MutableStateFlow(FavoriteSessionSnapshot(initialAccountId, 0L))
-        override val sessionFlow = _session.asStateFlow()
-        override val accountIdFlow: StateFlow<Int> = _accountId.asStateFlow()
-
-        override fun currentAccountId(): Int = _accountId.value
-
-        override fun snapshot(): FavoriteSessionSnapshot =
-            FavoriteSessionSnapshot(_accountId.value, generation)
-
-        override fun isCurrent(snapshot: FavoriteSessionSnapshot): Boolean =
-            snapshot.accountId == _accountId.value && snapshot.generation == generation
-
-        override suspend fun <T> withCurrentSession(
-            snapshot: FavoriteSessionSnapshot,
-            block: suspend () -> T,
-        ): T? = if (isCurrent(snapshot)) block() else null
-
-        fun switchAccount(accountId: Int) {
-            generation++
-            _accountId.value = accountId
-            _session.value = snapshot()
-        }
-
-        fun bumpGeneration() {
-            generation++
-            _session.value = snapshot()
-        }
     }
 
     private class RecordingSyncRequester(

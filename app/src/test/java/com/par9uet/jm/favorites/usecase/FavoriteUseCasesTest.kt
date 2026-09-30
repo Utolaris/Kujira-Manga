@@ -1,28 +1,30 @@
 package com.par9uet.jm.favorites.usecase
 
 import com.par9uet.jm.data.models.Comic
+import com.par9uet.jm.favorites.TestFavoriteSession
 import com.par9uet.jm.favorites.data.FavoriteLocalMutation
 import com.par9uet.jm.favorites.data.FavoriteRemoteMutation
-import com.par9uet.jm.favorites.model.FavoriteSession
 import com.par9uet.jm.favorites.model.FavoriteSessionSnapshot
 import com.par9uet.jm.core.network.NetworkErrorKind
 import com.par9uet.jm.core.network.AuthFailure
 import com.par9uet.jm.core.network.NetWorkResult
 import com.par9uet.jm.favorites.alwaysNetworkLocalModeStatus
 import com.par9uet.jm.favorites.inMemoryLocalChanges
-import com.par9uet.jm.favorites.FakeConnectionMode
+import com.par9uet.jm.favorites.localModeFor
+import com.par9uet.jm.favorites.localModeForOtherAccount
+import com.par9uet.jm.favorites.InMemoryLocalChanges
 import com.par9uet.jm.storage.LocalFavoriteChange
 import com.par9uet.jm.storage.LocalFavoriteChangeManager
 import com.par9uet.jm.storage.LocalFavoriteChangeStore
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FavoriteUseCasesTest {
-    private val session = TestFavoriteSession()
+    private val session = TestFavoriteSession(accountId = 42)
     private val sessionSnapshot = FavoriteSessionSnapshot(accountId = 42, generation = 0)
 
     @Test
@@ -31,7 +33,7 @@ class FavoriteUseCasesTest {
             collectResult = NetWorkResult.Error("expired", code = 401, kind = NetworkErrorKind.Authentication)
         }
         val local = RecordingLocalMutation()
-        session.recoverHandler = {
+        session.recovery = {
             assertTrue(!session.boundBatchOpen)
             assertTrue(local.addedFavorites.isEmpty())
             remote.collectResult = NetWorkResult.Success(Unit)
@@ -53,7 +55,7 @@ class FavoriteUseCasesTest {
         val expired = NetWorkResult.Error("expired", code = 401, kind = NetworkErrorKind.Authentication)
         val remote = RecordingRemoteMutation().apply { collectResult = expired }
         val local = RecordingLocalMutation()
-        session.recoverHandler = { NetWorkResult.Success(Unit) }
+        session.recovery = { NetWorkResult.Success(Unit) }
 
         val result = CollectFavorite(remote, local, session, alwaysNetworkLocalModeStatus(), inMemoryLocalChanges(), LocalFavoriteOperationGate())(
             sessionSnapshot, Comic.create(11, "Comic", emptyList()),
@@ -68,12 +70,12 @@ class FavoriteUseCasesTest {
     @Test
     fun `failed recovery or account switch prevents collect replay`() = runTest {
         for (switchAccount in listOf(false, true)) {
-            val testSession = TestFavoriteSession()
+            val testSession = TestFavoriteSession(accountId = 42)
             val expired = NetWorkResult.Error("expired", code = 401, kind = NetworkErrorKind.Authentication)
             val failure = NetWorkResult.Error("稍后重试", kind = NetworkErrorKind.Network)
             val remote = RecordingRemoteMutation().apply { collectResult = expired }
             val local = RecordingLocalMutation()
-            testSession.recoverHandler = {
+            testSession.recovery = {
                 if (switchAccount) {
                     testSession.switchAccount(43)
                     NetWorkResult.Success(Unit)
@@ -92,7 +94,7 @@ class FavoriteUseCasesTest {
     @Test
     fun `transition rejects favorite edits without recording intents or contacting remote`() = runTest {
         val gate = LocalFavoriteOperationGate()
-        val mode = FakeConnectionMode(true)
+        val mode = localModeFor(sessionSnapshot.accountId)
         val changes = inMemoryLocalChanges()
         val remote = RecordingRemoteMutation()
         val local = RecordingLocalMutation()
@@ -117,7 +119,7 @@ class FavoriteUseCasesTest {
 
     @Test
     fun `local mode records the latest intent without calling remote mutation`() = runTest {
-        val mode = FakeConnectionMode(true)
+        val mode = localModeFor(sessionSnapshot.accountId)
         val changes = inMemoryLocalChanges()
         val remote = RecordingRemoteMutation()
         val local = RecordingLocalMutation()
@@ -132,7 +134,7 @@ class FavoriteUseCasesTest {
 
     @Test
     fun `stale local mode snapshot does not record another account's action`() = runTest {
-        val mode = FakeConnectionMode(true)
+        val mode = localModeFor(sessionSnapshot.accountId)
         val changes = inMemoryLocalChanges()
         val local = RecordingLocalMutation()
         session.switchAccount(43)
@@ -148,8 +150,46 @@ class FavoriteUseCasesTest {
     }
 
     @Test
+    fun `another account's local mode never hijacks this account's edit`() = runTest {
+        // 生产判定是「当前账号 ∈ 本地模式名单」：账号 7 处于本地模式，不代表账号 42 是。
+        // 替身原先写死号码 7，这条会被误判成本地模式并悄悄记成本地待同步。
+        val mode = localModeForOtherAccount(localAccountId = 7, activeAccountId = sessionSnapshot.accountId)
+        val remote = RecordingRemoteMutation()
+        val local = RecordingLocalMutation()
+
+        val result = CollectFavorite(remote, local, session, mode, inMemoryLocalChanges(), LocalFavoriteOperationGate())(
+            sessionSnapshot,
+            Comic.create(11, "Comic", emptyList()),
+        )
+
+        assertTrue(result is NetWorkResult.Success)
+        // 走的是远端路径，且本地快照只在远端成功后才更新。
+        assertEquals(listOf(11), remote.collectedIds)
+        assertEquals(listOf(42 to 11), local.addedFavorites)
+    }
+
+    @Test
+    fun `an unreadable local store refuses the edit instead of dropping it`() = runTest {
+        // Corrupted / TemporaryUnavailable 映射成 null。当成空队列会把用户这次收藏静默丢掉，
+        // 所以必须报错、且一个字节都不写。
+        val store = InMemoryLocalChanges().apply { readUnavailable = true }
+        val local = RecordingLocalMutation()
+        val remote = RecordingRemoteMutation()
+
+        val collect = CollectFavorite(
+            remote, local, session, localModeFor(sessionSnapshot.accountId),
+            LocalFavoriteChangeManager(store), LocalFavoriteOperationGate(),
+        )(sessionSnapshot, Comic.create(11, "Comic", emptyList()))
+
+        assertTrue(collect is NetWorkResult.Error)
+        assertEquals("本地收藏保存失败，请重试", (collect as NetWorkResult.Error).message)
+        assertTrue(local.addedFavorites.isEmpty())
+        assertEquals(0, store.writeAttempts)
+    }
+
+    @Test
     fun `failed intent persistence leaves local snapshot untouched`() = runTest {
-        val mode = FakeConnectionMode(true)
+        val mode = localModeFor(sessionSnapshot.accountId)
         val changes = LocalFavoriteChangeManager(object : LocalFavoriteChangeStore {
             override fun getOrNull(): List<LocalFavoriteChange> = emptyList()
             override fun set(items: List<LocalFavoriteChange>): Boolean = false
@@ -197,16 +237,20 @@ class FavoriteUseCasesTest {
     }
 
     @Test
-    fun `session change while remote is running stops the batch before the next remote call`() = runTest {
+    fun `a session change requested during a bound batch waits for the batch to finish`() = runTest {
+        // 真实实现里整个批次都跑在 withBoundRemoteSession 的会话锁内，会话转换必须排队。
+        // 因此「远程调用进行中账号就切到 B」在生产里**不可能发生**：旧用例正是这么假设的，
+        // 它靠弱替身（bound 退化成 current）才成立，属假信心。
+        // 这里断言真正的契约：批次进行中转换拿不到会话锁（超时即证明被推迟），
+        // 批次完整跑在 A 上，锁释放后转换立刻可完成。
         val remote = RecordingRemoteMutation()
         val local = RecordingLocalMutation()
-        var uncollectCalls = 0
-        remote.uncollectHandler = { comicId ->
-            uncollectCalls++
-            if (uncollectCalls == 1) {
-                // The captured account A snapshot loses validity while the first remote
-                // mutation for A is still in flight; account B becomes active.
-                session.switchAccount(43)
+        var deferredSwitchAttempted = false
+        remote.uncollectHandler = {
+            if (!deferredSwitchAttempted) {
+                deferredSwitchAttempted = true
+                val switchedDuringBatch = withTimeoutOrNull(50) { session.switchAccount(43) }
+                assertNull("批次持有会话锁期间不得完成会话转换", switchedDuringBatch)
             }
             NetWorkResult.Success(Unit)
         }
@@ -216,28 +260,15 @@ class FavoriteUseCasesTest {
             listOf(1, 2, 3),
         )
 
-        // The account switch happens inside the first remote call, so even that item cannot
-        // commit locally (its snapshot is already stale) and nothing further touches B.
-        assertEquals(FavoritesBatchResult(succeeded = 0, failed = 3), result)
-        assertEquals(listOf(1), remote.uncollectedIds)
-        assertTrue(local.removedIds.isEmpty())
-    }
+        // 三项都完整跑在账号 42 上：若转换中途生效，循环里的 isCurrent 守卫会提前中断。
+        assertEquals(FavoritesBatchResult(succeeded = 3, failed = 0), result)
+        assertEquals(listOf(1, 2, 3), remote.uncollectedIds)
+        assertEquals(listOf(1, 2, 3), local.removedIds)
+        assertEquals(42, session.currentAccountId())
 
-    @Test
-    fun `remote success followed by stale session does not commit old-account state`() = runTest {
-        val remote = RecordingRemoteMutation()
-        val local = RecordingLocalMutation()
-        remote.moveHandler = { _, _ ->
-            session.switchAccount(43)
-            NetWorkResult.Success(Unit)
-        }
-
-        val result = MoveFavorites(remote, local, session, alwaysNetworkLocalModeStatus(), LocalFavoriteOperationGate())(sessionSnapshot, listOf(11), folderId = 7)
-
-        // Remote reported success but the account switched mid-flight: the local commit must be
-        // rejected and the failure counted rather than written to the new account state.
-        assertEquals(FavoritesBatchResult(succeeded = 0, failed = 1), result)
-        assertTrue(local.movedIds.isEmpty())
+        // 批次结束后锁已释放，转换不再被阻塞。
+        session.switchAccount(43)
+        assertEquals(43, session.currentAccountId())
     }
 
     @Test
@@ -260,7 +291,7 @@ class FavoriteUseCasesTest {
 
         // Each folder operation opened exactly one bound batch against the captured account.
         assertEquals(3, session.boundBatchesStarted.size)
-        assertTrue(session.boundBatchesStarted.all { it.first == 42 })
+        assertTrue(session.boundBatchesStarted.all { it.accountId == 42 })
 
         // 参数必须真的到达远端与本地；只断言「返回值 == 替身硬编码的 Success」等于在测替身。
         assertEquals(listOf("New"), remote.createdFolderNames)
@@ -306,60 +337,6 @@ class FavoriteUseCasesTest {
         assertEquals(FavoritesBatchResult(succeeded = 1, failed = 1), result)
         assertEquals(listOf(1, 2), remote.movedIds)
         assertEquals(listOf(1 to 7), local.movedIds)
-    }
-
-    /** Mimics the UserManager contract: bound work starts only while the snapshot is live. */
-    private class TestFavoriteSession(initialAccountId: Int = 42) : FavoriteSession {
-        private var accountId = initialAccountId
-        private var generation = 0L
-        var recoveryCalls = 0
-        var recoverHandler: suspend () -> NetWorkResult<Unit>? = { null }
-
-        override suspend fun recoverExpiredSession(snapshot: FavoriteSessionSnapshot): NetWorkResult<Unit>? {
-            recoveryCalls++
-            check(!boundBatchOpen)
-            return recoverHandler()
-        }
-
-        val boundBatchesStarted = mutableListOf<Pair<Int, Long>>()
-
-        override val sessionFlow = kotlinx.coroutines.flow.MutableStateFlow(FavoriteSessionSnapshot(initialAccountId, 0L))
-        override val accountIdFlow: Flow<Int> get() = kotlinx.coroutines.flow.flowOf(accountId)
-
-        override fun currentAccountId(): Int = accountId
-
-        override fun snapshot(): FavoriteSessionSnapshot = FavoriteSessionSnapshot(accountId, generation)
-
-        override fun isCurrent(snapshot: FavoriteSessionSnapshot): Boolean =
-            snapshot == FavoriteSessionSnapshot(accountId, generation)
-
-        override suspend fun <T> withCurrentSession(
-            snapshot: FavoriteSessionSnapshot,
-            block: suspend () -> T,
-        ): T? = if (isCurrent(snapshot)) block() else null
-
-        override suspend fun <T> withBoundRemoteSession(
-            snapshot: FavoriteSessionSnapshot,
-            block: suspend () -> T,
-        ): T? {
-            if (!isCurrent(snapshot)) return null
-            boundBatchesStarted += snapshot.accountId to snapshot.generation
-            boundBatchOpen = true
-            try {
-                return block()
-            } finally {
-                boundBatchOpen = false
-            }
-        }
-
-        var boundBatchOpen = false
-            private set
-
-        fun switchAccount(newAccountId: Int) {
-            accountId = newAccountId
-            generation++
-            sessionFlow.value = snapshot()
-        }
     }
 
     private class RecordingRemoteMutation : FavoriteRemoteMutation {

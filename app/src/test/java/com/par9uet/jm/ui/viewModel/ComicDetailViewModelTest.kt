@@ -15,6 +15,7 @@ import com.par9uet.jm.download.atom.DownloadFiles
 import com.par9uet.jm.download.coordinator.DownloadManager
 import com.par9uet.jm.download.molecule.DownloadTaskOperations
 import com.par9uet.jm.download.testDownloadCoordinator
+import com.par9uet.jm.favorites.TestFavoriteSession
 import com.par9uet.jm.favorites.data.FavoriteLocalMutation
 import com.par9uet.jm.favorites.data.FavoriteRemoteMutation
 import com.par9uet.jm.favorites.model.FavoriteLocalQuery
@@ -264,7 +265,7 @@ class ComicDetailViewModelTest {
         val repository = StubComicRepository()
         val toastManager = ToastManager()
         val local = FakeFavoriteLocalData()
-        val session = FakeFavoriteSession()
+        val session = TestFavoriteSession(accountId = 42)
         val remote = FakeFavoriteRemoteMutation()
         val downloadDao = RecordingDownloadDao()
         val downloadJob = SupervisorJob()
@@ -382,58 +383,12 @@ class ComicDetailViewModelTest {
         val viewModel: ComicDetailViewModel,
         val toastManager: ToastManager,
         val local: FakeFavoriteLocalData,
-        val session: FakeFavoriteSession,
+        val session: TestFavoriteSession,
         val remote: FakeFavoriteRemoteMutation,
         val downloadDao: RecordingDownloadDao,
         val downloadJob: kotlinx.coroutines.CompletableJob,
         val enqueuedBatches: MutableList<List<Int>>,
     )
-
-    private class FakeFavoriteSession : FavoriteSession {
-        private val account = MutableStateFlow(42)
-        private var generation = 0L
-        var snapshotCalls = 0
-        val boundAttempts = mutableListOf<FavoriteSessionSnapshot>()
-        var afterNextBound: (() -> Unit)? = null
-
-        private val _session = MutableStateFlow(FavoriteSessionSnapshot(42, 0L))
-        override val sessionFlow = _session.asStateFlow()
-        override val accountIdFlow: StateFlow<Int> = account.asStateFlow()
-        override fun currentAccountId(): Int = account.value
-
-        override fun snapshot(): FavoriteSessionSnapshot {
-            snapshotCalls++
-            return FavoriteSessionSnapshot(account.value, generation)
-        }
-
-        override fun isCurrent(snapshot: FavoriteSessionSnapshot): Boolean =
-            snapshot.accountId == account.value && snapshot.generation == generation
-
-        override suspend fun <T> withCurrentSession(
-            snapshot: FavoriteSessionSnapshot,
-            block: suspend () -> T,
-        ): T? = if (isCurrent(snapshot)) block() else null
-
-        override suspend fun <T> withBoundRemoteSession(
-            snapshot: FavoriteSessionSnapshot,
-            block: suspend () -> T,
-        ): T? {
-            boundAttempts += snapshot
-            if (!isCurrent(snapshot)) return null
-            val result = block()
-            afterNextBound?.also {
-                afterNextBound = null
-                it()
-            }
-            return result
-        }
-
-        fun switchAccount(accountId: Int) {
-            generation++
-            account.value = accountId
-            _session.value = FavoriteSessionSnapshot(accountId, generation)
-        }
-    }
 
     private class FakeFavoriteRemoteMutation : FavoriteRemoteMutation {
         val collectedIds = mutableListOf<Int>()

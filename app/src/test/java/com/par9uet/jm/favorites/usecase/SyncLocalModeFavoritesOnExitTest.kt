@@ -1,6 +1,7 @@
 package com.par9uet.jm.favorites.usecase
 
 import com.par9uet.jm.core.network.NetWorkResult
+import com.par9uet.jm.favorites.InMemoryLocalChanges
 import com.par9uet.jm.favorites.TestFavoriteSession
 import com.par9uet.jm.favorites.data.FavoriteMetadataPayload
 import com.par9uet.jm.favorites.data.FavoriteRemoteItem
@@ -9,24 +10,12 @@ import com.par9uet.jm.favorites.data.FavoriteRemotePage
 import com.par9uet.jm.favorites.data.FavoriteRemoteQuery
 import com.par9uet.jm.storage.LocalFavoriteChange
 import com.par9uet.jm.storage.LocalFavoriteChangeManager
-import com.par9uet.jm.storage.LocalFavoriteChangeStore
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SyncLocalModeFavoritesOnExitTest {
-    private class FakeStore : LocalFavoriteChangeStore {
-        var items = emptyList<LocalFavoriteChange>()
-        var writable = true
-        override fun getOrNull(): List<LocalFavoriteChange> = items
-        override fun set(items: List<LocalFavoriteChange>): Boolean {
-            if (!writable) return false
-            this.items = items
-            return true
-        }
-    }
-
     private class FakeRemoteQuery(private val remoteIds: Set<Int>) : FavoriteRemoteQuery {
         override suspend fun getFavorites(folderId: Int, page: Int) = FavoriteRemotePage(
             items = remoteIds.map { FavoriteRemoteItem(albumId = it, title = "t$it") },
@@ -58,13 +47,13 @@ class SyncLocalModeFavoritesOnExitTest {
 
     @Test
     fun `only explicit changes replay, including uncollect, and other accounts stay untouched`() = runTest {
-        val store = FakeStore().apply {
-            items = listOf(
+        val store = InMemoryLocalChanges(
+            listOf(
                 LocalFavoriteChange(7, 3, true),
                 LocalFavoriteChange(7, 2, false),
                 LocalFavoriteChange(8, 9, true),
             )
-        }
+        )
         val session = TestFavoriteSession(7)
         val remote = FakeRemoteMutation()
         val result = SyncLocalModeFavoritesOnExit(
@@ -74,12 +63,13 @@ class SyncLocalModeFavoritesOnExitTest {
         assertTrue(result is NetWorkResult.Success)
         assertEquals(listOf(3), remote.collected)
         assertEquals(listOf(2), remote.uncollected)
-        assertEquals(listOf(LocalFavoriteChange(8, 9, true)), store.items)
+        // 已结算的意图被清掉，别的账号那条原样保留。
+        assertEquals(listOf(LocalFavoriteChange(8, 9, true)), store.storedOrNull())
     }
 
     @Test
     fun `failed collect stays pending for retry`() = runTest {
-        val store = FakeStore().apply { items = listOf(LocalFavoriteChange(7, 3, true)) }
+        val store = InMemoryLocalChanges(listOf(LocalFavoriteChange(7, 3, true)))
         val session = TestFavoriteSession(7)
         val remote = FakeRemoteMutation().apply { failCollect = true }
         val result = SyncLocalModeFavoritesOnExit(
@@ -87,12 +77,33 @@ class SyncLocalModeFavoritesOnExitTest {
         )(session.snapshot()) as NetWorkResult.Success
 
         assertEquals(1, result.data.failed)
-        assertEquals(listOf(LocalFavoriteChange(7, 3, true)), store.items)
+        assertEquals(listOf(LocalFavoriteChange(7, 3, true)), store.storedOrNull())
+    }
+
+    @Test
+    fun `an unreadable store reports it instead of pretending the queue is empty`() = runTest {
+        // Corrupted / TemporaryUnavailable 会映射成 null。契约明确要求调用方不得当成空队列
+        // （当成空队列会把「待重放的收藏改动」静默丢掉），所以必须报错并保持不写。
+        val store = InMemoryLocalChanges(listOf(LocalFavoriteChange(7, 3, true))).apply {
+            readUnavailable = true
+        }
+        val session = TestFavoriteSession(7)
+        val remote = FakeRemoteMutation()
+
+        val result = SyncLocalModeFavoritesOnExit(
+            FakeRemoteQuery(setOf(1)), remote, LocalFavoriteChangeManager(store), session,
+        )(session.snapshot())
+
+        assertTrue(result is NetWorkResult.Error)
+        assertEquals("本地收藏记录暂时不可读，请重试", (result as NetWorkResult.Error).message)
+        assertTrue(remote.collected.isEmpty())
+        assertTrue(remote.uncollected.isEmpty())
+        assertEquals(0, store.writeAttempts)
     }
 
     @Test
     fun `stale account cannot replay changes`() = runTest {
-        val store = FakeStore().apply { items = listOf(LocalFavoriteChange(7, 3, true)) }
+        val store = InMemoryLocalChanges(listOf(LocalFavoriteChange(7, 3, true)))
         val session = TestFavoriteSession(7)
         val snapshot = session.snapshot()
         session.switchAccount(8)
@@ -103,6 +114,6 @@ class SyncLocalModeFavoritesOnExitTest {
 
         assertTrue(result is NetWorkResult.Error)
         assertTrue(remote.collected.isEmpty())
-        assertEquals(1, store.items.size)
+        assertEquals(1, store.storedOrNull()?.size)
     }
 }

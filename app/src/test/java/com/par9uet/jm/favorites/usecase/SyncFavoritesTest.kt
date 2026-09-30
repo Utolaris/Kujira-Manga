@@ -122,9 +122,11 @@ class SyncFavoritesTest {
         var pages = 0
         remote.pageHandler = { _, _ ->
             pages++
-            session.switchAccount(8)
             page(totalPages = 2)
         }
+        // 会话转换在绑定批次内不可能生效（真实实现由 boundRemoteGate 串行化），
+        // 只能在绑定块释放之后排进去。第一页取回后立刻切账号，第二页就拿不到绑定会话。
+        session.afterNextBound = { session.switchAccount(8) }
         val sync = SyncFavorites(remote, local, session) { 0L }
         val result = sync.synchronize(session.snapshot(), force = true)
         assertTrue(result is NetWorkResult.Error)
@@ -137,10 +139,11 @@ class SyncFavoritesTest {
         val session = TestFavoriteSession()
         val local = LocalSnapshot()
         val remote = Remote()
-        remote.pageHandler = { _, _ ->
+        remote.pageHandler = { _, _ -> page() }
+        // 账号回到 A，但 generation 已前进两次：只比 accountId 会误判成「还是当前会话」。
+        session.afterNextBound = {
             session.switchAccount(8)
             session.switchAccount(7)
-            page()
         }
         val sync = SyncFavorites(remote, local, session) { 0L }
         val result = sync.synchronize(session.snapshot(), force = true)
