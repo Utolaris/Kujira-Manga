@@ -8,7 +8,7 @@
 <br>
 
 - 系统要求：Android 11（API 30）及以上
-- 当前版本：`1.5.0`（versionCode `150`）
+- 当前版本：`1.5.1`（versionCode `151`）
 - 安装包名：release `kujira.manga`，debug `kujira.manga.debug`
 - 站点：[18comic.vip](https://18comic.vip)
 
