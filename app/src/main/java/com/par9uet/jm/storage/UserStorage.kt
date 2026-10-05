@@ -16,6 +16,8 @@ interface UserStorage {
     fun getOrNull(): User? = get()
     fun set(user: User)
     fun remove()
+    /** Publish a session whose identity and credentials have already been durably committed. */
+    fun sessionCommitted(user: User) = set(user)
 }
 
 class SecureUserStorage(
@@ -38,6 +40,13 @@ class SecureUserStorage(
     override fun get(): User = getOrNull() ?: User.create()
 
     override fun getOrNull(): User? {
+        if (secureStorage.isLoggedOut()) return User.create().also { _state.value = it }
+        when (val session = secureStorage.getStartup<AuthSessionRecord>(AUTH_SESSION_KEY, object : TypeToken<AuthSessionRecord>() {}.type)) {
+            is StorageReadResult.Success -> return (session.value.identity ?: User.create()).also { _state.value = it }
+            is StorageReadResult.TemporaryUnavailable -> return null
+            is StorageReadResult.Corrupted -> return User.create().also { _state.value = it }
+            is StorageReadResult.Missing -> Unit
+        }
         _state.value?.let { return it }
         val startup = secureStorage.getStartup<User>(STORAGE_KEY, object : TypeToken<User>() {}.type)
         when (startup) {
@@ -62,10 +71,13 @@ class SecureUserStorage(
     }
 
     override fun remove() {
+        if (!secureStorage.clearAuthSession()) return
         _state.update {
             User.create()
         }
         secureStorage.remove(STORAGE_KEY)
         secureStorage.removeStartup(STORAGE_KEY)
     }
+
+    override fun sessionCommitted(user: User) { _state.value = user }
 }

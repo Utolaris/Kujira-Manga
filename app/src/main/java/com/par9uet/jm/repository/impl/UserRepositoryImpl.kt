@@ -123,7 +123,7 @@ class UserRepositoryImpl(
      * 把已验证的候选会话提升为活动会话。调用方（UserManager）已确认 generation 有效。
      * @return false 表示 cookie 未能写入活动会话，不得视为登录成功。
      */
-    override fun activateVerifiedSession(verified: CandidateSession): Boolean {
+    override fun activateVerifiedSession(verified: CandidateSession, identity: com.par9uet.jm.core.model.User): Boolean {
         val gateError = LoginSessionGate.validateCandidate(verified)
         if (gateError != null) {
             logError(LoginSessionGate.TAG, "activateVerifiedSession gate failed: ${gateError.message}")
@@ -133,6 +133,7 @@ class UserRepositoryImpl(
             cookies = verified.embeddedCookies,
             jwtToken = verified.jwtToken,
             username = verified.loginResponse.username,
+            identity = identity,
         )
     }
 

@@ -184,6 +184,8 @@ dependencies {
         exclude(group = "org.sejda.imageio", module = "webp-imageio")
     }
     implementation(libs.jmcomic.android.support)
+    // Override the upstream parser version containing GHSA-pmhh-3w7g-xqp8.
+    implementation(libs.jsoup)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.okhttp.mockwebserver3)

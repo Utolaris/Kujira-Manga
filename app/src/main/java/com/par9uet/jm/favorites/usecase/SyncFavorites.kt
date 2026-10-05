@@ -29,6 +29,7 @@ class SyncFavorites(
     private val remoteQuery: FavoriteRemoteQuery,
     private val localSync: FavoriteLocalSync,
     private val session: FavoriteSession,
+    private val wallTimeMillis: () -> Long = System::currentTimeMillis,
     private val elapsedRealtime: () -> Long = SystemClock::elapsedRealtime,
 ) {
     private data class RemoteFavoriteSnapshot(
@@ -60,7 +61,7 @@ class SyncFavorites(
                 includeAllFolderMemberships = force,
                 onProgress = onProgress,
             )
-            val syncedAt = System.currentTimeMillis()
+            val syncedAt = wallTimeMillis()
             if (!session.isCurrent(sessionSnapshot)) return NetWorkResult.Error("登录账号已变化")
             if (force) {
                 val metadata = fetchFavoriteMetadata(
@@ -80,6 +81,7 @@ class SyncFavorites(
                         syncedAt = syncedAt,
                         forceRefreshedAt = syncedAt,
                     )
+                    localSync.markSyncSuccess(accountId, scopeFolderId, wallTimeMillis())
                 } ?: return NetWorkResult.Error("登录账号已变化")
                 log(
                     "FavoritesSync",
@@ -125,7 +127,7 @@ class SyncFavorites(
                     )
                 }
                 session.withCurrentSession(sessionSnapshot) {
-                    localSync.markSyncSuccess(accountId, scopeFolderId, syncedAt)
+                    localSync.markSyncSuccess(accountId, scopeFolderId, wallTimeMillis())
                 } ?: return NetWorkResult.Error("登录账号已变化")
                 log(
                     "FavoritesSync",

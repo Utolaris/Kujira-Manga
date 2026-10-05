@@ -4,4 +4,8 @@
     <exclude domain="sharedpref" path="kujira-manga-g-data.xml" />
     <!-- Startup prefs hold Keystore-encrypted identity/settings; do not transfer across devices. -->
     <exclude domain="sharedpref" path="kujira-manga-startup.xml" />
+    <exclude domain="database" path="." />
+    <exclude domain="file" path="logs/" />
+    <!-- A restored SAF URI has no persisted grant on the destination device. -->
+    <exclude domain="sharedpref" path="download_storage.xml" />
 </full-backup-content>

@@ -338,7 +338,7 @@ class ComicDetailViewModelTest {
             override suspend fun probeActiveSession() =
                 com.par9uet.jm.core.network.NetWorkResult.Error("unused")
 
-            override fun activateVerifiedSession(verified: com.par9uet.jm.session.CandidateSession) = false
+            override fun activateVerifiedSession(verified: com.par9uet.jm.session.CandidateSession, identity: com.par9uet.jm.core.model.User) = false
             override fun clearSession() = Unit
             override suspend fun getHistoryComicList(page: Int) =
                 com.par9uet.jm.core.network.NetWorkResult.Error("unused")

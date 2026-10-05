@@ -25,6 +25,9 @@ interface FavoriteLocalSync {
     /** A completed full snapshot is the per-account cache initialization marker. */
     suspend fun hasFullSnapshot(accountId: Int): Boolean
 
+    /** Most recent successful completion across every folder of this account. */
+    suspend fun lastSuccessfulSyncAt(accountId: Int): Long?
+
     suspend fun reconcileLightweightSnapshot(
         accountId: Int,
         scopeFolderId: Int,

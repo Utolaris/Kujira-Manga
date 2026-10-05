@@ -25,6 +25,7 @@ room = "2.8.5"
 workRuntimeKtx = "2.11.2"
 desugarJdkLibs = "2.1.5"
 jmcomicApiJava = "1.1.8"
+jsoup = "1.23.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -74,6 +75,7 @@ androidx-room-paging = { group = "androidx.room", name = "room-paging", version.
 androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "workRuntimeKtx" }
 desugar-jdk-libs = { group = "com.android.tools", name = "desugar_jdk_libs", version.ref = "desugarJdkLibs" }
 jmcomic-api = { group = "io.github.jukomu", name = "jmcomic-api", version.ref = "jmcomicApiJava" }
+jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
 jmcomic-core = { group = "io.github.jukomu", name = "jmcomic-core", version.ref = "jmcomicApiJava" }
 jmcomic-android-support = { group = "io.github.jukomu", name = "jmcomic-android-support", version.ref = "jmcomicApiJava" }
 

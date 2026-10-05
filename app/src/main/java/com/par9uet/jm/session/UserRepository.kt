@@ -45,7 +45,7 @@ interface UserRepository {
      *
      * @return true 仅当会话可被认定为「真的可用」（cookie 非空且写入成功）。
      */
-    fun activateVerifiedSession(verified: CandidateSession): Boolean
+    fun activateVerifiedSession(verified: CandidateSession, identity: com.par9uet.jm.core.model.User): Boolean
 
     /** Clears client-side session state without performing a network logout request. */
     fun clearSession()

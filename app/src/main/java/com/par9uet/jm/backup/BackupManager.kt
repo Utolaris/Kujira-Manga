@@ -435,8 +435,8 @@ class BackupManager {
     private fun parseGroup(element: JsonElement): ComicGroupBackup? {
         if (element.isJsonNull || !element.isJsonObject) return null
         val obj = element.asJsonObject
-        val id = obj.get("id")?.takeIf { !it.isJsonNull }?.asInt ?: return null
-        val name = obj.get("name")?.takeIf { !it.isJsonNull }?.asString ?: return null
+        val id = parseInteger(obj.get("id"))?.takeIf { it > 0 } ?: return null
+        val name = parseString(obj.get("name")) ?: return null
         val authors = parseStringList(obj.get("authors")) ?: return null
         val tags = parseStringList(obj.get("tags")) ?: return null
         val chaptersElement = obj.get("chapters") ?: return null
@@ -457,9 +457,9 @@ class BackupManager {
     private fun parseChapter(element: JsonElement): ChapterBackup? {
         if (element.isJsonNull || !element.isJsonObject) return null
         val obj = element.asJsonObject
-        val id = obj.get("id")?.takeIf { !it.isJsonNull }?.asInt ?: return null
-        val name = obj.get("name")?.takeIf { !it.isJsonNull }?.asString ?: return null
-        val sortOrder = obj.get("sortOrder")?.takeIf { !it.isJsonNull }?.asLong ?: return null
+        val id = parseInteger(obj.get("id"))?.takeIf { it > 0 } ?: return null
+        val name = parseString(obj.get("name")) ?: return null
+        val sortOrder = parseLong(obj.get("sortOrder"))?.takeIf { it >= 0 } ?: return null
         return ChapterBackup(id = id, name = name, sortOrder = sortOrder)
     }
 
@@ -467,11 +467,19 @@ class BackupManager {
         if (element == null || element.isJsonNull || !element.isJsonArray) return null
         val result = ArrayList<String>(element.asJsonArray.size())
         for (item in element.asJsonArray) {
-            if (item.isJsonNull) return null
-            result += item.asString
+            result += parseString(item) ?: return null
         }
         return result
     }
+
+    private fun parseString(element: JsonElement?): String? =
+        element?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString
+
+    private fun parseInteger(element: JsonElement?): Int? =
+        element?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }?.asString?.toIntOrNull()
+
+    private fun parseLong(element: JsonElement?): Long? =
+        element?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }?.asString?.toLongOrNull()
 
     private fun sha256(input: String): String {
         val md = MessageDigest.getInstance("SHA-256")

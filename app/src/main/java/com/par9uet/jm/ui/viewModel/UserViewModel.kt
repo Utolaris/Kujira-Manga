@@ -135,7 +135,7 @@ class UserViewModel(
 
     fun logout() {
         viewModelScope.launch {
-            userManager.clearUser()
+            if (!userManager.clearUser()) toastManager.showAsync("退出登录未能保存，请重试")
         }
     }
 

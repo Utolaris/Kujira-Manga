@@ -28,7 +28,7 @@ data class DownloadComicCacheChapter(
 )
 
 fun getComicDownloadRootDir(context: Context, comic: DownloadComic): File {
-    return tryCreateDir(File(getDownloadDir(context), getComicCacheRootName(comic)))
+    return tryCreateDir(File(getDownloadDir(context), getComicCacheRootName(comic))).also(::ensureNoMediaFile)
 }
 
 // Titles are display metadata, not file identity. Existing downloads retain their saved zipPath.

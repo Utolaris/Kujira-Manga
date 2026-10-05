@@ -201,12 +201,14 @@ class UserManager(
         }
     }
 
-    suspend fun clearUser() {
-        cancelBackgroundJob()
-        withSessionTransition {
+    suspend fun clearUser(): Boolean {
+        return withSessionTransition {
+            if (!clearIdentityWhileLocked()) return@withSessionTransition false
+            cancelBackgroundJob()
             sessionGeneration.incrementAndGet()
-            clearIdentityWhileLocked()
+            publishSession()
             sessionReadinessHolder.set(SessionReadiness.Unauthenticated)
+            true
         }
     }
 
@@ -360,7 +362,12 @@ class UserManager(
             }
 
             // 只读探活：用共享客户端里恢复出来的 cookie，不产生登录，也不改会话。
-            val probe = userRepository.probeActiveSession()
+            val probe = if (cookieStorage.isBoundToAccount(snapshot.user.id)) {
+                userRepository.probeActiveSession()
+            } else {
+                // Legacy credentials do not prove which identity owns them; bind once by login.
+                NetWorkResult.Error("已保存会话需要重新验证账号", kind = NetworkErrorKind.Authentication)
+            }
             coroutineContext.ensureActive()
             if (!isCurrentSession(snapshot)) return@runInBackground
 
@@ -511,11 +518,13 @@ class UserManager(
             logError(LoginSessionGate.TAG, "commitVerifiedCandidate gate: ${gateError.message}")
             return false
         }
-        if (!userRepository.activateVerifiedSession(candidate)) {
+        val identity = candidate.loginResponse.toUser(password = password)
+        if (!userRepository.activateVerifiedSession(candidate, identity)) {
             logError(LoginSessionGate.TAG, "commitVerifiedCandidate activate failed; retaining identity")
             return false
         }
-        persistUserWhileLocked(candidate.loginResponse.toUser(password = password))
+        userStorage.sessionCommitted(identity)
+        publishUserWhileLocked(identity)
         log(
             LoginSessionGate.TAG,
             "commitVerifiedCandidate OK uid=${candidate.loginResponse.uid} " +
@@ -536,8 +545,9 @@ class UserManager(
             when (result) {
                 is NetWorkResult.Error -> {
                     if (clearUserOnError && result.authFailure == AuthFailure.InvalidCredentials) {
-                        clearIdentityWhileLocked(result.message)
-                        sessionReadinessHolder.set(SessionReadiness.Unauthenticated)
+                        if (clearIdentityWhileLocked(result.message)) {
+                            sessionReadinessHolder.set(SessionReadiness.Unauthenticated)
+                        }
                     } else {
                         _userState.update {
                             it.copy(
@@ -569,7 +579,7 @@ class UserManager(
         }
     }
 
-    private fun persistUserWhileLocked(user: User) {
+    private fun publishUserWhileLocked(user: User) {
         _userState.update {
             it.copy(
                 data = user,
@@ -577,11 +587,14 @@ class UserManager(
                 errorMsg = ""
             )
         }
-        userStorage.set(user)
         publishSession()
     }
 
-    private fun clearIdentityWhileLocked(errorMsg: String? = null) {
+    private fun clearIdentityWhileLocked(errorMsg: String? = null): Boolean {
+        if (!cookieStorage.clearSession()) {
+            _userState.update { it.copy(isLoading = false, isError = true, errorMsg = "退出登录未能保存，请重试") }
+            return false
+        }
         lastRecovery = null
         _userState.update {
             it.copy(
@@ -592,9 +605,9 @@ class UserManager(
             )
         }
         userRepository.clearSession()
-        userStorage.remove()
-        cookieStorage.remove()
+        userStorage.sessionCommitted(User.create())
         publishSession()
+        return true
     }
 
     private fun publishSession() {

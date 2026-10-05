@@ -35,6 +35,32 @@ class BackupRestoreViewModelTest {
     @Before fun setUp() = Dispatchers.setMain(StandardTestDispatcher())
     @After fun tearDown() = Dispatchers.resetMain()
 
+    @Test fun `malformed scalar cache fields stay on content selection and never restore`() = runTest {
+        val malformedGroups = listOf(
+            """{"id":"not-a-number","name":"n","authors":[],"tags":[],"chapters":[]}""",
+            """{"id":2147483648,"name":"n","authors":[],"tags":[],"chapters":[]}""",
+            """{"id":1.5,"name":"n","authors":[],"tags":[],"chapters":[]}""",
+            """{"id":1,"name":{},"authors":[],"tags":[],"chapters":[]}""",
+            """{"id":1,"name":"n","authors":["a",{}],"tags":[],"chapters":[]}""",
+            """{"id":1,"name":"n","authors":[],"tags":[false],"chapters":[]}""",
+            """{"id":1,"name":"n","authors":[],"tags":[],"chapters":[{"id":2,"name":"c","sortOrder":"bad"}]}""",
+            """{"id":1,"name":"n","authors":[],"tags":[],"chapters":[{"id":2,"name":"c","sortOrder":9223372036854775808}]}""",
+        )
+        malformedGroups.forEach { groupJson ->
+            val malformed = codec.parseBackup("""{"meta":{"version":4,"includeComicCache":true},"data":{"comicCache":{"groups":[$groupJson]}}}""").getOrThrow()
+            val ops = FakeOperations().apply { backup = malformed }
+            val vm = BackupRestoreViewModel(ops, codec, ToastManager())
+            assertTrue(vm.beginRestore())
+            vm.readDocument("content://malformed-scalars")
+            runCurrent()
+            vm.selectRestoreContent(BackupContentOptions(false, true))
+            runCurrent()
+            assertEquals(groupJson, RestoreStep.SelectContent, vm.state.value.restoreStep)
+            assertTrue(groupJson, vm.state.value.restoreGroups.isEmpty())
+            assertTrue(groupJson, ops.restores.isEmpty())
+        }
+    }
+
     private inner class FakeOperations : BackupRestoreOperations {
         var cache = ComicCacheBackup(listOf(group))
         var backup = codec.parseBackup(codec.createBackup(

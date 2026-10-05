@@ -2,6 +2,7 @@ package com.par9uet.jm.storage
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.par9uet.jm.core.model.User
 import okhttp3.Cookie
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -16,20 +17,24 @@ class OfficialAuthSessionPersistenceTest {
         prefs.edit().clear().commit()
         startupPrefs.edit().clear().commit()
         try {
-            fun storage() = SecureCookieStorage(SecureStorage(prefs, startupPrefs))
+            fun secure() = SecureStorage(prefs, startupPrefs)
+            fun storage() = SecureCookieStorage(secure())
             val avs = Cookie.Builder().name("AVS").value("instrumented-avs")
                 .hostOnlyDomain("api.example").secure().build()
 
-            assertTrue(storage().setSession(listOf(avs), "instrumented-jwt"))
+            val identity = User.create().copy(id = 7, username = "instrumented", password = "synthetic")
+            assertTrue(storage().setAuthenticatedSession(listOf(avs), "instrumented-jwt", identity))
             val restored = storage()
             assertEquals(listOf(avs), restored.get())
             assertEquals("instrumented-jwt", restored.bearerToken())
-            val ciphertext = prefs.getString("auth_session", null).orEmpty()
+            assertEquals(identity, SecureUserStorage(secure()).get())
+            val ciphertext = startupPrefs.getString("auth_session_v2", null).orEmpty()
             assertTrue(ciphertext.startsWith("enc:"))
             assertFalse(ciphertext.contains("instrumented-jwt"))
 
             restored.remove()
             assertTrue(storage().get().isEmpty())
+            assertEquals(0, SecureUserStorage(secure()).get().id)
         } finally {
             prefs.edit().clear().commit()
             startupPrefs.edit().clear().commit()

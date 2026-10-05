@@ -89,20 +89,23 @@ class SyncFavoritesTest {
 
     private class LocalSnapshot : FavoriteLocalSync {
         override suspend fun hasFullSnapshot(accountId: Int): Boolean = false
+        override suspend fun lastSuccessfulSyncAt(accountId: Int): Long? = null
 
         val replacements = mutableListOf<Pair<Int, List<Int>>>()
         var markedSuccessful = false
+        var completedAt: Long? = null
+        var onReplace: () -> Unit = {}
         override suspend fun replaceAllSnapshot(
             accountId: Int, remoteItems: List<FavoriteRemoteItem>, remoteFolders: Map<Int, String>,
             metadata: List<FavoriteMetadataPayload>, syncedAt: Long, forceRefreshedAt: Long,
             folderMemberships: Map<Int, List<Int>>,
-        ) { replacements += accountId to remoteItems.map { it.albumId } }
+        ) { replacements += accountId to remoteItems.map { it.albumId }; onReplace() }
         override suspend fun reconcileLightweightSnapshot(
             accountId: Int, scopeFolderId: Int, remoteItems: List<FavoriteRemoteItem>,
             remoteFolders: Map<Int, String>, syncedAt: Long,
         ) = FavoriteSyncDelta(0, 0, 0, remoteItems.size, remoteItems.map { it.albumId })
         override suspend fun applyMetadata(accountId: Int, payload: FavoriteMetadataPayload, syncedAt: Long) = Unit
-        override suspend fun markSyncSuccess(accountId: Int, scopeFolderId: Int, syncedAt: Long) { markedSuccessful = true }
+        override suspend fun markSyncSuccess(accountId: Int, scopeFolderId: Int, syncedAt: Long) { markedSuccessful = true; completedAt = syncedAt }
     }
 
     private class Remote : FavoriteRemoteQuery {
@@ -196,6 +199,32 @@ class SyncFavoritesTest {
         val sync = SyncFavorites(remote, local, session) { 0L }
         assertTrue(sync.synchronize(session.snapshot(), force = true) is NetWorkResult.Error)
         assertTrue(local.replacements.isEmpty())
+    }
+
+    @Test
+    fun `lightweight completion time is recorded after slow metadata finishes`() = runTest {
+        var clock = 1_000L
+        val local = LocalSnapshot()
+        val session = TestFavoriteSession()
+        val remote = Remote().apply {
+            metadataHandler = { id ->
+                clock = 90_000L
+                FavoriteMetadataPayload(id, "item", "", emptyList(), emptyList(), emptyList(), emptyList())
+            }
+        }
+        val sync = SyncFavorites(remote, local, session, wallTimeMillis = { clock }, elapsedRealtime = { 0L })
+        assertTrue(sync.synchronize(session.snapshot()) is NetWorkResult.Success)
+        assertEquals(90_000L, local.completedAt)
+    }
+
+    @Test
+    fun `full refresh completion time is recorded after the snapshot commit`() = runTest {
+        var clock = 1_000L
+        val local = LocalSnapshot().apply { onReplace = { clock = 120_000L } }
+        val session = TestFavoriteSession()
+        val sync = SyncFavorites(Remote(), local, session, wallTimeMillis = { clock }, elapsedRealtime = { 0L })
+        assertTrue(sync.synchronize(session.snapshot(), force = true) is NetWorkResult.Success)
+        assertEquals(120_000L, local.completedAt)
     }
 
     companion object {

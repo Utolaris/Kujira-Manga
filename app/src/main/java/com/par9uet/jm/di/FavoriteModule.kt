@@ -64,6 +64,7 @@ val favoriteModule = module {
             applicationScope = get(),
             localMode = get(),
             hasFullSnapshot = get<FavoriteLocalSync>()::hasFullSnapshot,
+            lastSuccessfulSyncAt = get<FavoriteLocalSync>()::lastSuccessfulSyncAt,
             onCacheInitialized = { toastManager.showAsync("收藏夹初始化完成。") },
         )
     }

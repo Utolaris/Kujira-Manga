@@ -16,4 +16,7 @@ interface FavoriteSyncStateDao {
             "WHERE accountId = :accountId AND scopeFolderId = :scopeFolderId LIMIT 1"
     )
     suspend fun get(accountId: Int, scopeFolderId: Int): FavoriteSyncStateEntity?
+
+    @Query("SELECT MAX(lastSuccessfulSyncAt) FROM favorite_sync_state WHERE accountId = :accountId AND lastSuccessfulSyncAt > 0")
+    suspend fun lastSuccessfulSyncAt(accountId: Int): Long?
 }

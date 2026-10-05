@@ -114,6 +114,18 @@ class FavoriteStoreRealDatabaseTest {
     }
 
     @Test
+    fun syncCompletionIsSharedAcrossFoldersAccountScopedAndSurvivesReopening() = runBlocking {
+        store.markSyncSuccess(accountA, 3, 1_000L)
+        store.markSyncSuccess(accountA, 5, 2_000L)
+        store.markSyncSuccess(accountB, 8, 9_000L)
+        database.close()
+        open()
+        assertEquals(2_000L, store.lastSuccessfulSyncAt(accountA))
+        assertEquals(9_000L, store.lastSuccessfulSyncAt(accountB))
+        assertEquals(null, store.lastSuccessfulSyncAt(9999))
+    }
+
+    @Test
     fun snapshotSurvivesClosingAndReopeningTheDatabaseFile() = runBlocking {
         seed(accountA, listOf(FavoriteRemoteItem(11, "持久化漫画")))
 

@@ -1,6 +1,7 @@
 package com.par9uet.jm.storage
 
 import android.content.Context
+import android.content.ContextWrapper
 import androidx.test.core.app.ApplicationProvider
 import com.google.gson.Gson
 import com.par9uet.jm.storage.ReadHistoryManager
@@ -8,10 +9,25 @@ import kotlinx.coroutines.runBlocking
 import okhttp3.Cookie
 import org.junit.Assert.*
 import org.junit.Test
+import org.junit.Before
+import org.junit.After
 import java.util.Base64
+import java.util.UUID
 
 class SessionPersistenceTest {
-    private val context get() = ApplicationProvider.getApplicationContext<Context>()
+    private lateinit var context: Context
+    private lateinit var prefix: String
+    @Before fun setup() {
+        val base = ApplicationProvider.getApplicationContext<Context>()
+        prefix = "session-persistence-${UUID.randomUUID()}"
+        context = object : ContextWrapper(base) {
+            override fun getSharedPreferences(name: String, mode: Int) = base.getSharedPreferences("$prefix-$name", mode)
+        }
+    }
+    @After fun cleanup() {
+        context.deleteSharedPreferences("$prefix-${SecureStorage.DATA_PREFERENCES_NAME}")
+        context.deleteSharedPreferences("$prefix-${SecureStorage.STARTUP_PREFERENCES_NAME}")
+    }
     private val storedValues get() =
         context.getSharedPreferences(SecureStorage.DATA_PREFERENCES_NAME, Context.MODE_PRIVATE)
 

@@ -1,6 +1,7 @@
 package com.par9uet.jm.storage
 
 import com.google.gson.reflect.TypeToken
+import com.par9uet.jm.core.model.User
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,6 +16,10 @@ interface CookieStorage {
     fun set(cookieStore: List<Cookie>): Boolean
     /** Atomically promote the cookies and optional official JWT from one verified login. */
     fun setSession(cookieStore: List<Cookie>, bearerToken: String?): Boolean = set(cookieStore)
+    /** Production implementations must commit identity and credentials together. */
+    fun setAuthenticatedSession(cookieStore: List<Cookie>, bearerToken: String?, identity: User): Boolean =
+        setSession(cookieStore, bearerToken)
+    fun isBoundToAccount(accountId: Int): Boolean = true
     fun get(): List<Cookie>
     fun bearerToken(): String? = null
 
@@ -25,6 +30,8 @@ interface CookieStorage {
     fun getOrNull(): List<Cookie>? = get()
 
     fun remove()
+    /** Only true after durable revocation. In-memory test stores have no disk boundary. */
+    fun clearSession(): Boolean { remove(); return true }
 }
 
 class SecureCookieStorage(
@@ -37,37 +44,43 @@ class SecureCookieStorage(
         private const val JWT_LIFETIME_MS = 60 * 60 * 1_000L
     }
 
-    private data class StoredSession(
-        val cookies: List<Cookie>,
-        val bearerToken: String? = null,
-        val bearerExpiryMillis: Long = 0L,
-    )
-
     private var _state = MutableStateFlow<List<Cookie>?>(null)
     override val state = _state.asStateFlow()
-    private var cachedSession: StoredSession? = null
+    private var cachedSession: AuthSessionRecord? = null
 
     @Synchronized
     override fun set(cookieStore: List<Cookie>): Boolean {
+        if (secureStorage.isLoggedOut()) return false
         val previous = loadSession() ?: return false
         return writeSession(previous.copy(cookies = cookieStore))
     }
 
     @Synchronized
     override fun setSession(cookieStore: List<Cookie>, bearerToken: String?): Boolean =
-        writeSession(StoredSession(
+        writeSession(AuthSessionRecord(
             cookies = cookieStore,
             bearerToken = bearerToken?.takeIf { it.isNotBlank() },
             bearerExpiryMillis = if (bearerToken.isNullOrBlank()) 0L else nowMillis() + JWT_LIFETIME_MS,
         ))
 
-    private fun writeSession(session: StoredSession): Boolean {
+    @Synchronized
+    override fun setAuthenticatedSession(cookieStore: List<Cookie>, bearerToken: String?, identity: User): Boolean =
+        writeSession(AuthSessionRecord(
+            cookies = cookieStore,
+            bearerToken = bearerToken?.takeIf { it.isNotBlank() },
+            bearerExpiryMillis = if (bearerToken.isNullOrBlank()) 0L else nowMillis() + JWT_LIFETIME_MS,
+            identity = identity,
+        ))
+
+    @Synchronized
+    override fun isBoundToAccount(accountId: Int): Boolean = loadSession()?.identity?.id == accountId
+
+    private fun writeSession(session: AuthSessionRecord): Boolean {
         // Publish the pair only after one durable encrypted write succeeds.
-        return when (secureStorage.set(STORAGE_KEY, session)) {
+        return when (secureStorage.setAuthSession(session)) {
             is StorageWriteResult.Success -> {
                 cachedSession = session
                 _state.update { session.cookies }
-                secureStorage.remove(LEGACY_COOKIE_KEY)
                 true
             }
             is StorageWriteResult.TemporaryUnavailable -> false
@@ -84,27 +97,37 @@ class SecureCookieStorage(
         session.bearerToken?.takeIf { nowMillis() < session.bearerExpiryMillis }
     }
 
-    private fun loadSession(): StoredSession? {
+    private fun loadSession(): AuthSessionRecord? {
+        if (secureStorage.isLoggedOut()) return AuthSessionRecord(emptyList()).also {
+            cachedSession = it
+            _state.value = it.cookies
+        }
         cachedSession?.let { return it }
+        when (val current = secureStorage.getStartup<AuthSessionRecord>(AUTH_SESSION_KEY, object : TypeToken<AuthSessionRecord>() {}.type)) {
+            is StorageReadResult.Success -> return current.value.also { cachedSession = it; _state.value = it.cookies }
+            is StorageReadResult.TemporaryUnavailable -> return null
+            is StorageReadResult.Corrupted -> return AuthSessionRecord(emptyList())
+            is StorageReadResult.Missing -> Unit
+        }
         val session = when (
-            val result = secureStorage.get<StoredSession>(
+            val result = secureStorage.get<AuthSessionRecord>(
                 STORAGE_KEY,
-                object : TypeToken<StoredSession>() {}.type,
+                object : TypeToken<AuthSessionRecord>() {}.type,
             )
         ) {
             is StorageReadResult.Success -> result.value
             is StorageReadResult.TemporaryUnavailable -> null
             // A corrupt new record must not resurrect an older account from the legacy key.
-            is StorageReadResult.Corrupted -> StoredSession(emptyList())
+            is StorageReadResult.Corrupted -> AuthSessionRecord(emptyList())
             is StorageReadResult.Missing -> when (val legacy = secureStorage.get<List<Cookie>>(
                 LEGACY_COOKIE_KEY,
                 object : TypeToken<List<Cookie>>() {}.type,
             )) {
-                is StorageReadResult.Success -> StoredSession(legacy.value)
+                is StorageReadResult.Success -> AuthSessionRecord(legacy.value)
                 is StorageReadResult.TemporaryUnavailable -> null
                 is StorageReadResult.Missing,
                 is StorageReadResult.Corrupted,
-                -> StoredSession(emptyList())
+                -> AuthSessionRecord(emptyList())
             }
         }
         if (session != null) {
@@ -115,10 +138,17 @@ class SecureCookieStorage(
     }
 
     @Synchronized
-    override fun remove() {
-        cachedSession = StoredSession(emptyList())
+    override fun remove() { clearSession() }
+
+    @Synchronized
+    override fun clearSession(): Boolean {
+        if (!secureStorage.clearAuthSession()) return false
+        cachedSession = AuthSessionRecord(emptyList())
         _state.update { emptyList() }
+        // The confirmed startup tombstone masks these older records even if cleanup fails.
         secureStorage.remove(STORAGE_KEY)
         secureStorage.remove(LEGACY_COOKIE_KEY)
+        secureStorage.remove("user")
+        return true
     }
 }

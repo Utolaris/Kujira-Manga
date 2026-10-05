@@ -9,6 +9,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.par9uet.jm.cache.cachePathExists
 import com.par9uet.jm.cache.cachePathHasContent
+import com.par9uet.jm.cache.getCacheParentPath
+import com.par9uet.jm.cache.deleteCachePath
+import com.par9uet.jm.cache.protectExistingComicCache
 import com.par9uet.jm.cache.findCacheChildPath
 import com.par9uet.jm.cache.findOrCreateCacheDocument
 import com.par9uet.jm.cache.getDownloadDir
@@ -97,6 +100,33 @@ class CacheMigrationDeviceTest {
         assertTrue(DeviceLocalChapterFilesForTest.images(context, migrated).isNotEmpty())
         assertFalse(sourceCover.exists())
         assertFalse(sourcePage.exists())
+        val comicRoot = getCacheParentPath(migrated.coverPath)!!
+        assertTrue(findCacheChildPath(context, comicRoot, ".nomedia") != null)
+        assertTrue(findCacheChildPath(context, getCacheParentPath(comicRoot)!!, ".nomedia") == null)
+    }
+
+    @Test fun `startup repairs existing saf marker without hiding the selected parent`() = runBlocking {
+        val saved = createSafComic(4801).comic
+        val root = getCacheParentPath(saved.coverPath)!!
+        val marker = findCacheChildPath(context, root, ".nomedia")!!
+        assertTrue(deleteCachePath(context, marker))
+        protectExistingComicCache(context, listOf(saved))
+        protectExistingComicCache(context, listOf(saved))
+        assertTrue(findCacheChildPath(context, root, ".nomedia") != null)
+        assertTrue(findCacheChildPath(context, getCacheParentPath(root)!!, ".nomedia") == null)
+        assertTrue(listComicImageEntries(context, saved.zipPath).isNotEmpty())
+    }
+
+    @Test fun `renamed media marker aborts downloads and is not accepted as protection`() = runBlocking {
+        val tree = createTreeDirectory("renamed-marker-${UUID.randomUUID()}")
+        setDownloadTreeUri(context, tree.toString())
+        val comic = DownloadComic(4802, "unsupported marker", emptyList(), coverPath = "", zipPath = "",
+            progress = 0f, status = DownloadStatus.PENDING, createTime = 1L)
+        assertTrue(runCatching { DownloadContentFiles(context).chapterPath(comic) }.isFailure)
+        val root = findCacheChildPath(context, targetRootDocument(tree), "JM4802")!!
+        assertTrue(findCacheChildPath(context, root, ".nomedia") == null)
+        assertTrue(findCacheChildPath(context, root, ".nomedia.bin") == null)
+        assertTrue(findCacheChildPath(context, root, "chapter-4802") == null)
     }
 
     @Test
@@ -324,6 +354,9 @@ class CacheMigrationDeviceTest {
         return try {
             val files = DownloadContentFiles(context)
             val chapterPath = files.chapterPath(comic)
+            val root = getCacheParentPath(chapterPath)!!
+            assertTrue(findCacheChildPath(context, root, ".nomedia") != null)
+            assertTrue(listComicImageEntries(context, chapterPath).isEmpty())
             files.writePage(chapterPath, 0, bitmap)
             val coverPath = files.writeCover(comic, bitmap)
             SafFixture(comic.copy(coverPath = coverPath, zipPath = chapterPath))

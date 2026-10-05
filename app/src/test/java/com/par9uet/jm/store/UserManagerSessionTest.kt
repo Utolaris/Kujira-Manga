@@ -510,6 +510,9 @@ class UserManagerSessionTest {
                 },
                 scope,
                 com.par9uet.jm.favorites.alwaysNetworkLocalModeStatus(),
+                autoSyncCoordinator = com.par9uet.jm.favorites.sync.FavoriteAutoSyncCoordinator(
+                    timeSource = { System.nanoTime() / 1_000_000L },
+                ),
             )
             controller.request(com.par9uet.jm.favorites.sync.FavoriteSyncRequestKind.MANUAL)
             withTimeout(2_000) {
@@ -692,7 +695,7 @@ class UserManagerSessionTest {
             return checkNotNull(loginHandler).invoke(username, password)
         }
 
-        override fun activateVerifiedSession(verified: CandidateSession): Boolean {
+        override fun activateVerifiedSession(verified: CandidateSession, identity: com.par9uet.jm.core.model.User): Boolean {
             activated += verified
             if (verified.embeddedCookies.isNotEmpty()) {
                 cookieStorage.set(verified.embeddedCookies)

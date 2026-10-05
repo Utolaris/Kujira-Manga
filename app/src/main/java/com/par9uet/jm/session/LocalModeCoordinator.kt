@@ -168,20 +168,27 @@ class LocalModeCoordinator(
                 log("LocalMode", "force align favorites replaced from remote")
             }
         }
-        if (!localFavoriteChanges.clearAll()) {
-            fail("本地收藏记录暂时无法清理，请重试")
-            return
+        var commitError = "登录账号或会话已变化，请重试"
+        val committed = favoriteSession.withCurrentSession(snapshot) {
+            if (!localFavoriteChanges.clear(snapshot.accountId)) {
+                commitError = "本地收藏记录暂时无法清理，请重试"
+                return@withCurrentSession false
+            }
+            if (isLocalMode) {
+                _transition.value = LocalModeTransition.Exiting("正在切换网络模式")
+                if (!connectionModeEditor.setLocalModeEnabled(snapshot.accountId, false)) {
+                    commitError = "无法写入本地模式开关，请重试"
+                    return@withCurrentSession false
+                }
+                if (!browseHistory.clear(snapshot.accountId)) {
+                    logError("LocalMode", "local history cleanup deferred for account=${snapshot.accountId}")
+                }
+            }
+            true
         }
-        if (isLocalMode && accountId > 0) {
-            _transition.value = LocalModeTransition.Exiting("正在切换网络模式")
-            if (!connectionModeEditor.setLocalModeEnabled(accountId, false)) {
-                fail("无法写入本地模式开关，请重试")
-                return
-            }
-            if (!browseHistory.clear(accountId)) {
-                logError("LocalMode", "local history cleanup deferred for account=$accountId")
-            }
-            log("LocalMode", "force align turned off local mode account=$accountId")
+        if (committed != true) {
+            fail(commitError)
+            return
         }
         toastManager.showAsync("收藏夹已与远端对齐")
         _transition.value = LocalModeTransition.Idle

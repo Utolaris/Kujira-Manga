@@ -266,6 +266,12 @@ class FavoriteSyncControllerTest {
         advanceUntilIdle()
         runCurrent()
         assertFalse(controller.state.value.isSyncing)
+        controller.request(FavoriteSyncRequestKind.AUTO, folderId = 2)
+        runCurrent()
+        assertEquals(listOf(Request(7, 1, false)), requests)
+        controller.request(FavoriteSyncRequestKind.MANUAL, folderId = 3)
+        runCurrent()
+        assertEquals(listOf(Request(7, 1, false), Request(7, 3, false)), requests)
     }
 
     @Test
@@ -289,64 +295,166 @@ class FavoriteSyncControllerTest {
     }
 
     @Test
-    fun `automatic requests keep the latest folder for one trailing sync`() = runTest {
+    fun `all folders skip automatic sync for a minute after completion without trailing work`() = runTest {
         val session = TestFavoriteSession()
         val clock = longArrayOf(0L)
+        val gate = CompletableDeferred<Unit>()
         val requests = mutableListOf<Request>()
-        val controller = controller(
-            applicationScope = backgroundScope,
-            session = session,
-            requests = requests,
-            operation = { _, _, _, _ -> success() },
-            intervalMillis = 100L,
-            timeSource = { clock[0] },
-        )
+        val controller = controller(backgroundScope, session, requests,
+            operation = { _, _, _, _ -> gate.await(); success() },
+            intervalMillis = 60_000L, timeSource = { clock[0] })
 
-        controller.request(FavoriteSyncRequestKind.AUTO, folderId = 0)
+        controller.request(FavoriteSyncRequestKind.AUTO, 0)
         runCurrent()
-        clock[0] = 10L
-        controller.request(FavoriteSyncRequestKind.AUTO, folderId = 1)
-        clock[0] = 20L
-        controller.request(FavoriteSyncRequestKind.AUTO, folderId = 2)
-        clock[0] = 100L
-        advanceTimeBy(100L)
-        advanceUntilIdle()
-
-        assertEquals(
-            listOf(
-                Request(7, 0, false),
-                Request(7, 2, false),
-            ),
-            requests,
-        )
+        clock[0] = 90_000L
+        controller.request(FavoriteSyncRequestKind.AUTO, 1)
+        runCurrent()
+        assertEquals(listOf(Request(7, 0, false)), requests)
+        gate.complete(Unit)
+        runCurrent()
+        clock[0] = 149_999L
+        controller.request(FavoriteSyncRequestKind.AUTO, 2)
+        runCurrent()
+        assertEquals(1, requests.size)
+        // Skipped entry requests do not create a timer that restarts a sync later.
+        advanceTimeBy(120_000L)
+        runCurrent()
+        assertEquals(1, requests.size)
+        clock[0] = 150_000L
+        controller.request(FavoriteSyncRequestKind.AUTO, 3)
+        runCurrent()
+        assertEquals(listOf(Request(7, 0, false), Request(7, 3, false)), requests)
     }
 
     @Test
-    fun `account change cancels pending trailing work and resets visible state`() = runTest {
-        val session = TestFavoriteSession()
+    fun `manual and force completion also cool automatic requests across folders`() = runTest {
         val clock = longArrayOf(0L)
         val requests = mutableListOf<Request>()
-        val controller = controller(
-            applicationScope = backgroundScope,
-            session = session,
-            requests = requests,
-            operation = { _, _, _, _ -> success() },
-            intervalMillis = 100L,
-            timeSource = { clock[0] },
-        )
-
-        controller.request(FavoriteSyncRequestKind.AUTO, folderId = 0)
+        val controller = controller(backgroundScope, TestFavoriteSession(), requests,
+            operation = { _, _, _, _ -> success() }, timeSource = { clock[0] })
+        controller.request(FavoriteSyncRequestKind.MANUAL, 1)
         runCurrent()
-        clock[0] = 10L
-        controller.request(FavoriteSyncRequestKind.AUTO, folderId = 2)
-        session.switchAccount(8)
+        clock[0] = 50L
+        controller.request(FavoriteSyncRequestKind.AUTO, 2)
+        runCurrent()
+        assertEquals(1, requests.size)
+        controller.request(FavoriteSyncRequestKind.FORCE)
         runCurrent()
         clock[0] = 100L
-        advanceTimeBy(100L)
-        advanceUntilIdle()
+        controller.request(FavoriteSyncRequestKind.AUTO, 3)
+        runCurrent()
+        assertEquals(2, requests.size)
+        clock[0] = 150L
+        controller.request(FavoriteSyncRequestKind.AUTO, 4)
+        runCurrent()
+        assertEquals(listOf(Request(7, 1, false), Request(7, 0, true), Request(7, 4, false)), requests)
+    }
 
-        assertEquals(listOf(Request(7, 0, false)), requests)
+    @Test
+    fun `durable completion is account scoped and protects controller reconstruction`() = runTest {
+        val session = TestFavoriteSession()
+        val clock = longArrayOf(1_000_000L)
+        val requests = mutableListOf<Request>()
+        val completed = mapOf(7 to clock[0])
+        fun restarted() = controller(backgroundScope, session, requests,
+            operation = { _, _, _, _ -> success() }, intervalMillis = 60_000L,
+            wallTimeSource = { clock[0] }, lastSuccessfulSyncAt = { completed[it] })
+        val first = restarted()
+        first.request(FavoriteSyncRequestKind.AUTO)
+        runCurrent()
+        assertTrue(requests.isEmpty())
+        val second = restarted()
+        second.request(FavoriteSyncRequestKind.AUTO, 3)
+        runCurrent()
+        assertTrue(requests.isEmpty())
+        session.switchAccount(8)
+        second.request(FavoriteSyncRequestKind.AUTO, 4)
+        runCurrent()
+        assertEquals(listOf(Request(8, 4, false)), requests)
+    }
+
+    @Test
+    fun `account change cancels a delayed cooldown lookup and cannot start the old request`() = runTest {
+        val session = TestFavoriteSession()
+        val readGate = CompletableDeferred<Unit>()
+        val requests = mutableListOf<Request>()
+        val controller = controller(backgroundScope, session, requests,
+            operation = { _, _, _, _ -> success() },
+            lastSuccessfulSyncAt = { withContext(NonCancellable) { readGate.await() }; null })
+        controller.request(FavoriteSyncRequestKind.AUTO, 2)
+        runCurrent()
+        session.switchAccount(8)
+        runCurrent()
+        readGate.complete(Unit)
+        runCurrent()
+        assertTrue(requests.isEmpty())
         assertFalse(controller.state.value.isSyncing)
+    }
+
+    @Test
+    fun `local mode round trip cannot revive an old automatic cooldown lookup`() = runTest {
+        val mode = FakeConnectionMode()
+        val readGate = CompletableDeferred<Unit>()
+        val requests = mutableListOf<Request>()
+        val controller = controller(backgroundScope, TestFavoriteSession(), requests,
+            operation = { _, _, _, _ -> success() }, localMode = mode,
+            lastSuccessfulSyncAt = { withContext(NonCancellable) { readGate.await() }; null })
+        controller.request(FavoriteSyncRequestKind.AUTO, 2)
+        runCurrent()
+        mode.setLocalModeEnabled(7, true)
+        runCurrent()
+        mode.setLocalModeEnabled(7, false)
+        runCurrent()
+        readGate.complete(Unit)
+        runCurrent()
+        assertTrue(requests.isEmpty())
+        controller.request(FavoriteSyncRequestKind.AUTO, 3)
+        runCurrent()
+        assertEquals(listOf(Request(7, 3, false)), requests)
+    }
+
+    @Test
+    fun `failed cooldown lookup skips safely and a new request can retry`() = runTest {
+        val requests = mutableListOf<Request>()
+        var reads = 0
+        val controller = controller(backgroundScope, TestFavoriteSession(), requests,
+            operation = { _, _, _, _ -> success() },
+            lastSuccessfulSyncAt = { if (++reads == 1) error("storage unavailable"); null })
+        controller.request(FavoriteSyncRequestKind.AUTO, 1)
+        runCurrent()
+        assertTrue(requests.isEmpty())
+        assertFalse(controller.state.value.isSyncing)
+        controller.request(FavoriteSyncRequestKind.AUTO, 2)
+        runCurrent()
+        assertEquals(listOf(Request(7, 2, false)), requests)
+    }
+
+    @Test
+    fun `same account reauthentication retains the completed synchronization cooldown`() = runTest {
+        val session = TestFavoriteSession()
+        val requests = mutableListOf<Request>()
+        val controller = controller(backgroundScope, session, requests, operation = { _, _, _, _ -> success() })
+        controller.request(FavoriteSyncRequestKind.AUTO)
+        runCurrent()
+        session.switchAccount(7)
+        controller.request(FavoriteSyncRequestKind.AUTO, 3)
+        runCurrent()
+        assertEquals(listOf(Request(7, 0, false)), requests)
+    }
+
+    @Test
+    fun `failed automatic synchronization can retry on a new request without a success cooldown`() = runTest {
+        val requests = mutableListOf<Request>()
+        var calls = 0
+        val controller = controller(backgroundScope, TestFavoriteSession(), requests, operation = { _, _, _, _ ->
+            if (++calls == 1) NetWorkResult.Error("offline") else success()
+        })
+        controller.request(FavoriteSyncRequestKind.AUTO, 1)
+        runCurrent()
+        assertFalse(controller.state.value.isSyncing)
+        controller.request(FavoriteSyncRequestKind.AUTO, 2)
+        runCurrent()
+        assertEquals(listOf(Request(7, 1, false), Request(7, 2, false)), requests)
     }
 
     @Test
@@ -444,6 +552,8 @@ class FavoriteSyncControllerTest {
         localMode: ConnectionModeStatus = com.par9uet.jm.favorites.alwaysNetworkLocalModeStatus(),
         hasFullSnapshot: suspend (Int) -> Boolean = { false },
         onCacheInitialized: () -> Unit = {},
+        lastSuccessfulSyncAt: suspend (Int) -> Long? = { null },
+        wallTimeSource: () -> Long = { 1_000_000L },
     ): FavoriteSyncController = FavoriteSyncController(
         session,
         { snapshot: FavoriteSessionSnapshot, folder: Int, force: Boolean,
@@ -453,9 +563,10 @@ class FavoriteSyncControllerTest {
         },
         applicationScope,
         localMode,
-        FavoriteAutoSyncCoordinator(intervalMillis, timeSource),
+        FavoriteAutoSyncCoordinator(intervalMillis, timeSource, wallTimeSource),
         hasFullSnapshot,
         onCacheInitialized,
+        lastSuccessfulSyncAt,
     )
 
     private fun success() = NetWorkResult.Success(

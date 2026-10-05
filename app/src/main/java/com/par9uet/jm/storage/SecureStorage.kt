@@ -2,7 +2,6 @@ package com.par9uet.jm.storage
 
 import android.content.Context
 import android.content.SharedPreferences
-import androidx.core.content.edit
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 
@@ -52,6 +51,35 @@ class SecureStorage(
     fun setStartupString(key: String, json: String): StorageWriteResult =
         writeEncrypted(startupPreferences, key, json)
 
+    internal fun setAuthSession(session: AuthSessionRecord): StorageWriteResult =
+        writeEncrypted(startupPreferences, AUTH_SESSION_KEY, gson.toJson(session), AUTH_LOGGED_OUT_KEY)
+
+    internal fun isLoggedOut(): Boolean = startupPreferences.getBoolean(AUTH_LOGGED_OUT_KEY, false)
+
+    /** No Keystore access is needed to durably revoke a session, including legacy records. */
+    @android.annotation.SuppressLint("ApplySharedPref", "UseKtx")
+    internal fun clearAuthSession(): Boolean {
+        val previous = runCatching {
+            listOf(AUTH_SESSION_KEY, "user").associateWith { startupPreferences.getString(it, null) }
+        }.getOrElse { return false }
+        val wasLoggedOut = runCatching { isLoggedOut() }.getOrElse { return false }
+        val committed = try {
+            startupPreferences.edit()
+                .remove(AUTH_SESSION_KEY)
+                .remove("user")
+                .putBoolean(AUTH_LOGGED_OUT_KEY, true)
+                .commit()
+        } catch (_: Exception) { false }
+        if (!committed) {
+            runCatching {
+                val rollback = startupPreferences.edit()
+                previous.forEach { (key, value) -> rollback.putString(key, value) }
+                rollback.putBoolean(AUTH_LOGGED_OUT_KEY, wasLoggedOut).commit()
+            }
+        }
+        return committed
+    }
+
     fun <T> get(key: String, type: java.lang.reflect.Type): StorageReadResult<T> =
         decodeResult(getString(key), type)
 
@@ -91,7 +119,12 @@ class SecureStorage(
 
     // Keystore-backed prefs must use Editor.commit() so a failed disk write is observable.
     @android.annotation.SuppressLint("ApplySharedPref", "UseKtx")
-    private fun writeEncrypted(preferences: SharedPreferences, key: String, json: String): StorageWriteResult {
+    private fun writeEncrypted(
+        preferences: SharedPreferences,
+        key: String,
+        json: String,
+        clearFlag: String? = null,
+    ): StorageWriteResult {
         // Encrypt before opening the editor. Failure preserves the last durable value and does
         // not invalidate the current in-memory identity during a temporary Keystore outage.
         val encrypted = try {
@@ -101,10 +134,28 @@ class SecureStorage(
         }
         // androidx edit{} returns Unit and defaults to apply(), which cannot report a failed
         // disk write. Call Editor.commit() so a false result maps to TemporaryUnavailable.
+        val previous = runCatching { preferences.getString(key, null) }
+            .getOrElse { return StorageWriteResult.TemporaryUnavailable }
+        val hadFlag = runCatching { clearFlag != null && preferences.contains(clearFlag) }
+            .getOrElse { return StorageWriteResult.TemporaryUnavailable }
+        val flagValue = runCatching { clearFlag?.let { preferences.getBoolean(it, false) } }
+            .getOrElse { return StorageWriteResult.TemporaryUnavailable }
         val committed = try {
-            preferences.edit().putString(key, encrypted).commit()
+            val editor = preferences.edit().putString(key, encrypted)
+            if (clearFlag != null) editor.remove(clearFlag)
+            editor.commit()
         } catch (_: Exception) {
             false
+        }
+        if (!committed) {
+            // Android updates its memory map even when the disk commit fails or throws.
+            runCatching {
+                val rollback = preferences.edit().putString(key, previous)
+                if (clearFlag != null) {
+                    if (hadFlag) rollback.putBoolean(clearFlag, flagValue == true) else rollback.remove(clearFlag)
+                }
+                rollback.commit()
+            }
         }
         return if (committed) StorageWriteResult.Success
         else StorageWriteResult.TemporaryUnavailable
@@ -125,17 +176,15 @@ class SecureStorage(
     fun <T> getStartup(key: String, type: java.lang.reflect.Type): StorageReadResult<T> =
         decodeResult(getStartupString(key), type)
 
-    fun remove(key: String) {
-        sharedPreferences.edit {
-            remove(key)
-        }
-    }
+    @android.annotation.SuppressLint("ApplySharedPref", "UseKtx")
+    fun remove(key: String): Boolean = try {
+        sharedPreferences.edit().remove(key).commit()
+    } catch (_: Exception) { false }
 
-    fun removeStartup(key: String) {
-        startupPreferences.edit {
-            remove(key)
-        }
-    }
+    @android.annotation.SuppressLint("ApplySharedPref", "UseKtx")
+    fun removeStartup(key: String): Boolean = try {
+        startupPreferences.edit().remove(key).commit()
+    } catch (_: Exception) { false }
 
     companion object {
         /** Names of the files that hold encoded values, for callers that inspect stored ciphertext. */

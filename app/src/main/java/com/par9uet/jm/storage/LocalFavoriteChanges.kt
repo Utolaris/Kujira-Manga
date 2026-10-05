@@ -66,10 +66,10 @@ class LocalFavoriteChangeManager(
         store.set(current.filterNot { it.accountId == change.accountId && it.albumId == change.albumId })
     }
 
-    /** 强制与远端对齐时丢弃全部待同步意图（可能包含未上云的收藏）。 */
-    fun clearAll(): Boolean = synchronized(lock) {
+    /** Discard only the account whose remote snapshot has been applied. */
+    fun clear(accountId: Int): Boolean = synchronized(lock) {
         val current = store.getOrNull() ?: return@synchronized false
-        if (current.isEmpty()) return@synchronized true
-        store.set(emptyList())
+        if (current.none { it.accountId == accountId }) return@synchronized true
+        store.set(current.filterNot { it.accountId == accountId })
     }
 }

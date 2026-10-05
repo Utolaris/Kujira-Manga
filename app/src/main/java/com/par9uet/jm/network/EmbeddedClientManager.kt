@@ -229,7 +229,7 @@ class EmbeddedClientManager(
      *
      * @param username 仅用于日志核对，不写入 SDK 客户端。
      */
-    fun activateCandidateSession(cookies: List<Cookie>, jwtToken: String?, username: String? = null): Boolean {
+    fun activateCandidateSession(cookies: List<Cookie>, jwtToken: String?, username: String?, identity: com.par9uet.jm.core.model.User): Boolean {
         val cookieNames = cookies.map { it.name }
         log(
             "Login",
@@ -255,7 +255,7 @@ class EmbeddedClientManager(
                 }
                 try {
                     shared.client.setCookies(cookies)
-                    if (!cookieStorage.setSession(cookies, jwtToken)) {
+                    if (!cookieStorage.setAuthenticatedSession(cookies, jwtToken, identity)) {
                         shared.client.setCookies(previous)
                         logError("Login", "activateCandidateSession: storage failed; retained previous cookies")
                         return false

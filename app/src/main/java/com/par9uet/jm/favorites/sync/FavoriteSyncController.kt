@@ -15,7 +15,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -38,7 +37,7 @@ interface FavoriteSyncRequester {
     suspend fun initializeForLogin()
 }
 
-/** Owns the application sync job, its session, progress and automatic trailing requests. */
+/** Owns the application sync job, its session, progress and shared completion cooldown. */
 class FavoriteSyncController(
     private val session: FavoriteSession,
     private val syncOperation: suspend (
@@ -52,6 +51,7 @@ class FavoriteSyncController(
     private val autoSyncCoordinator: FavoriteAutoSyncCoordinator = FavoriteAutoSyncCoordinator(),
     private val hasFullSnapshot: suspend (Int) -> Boolean = { false },
     private val onCacheInitialized: () -> Unit = {},
+    private val lastSuccessfulSyncAt: suspend (Int) -> Long? = { null },
 ) : FavoriteSyncRequester {
     private val lock = Any()
     private val _state = MutableStateFlow(FavoriteSyncUiState())
@@ -59,7 +59,7 @@ class FavoriteSyncController(
     private var observedSession = session.snapshot()
     private var requestGeneration = 0L
     private var syncJob: Job? = null
-    private var trailingJob: Job? = null
+    private var automaticRequestJob: Job? = null
     private var pendingInitialAccount: Int? = null
 
     init {
@@ -74,8 +74,8 @@ class FavoriteSyncController(
                     requestGeneration++
                     syncJob?.cancel()
                     syncJob = null
-                    trailingJob?.cancel()
-                    trailingJob = null
+                    automaticRequestJob?.cancel()
+                    automaticRequestJob = null
                     pendingInitialAccount = null
                     autoSyncCoordinator.reset()
                     _state.value = FavoriteSyncUiState()
@@ -103,13 +103,10 @@ class FavoriteSyncController(
             if (observedSession.accountId <= 0) return
             when (kind) {
                 FavoriteSyncRequestKind.AUTO -> {
-                    when (val result = autoSyncCoordinator.request(folderId, _state.value.isSyncing)) {
-                        is FavoriteAutoRequestResult.StartNow -> startSync(result.folderId, force = false)
-                        is FavoriteAutoRequestResult.Coalesced -> scheduleTrailing(result.trailingDelayMs)
-                    }
+                    requestAutomaticSync(folderId)
                 }
-                // Explicit refresh bypasses the automatic interval. Repeated taps during a sync
-                // are ignored; only automatic requests retain trailing work.
+                // Explicit refresh remains available during the automatic cooldown.
+                // Every request still shares the same single sync slot.
                 FavoriteSyncRequestKind.MANUAL, FavoriteSyncRequestKind.FORCE -> {
                     if (_state.value.isSyncing) return
                     val force = kind == FavoriteSyncRequestKind.FORCE
@@ -122,36 +119,44 @@ class FavoriteSyncController(
     private fun refreshSession() {
         val current = session.snapshot()
         if (current == observedSession) return
+        val accountChanged = current.accountId != observedSession.accountId
         observedSession = current
         requestGeneration++
         syncJob?.cancel()
         syncJob = null
-        trailingJob?.cancel()
-        trailingJob = null
+        automaticRequestJob?.cancel()
+        automaticRequestJob = null
         pendingInitialAccount = null
-        autoSyncCoordinator.reset()
+        if (accountChanged) autoSyncCoordinator.reset()
         _state.value = FavoriteSyncUiState()
     }
 
-    private fun scheduleTrailing(delayMs: Long) {
-        if (trailingJob?.isActive == true) return
+    private fun requestAutomaticSync(folderId: Int) {
+        if (_state.value.isSyncing || automaticRequestJob?.isActive == true) return
         val snapshot = observedSession
         lateinit var job: Job
         job = applicationScope.launch(start = CoroutineStart.LAZY) {
             try {
-                if (delayMs > 0) delay(delayMs)
+                val completedAt = lastSuccessfulSyncAt(snapshot.accountId)
                 synchronized(lock) {
-                    if (!session.isCurrent(snapshot) || _state.value.isSyncing) return@synchronized
-                    val folderId = autoSyncCoordinator.trailingDue() ?: return@synchronized
-                    startSync(folderId, force = false)
+                    if (automaticRequestJob !== job || !session.isCurrent(snapshot) || localMode.isLocalMode) {
+                        return@synchronized
+                    }
+                    val result = autoSyncCoordinator.request(folderId, _state.value.isSyncing, completedAt)
+                    if (result is FavoriteAutoRequestResult.StartNow) startSync(result.folderId, force = false)
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                // Failed storage reads must not start an unguarded request or crash startup.
+                logError("FavoritesSync", "Cannot read completion cooldown: ${error.message}")
             } finally {
                 synchronized(lock) {
-                    if (trailingJob === job) trailingJob = null
+                    if (automaticRequestJob === job) automaticRequestJob = null
                 }
             }
         }
-        trailingJob = job
+        automaticRequestJob = job
         job.start()
     }
 
@@ -163,7 +168,6 @@ class FavoriteSyncController(
             var failure: NetWorkResult.Error? = null
             var succeeded = false
             var notifyCacheInitialized = false
-            var startedInitialSync = false
             try {
                 val onProgress: (FavoriteSyncProgress) -> Unit = { progress ->
                     synchronized(lock) {
@@ -210,24 +214,17 @@ class FavoriteSyncController(
                                 errorKind = failure.kind,
                             )
                         }
+                        if (succeeded) autoSyncCoordinator.onSyncSucceeded()
                         if (succeeded && pendingInitialAccount == snapshot.accountId) {
                             if (force && folderId == FAVORITE_SCOPE_ALL) {
                                 pendingInitialAccount = null
                                 notifyCacheInitialized = true
                             } else {
                                 startSync(FAVORITE_SCOPE_ALL, force = true)
-                                startedInitialSync = true
                             }
                         }
-                        // 失败时**不立刻续跑**。后端拥塞的时段（例如晚间）如果失败后马上再起一轮，
-                        // 就会把失败叠成连续失败风暴 —— 每一轮都会重新走一遍 401 恢复 + 登录，
-                        // 用户看到的是"一直弹需要重新登录"。
-                        //
-                        // 这里刻意不动 coordinator 的状态：pending 请求留在原地，
-                        // 由下一个 30 秒窗口（AUTO 请求进来变 Coalesced → scheduleTrailing）自然消化。
-                        if (failure == null && !startedInitialSync) {
-                            autoSyncCoordinator.onSyncFinished()?.let { startSync(it, force = false) }
-                        }
+                        // Automatic requests are never replayed after success or failure.
+                        // A new entry after the completion cooldown may request the next sync.
                     }
                 }
                 if (notifyCacheInitialized && session.isCurrent(snapshot)) onCacheInitialized()

@@ -63,6 +63,7 @@ public class TestCacheDocumentsProvider extends DocumentsProvider {
         return cursor;
     }
     @Override public String createDocument(String parent, String mime, String name) throws FileNotFoundException {
+        if (parent.contains("renamed-marker-") && ".nomedia".equals(name)) name = ".nomedia.bin";
         File file = new File(file(parent), name);
         try {
             if (Document.MIME_TYPE_DIR.equals(mime)) file.mkdirs(); else file.createNewFile();

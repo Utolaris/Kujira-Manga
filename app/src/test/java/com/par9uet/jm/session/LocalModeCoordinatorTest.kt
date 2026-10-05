@@ -66,7 +66,7 @@ class LocalModeCoordinatorTest {
             ))
         }
         override suspend fun probeActiveSession() = NetWorkResult.Success(Unit)
-        override fun activateVerifiedSession(verified: CandidateSession) = true
+        override fun activateVerifiedSession(verified: CandidateSession, identity: com.par9uet.jm.core.model.User) = true
         override fun clearSession() = Unit
         override suspend fun getHistoryComicList(page: Int): NetWorkResult<ComicPage> = NetWorkResult.Error("unused")
         override suspend fun deleteHistoryComic(id: Int): NetWorkResult<Unit> = NetWorkResult.Error("unused")
@@ -114,7 +114,11 @@ class LocalModeCoordinatorTest {
         val refreshes: () -> Int,
     )
 
-    private fun fixture(failCollect: Boolean = false, failRefresh: Boolean = false): Fixture {
+    private fun fixture(
+        failCollect: Boolean = false,
+        failRefresh: Boolean = false,
+        afterRefresh: suspend (UserManager) -> Unit = {},
+    ): Fixture {
         val mode = FakeConnectionMode(true)
         val repository = Repository()
         val userStorage = object : UserStorage {
@@ -151,6 +155,7 @@ class LocalModeCoordinatorTest {
                 refreshes++
                 // 全量刷新期间必须持有编辑锁；exit/force-align 成功前都不得先解锁或先关模式。
                 assertTrue(operationGate.isTransitioning())
+                afterRefresh(userManager)
                 if (failRefresh) NetWorkResult.Error("refresh failed")
                 else NetWorkResult.Success(FavoriteSyncReport(0, 0, 0, 0, 0))
             },
@@ -251,6 +256,30 @@ class LocalModeCoordinatorTest {
         assertFalse(f.coordinator.isLocalMode)
         assertEquals(1, f.refreshes())
         assertTrue(f.changes.items.isEmpty())
+    }
+
+    @Test fun `force align keeps another accounts unpublished collection`() = runTest {
+        val f = fixture()
+        val other = LocalFavoriteChange(8, 22, true)
+        f.changes.items += other
+        f.mode.setLocalModeEnabled(8, true)
+        f.coordinator.forceAlignFavoritesWithRemote()
+        assertEquals(listOf(other), f.changes.items)
+        assertTrue(8 in f.mode.localModeAccountIds.value)
+        assertFalse(7 in f.mode.localModeAccountIds.value)
+    }
+
+    @Test fun `account switch after refresh keeps all pending changes and local modes`() = runTest {
+        val f = fixture(afterRefresh = { it.login("B", "pw") })
+        val pending = f.changes.items + LocalFavoriteChange(8, 22, true)
+        f.changes.items = pending
+        f.mode.setLocalModeEnabled(8, true)
+        f.coordinator.forceAlignFavoritesWithRemote()
+        assertEquals(8, f.userManager.currentSessionSnapshot().accountId)
+        assertEquals(pending, f.changes.items)
+        assertTrue(7 in f.mode.localModeAccountIds.value)
+        assertTrue(8 in f.mode.localModeAccountIds.value)
+        assertTrue(f.coordinator.transition.value is LocalModeTransition.Failed)
     }
 
     @Test fun `failed mode write stays local and skips remote sync`() = runTest {
