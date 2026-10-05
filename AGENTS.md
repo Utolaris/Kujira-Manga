@@ -1,65 +1,50 @@
 # Kujira-Manga 工作约定
 
-## 文档目录（docs/）
+## 文档
 
-项目说明集中在 **`docs/`**：
+`docs/` 放专题说明，根目录放 `ARCHITECTURE.md`（架构）、`CHANGELOG.md`（版本）、`README.md`（用户向）。
+索引见 [docs/README.md](docs/README.md)。
 
-| 文件 | 用途 |
+| 主题 | 文档 |
 |---|---|
-| `docs/README.md` | 文档索引 |
-| `docs/android-cli.md` | 统一调试 CLI |
-| `docs/instrumented-tests.md` | 真机插桩测试 |
-| `docs/release-signing.md` | 本地签名与密钥 |
-| `docs/release-flow.md` | 分支模型、Release CI 与发版流程 |
+| 调试 CLI（`./scripts/android`） | [docs/android-cli.md](docs/android-cli.md) |
+| 真机插桩测试、HyperOS 限制 | [docs/instrumented-tests.md](docs/instrumented-tests.md) |
+| 发布签名与钥匙串 | [docs/release-signing.md](docs/release-signing.md) |
+| 分支模型、Release CI、发版步骤 | [docs/release-flow.md](docs/release-flow.md) |
 
-根目录：`ARCHITECTURE.md`（架构）、`CHANGELOG.md`（版本）、`README.md`（用户向）。
+约定：新文档进 `docs/` 并登记索引；已关闭的审计报告与一次性附件修完即删；**文档与代码不符视为缺陷，改文档**。
 
-- 新文档放进 `docs/`，并在 `docs/README.md` 登记。
-- **不要**把已关闭的审计报告、一次性复现附件长期留在仓库；修完即删。
-- 与代码不符的文档视为缺陷，直接改文档。
+## 调试
 
-## 调试工具（默认）
-
-真机/模拟器调试**一律使用**仓库内 CLI：
-
-```bash
-./scripts/android doctor
-./scripts/android devices
-./scripts/android install-debug
-./scripts/android logcat
-./scripts/android test-class <FQCN>
-```
-
-- 不要再裸写一长串 `adb install` / `adb logcat`；优先 `./scripts/android <子命令>`。
-- 细节见 `docs/android-cli.md`；插桩见 `docs/instrumented-tests.md`。
-- 新调试能力写进 `scripts/android`，不要另起碎片脚本。
+真机/模拟器操作一律走 `./scripts/android`（`doctor` / `devices` / `install-debug` / `logcat` / `exported-logs` / `screenshot` …），不要裸写一长串 `adb`。新调试能力加进这个 CLI，别另起碎片脚本。
 
 ## 构建
 
-- JDK：**Eclipse Temurin 21**（`brew install --cask temurin@21`，装在
-  `/Library/Java/JavaVirtualMachines/temurin-21.jdk`）。GraalVM 会挂 AGP `JdkImageTransform`。
-  构建脚本由 `scripts/jdk-guard.sh` 强制校验（找不到合格 JDK 时直接失败并给出安装命令）。
-  **不要**把本机 JDK 绝对路径写进 `gradle.properties` 的 `org.gradle.java.home`（会打挂 CI）。
-- SDK：`local.properties` → `/opt/homebrew/share/android-commandlinetools`。
-- 单测：`./gradlew :app:testDebugUnitTest`
-- Release 签名密码：环境变量 `KUJIRA_MANGA_RELEASE_STORE_PASSWORD` / `KUJIRA_MANGA_RELEASE_KEY_PASSWORD`。
-  密码存在 macOS 钥匙串条目 **`Kujira-Manga-Key`**（acct `Utolaris`）里，构建前先取值：
-  `eval "$(./scripts/android signing-env)"`。密钥库 `release-key/Kujira-Manga-Key.p12`，别名 `Kujira-Manga-Key`。
-  细节见 `docs/release-signing.md`。
+- JDK 必须是 **Eclipse Temurin 21**（`brew install --cask temurin@21`）；GraalVM 会挂 AGP `JdkImageTransform`。`scripts/jdk-guard.sh` 会在构建前拦截。
+- **不要**把本机 JDK 绝对路径写进 `gradle.properties` 的 `org.gradle.java.home`（会打挂 CI）。
+- SDK 路径在 `local.properties`。
+- 打 Release 前取签名密码：`eval "$(./scripts/android signing-env)"`。
+
+## 验证纪律
+
+默认验证链（改代码后跑）：
+
+```bash
+./gradlew :app:testDebugUnitTest
+```
+
+- 改了 `app/src/androidTest/**` 或其依赖的生产代码，额外跑 `./gradlew :app:compileDebugAndroidTestKotlin` ——它**不在**默认任务链里，红了不会有任何提示。
+- **真机插桩测试默认不做**。只有用户明确要求，或改动只可能在真机行为上体现（文件型 Room、SAF、`PdfDocument`、`WorkerParameters`、Compose/Glass 运行时）时才跑 `./scripts/android test-class <FQCN>`，跑完按 [docs/instrumented-tests.md](docs/instrumented-tests.md) 判定结果。
+- 搜索用 `rg`（或 IDE 的 Grep），不要用 macOS 自带 `grep`（BSD grep 不支持 `\|` 交替，会静默匹配不到）。
 
 ## 分支与发版
 
-- **日常开发在 `canary`**；推送前跑相关单测。发版也在 `canary` 完成。
-- **Release CI** 在 `canary` 上、**当且仅当** `CHANGELOG.md` 有改动的 push 时触发
-  （官方/社区 Actions 钉**最新 major**，清单见 `docs/release-flow.md`），构建签名 Release APK 并生成 draft Release
-  （正文留空，不自动生成更新内容）。完整流程见 `docs/release-flow.md`。
-- 发版前：更新 `version.properties` 与 `CHANGELOG.md`；安全/架构变更后同步核对 `ARCHITECTURE.md`。
-- 临时分支合入 `canary` 后删除；CI/密钥/流程变更先改文档与 workflow。
-
-### 发布 Release
-
-当用户要求发布 release 时：
-
-1. 更新 `CHANGELOG.md`（顶部新增该版本章节）与 `version.properties`。
-2. 推送全部代码到远端（`canary`）。`CHANGELOG.md` 变更会触发 CI 自动构建，耗时通常超过 5 分钟。
-3. 确认产物正确（APK Artifact 与 draft Release 附件）后，发布 release 并写更新内容。
+- 日常开发在 **`canary`**，发版也在 `canary`；临时分支合入后删除。
+- **日常提交不要碰 `CHANGELOG.md`。** 写不写随你，但**推送前必须确认它是干净的**——
+  Release CI 在 `canary` 上、**当且仅当 `CHANGELOG.md` 有改动**的 push 触发，
+  随手带一个空章节或半句进去就会白烧一轮 5 分钟以上的 CI 并产出一个空 draft Release。
+  积攒的更新内容写在本地，要发版时再合并成章节一起推。
+- **只有确定要构建 release 时才动 `CHANGELOG.md`**（与 `version.properties` 同步），然后：
+  推送 `canary` → 等 CI（通常 >5 分钟）→ 核对 APK 产物 → 发布 draft 并写更新内容。
+  细节见 [docs/release-flow.md](docs/release-flow.md)。
+- 架构或安全相关变更后同步核对 `ARCHITECTURE.md`。密钥库、密码、`*.apk` 一律不进 git。

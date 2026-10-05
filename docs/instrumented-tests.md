@@ -2,7 +2,12 @@
 
 JVM 测试覆盖不了真机行为：文件型 Room、真实文件系统 / SAF、`PdfDocument`、`WorkerParameters`。这些走 `app/src/androidTest`。
 
-> 日常调试请优先用统一 CLI：`./scripts/android test` / `./scripts/android test-class <FQCN>`，详见 [android-cli.md](./android-cli.md)。下文是底层脚本细节。
+> **默认不做。** 日常改动的验证链是 `./gradlew :app:testDebugUnitTest`。
+> 只有用户明确要求，或改动只可能在真机行为上体现（文件型 Room、SAF、`PdfDocument`、
+> `WorkerParameters`、Compose/Glass 运行时）时才跑本文档。详见 [AGENTS.md](../AGENTS.md)。
+>
+> 跑的时候请优先用统一 CLI：`./scripts/android test` / `./scripts/android test-class <FQCN>`，
+> 详见 [android-cli.md](./android-cli.md)。下文是底层脚本细节。
 
 ## 怎么跑
 
@@ -58,23 +63,7 @@ adb shell appops get kujira.manga.debug | grep 10021
   - `FAILURES!!!` / `STATUS_CODE: -1`（异常）/ `-2`（断言失败）/ 汇总 `Failures|Errors: [1-9]` → 失败
   - 没跑到用例、没有 `INSTRUMENTATION_CODE: -1`、数不出用例数 → 失败
 - 原始输出：`build/instrumented-output.txt`；`-l` 时 logcat：`build/instrumented-logcat.txt`。
-
-手工等价命令：
-
-```bash
-adb install -r -t app/build/outputs/apk/debug/*.apk
-adb install -r -t app/build/outputs/apk/androidTest/debug/*.apk
-adb shell appops set --user 0 kujira.manga.debug      10021 allow
-adb shell appops set --user 0 kujira.manga.debug.test 10021 allow
-
-adb shell am instrument -w -r kujira.manga.debug.test/androidx.test.runner.AndroidJUnitRunner
-adb shell am instrument -w -r -e class <类名> \
-  kujira.manga.debug.test/androidx.test.runner.AndroidJUnitRunner
-adb shell am instrument -w -r -e class <类名>#<方法名> \
-  kujira.manga.debug.test/androidx.test.runner.AndroidJUnitRunner
-adb shell am instrument -w -r -e package <包名> \
-  kujira.manga.debug.test/androidx.test.runner.AndroidJUnitRunner
-```
+  需要底层等价命令时直接读 `scripts/run-instrumented-tests.sh`，它是唯一实现。
 
 ## 测试集
 
@@ -83,14 +72,14 @@ adb shell am instrument -w -r -e package <包名> \
 | backup | `BackupRestoreOperationsTest` | 备份编解码 + 下载排队 |
 | cache | `DocumentCacheStorageTest` | SAF 文档 |
 | cache.atom | `CacheFilesDeviceTest` | 真实删除；`reader_pages` 租约目录不被普通清理删掉 |
-| cache.migration | `CacheMigrationDeviceTest` | 文件↔SAF 互迁、旧 ZIP、不可读来源不切目录 |
-| database | `AppDatabaseMigrationTest` / `FavoriteStoreRealDatabaseTest` | Room migration；文件型 SQLite、中文搜索、账号隔离 |
+| cache.migration | `CacheMigrationDeviceTest` | 文件↔SAF 互迁、旧 ZIP、不可读来源不切目录；下载/迁移创建 `.nomedia`，启动补齐已有漫画目录，不屏蔽父目录 |
+| database | `AppDatabaseMigrationTest` / `FavoriteStoreRealDatabaseTest` | Room migration；文件型 SQLite、中文搜索、账号隔离；各收藏夹共享的同步完成时间在重开数据库后保留 |
 | download | `DownloadContentFilesTest` | 章节页文件读写 |
 | download.export | `PdfExportDeviceTest` | 真实 `PdfDocument` + SAF；失败时用 `DocumentsContract.deleteDocument` 清不完整 PDF |
 | launcher | `LauncherDisguiseInstrumentedTest` | 桌面别名 |
 | network | `DohStartupRaceTest` | DoH 启动竞态 |
 | reader.atom | `LocalChapterFilesDeviceTest` | 三种历史布局、自然排序、ZIP |
-| storage | `SessionPersistenceTest`、`OfficialAuthSessionPersistenceTest` | 会话落盘；加密 JWT 与 AVS 成对持久化 |
+| storage | `SessionPersistenceTest`、`OfficialAuthSessionPersistenceTest` | 会话落盘；身份/JWT/AVS 单记录持久化与退出撤销；独立 preferences 不影响运行账号 |
 | store | `FavoriteStoreSyncTest` | 收藏同步与 Room 事务（测试包仍在 `store`，主源码 `store` 已拆到领域包） |
 | network | `AppHttpClientDoHDeviceTest` | 真实图片健康探测必须调用注入的 DNS，禁止绕过到系统 DNS |
 | ui / ui.glass / ui.navigation / ui.viewModel | `FavoriteSyncGridTest`、`MainNavigationFlowTest`、`NavigationInteractionTest`、`SearchResultRefreshContentTest`、`PagingRefreshRetryTest`、`GlassCaptureHostSettleTest`、`RetainedMainNavigationTest`、`ReaderFavoriteMutationTest` | Compose 必须 RESUMED；Glass 静态源要能收敛；分页网格刷新失败应保留列表并可重试（组件测试，不代表真实 App 后台恢复验证） |

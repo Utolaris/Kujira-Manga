@@ -20,10 +20,13 @@ canary  ──(改动 CHANGELOG.md 并 push)──►  GitHub Actions  ──►
    ```bash
    ./gradlew :app:testDebugUnitTest
    ```
-2. **写版本材料**（AI/维护者）：
+2. **写版本材料**（AI/维护者）——**这一步只在真的要构建 release 时做**：
    - `version.properties`：`VERSION_NAME` / `VERSION_CODE`
    - `CHANGELOG.md`：在顶部新增该版本章节（用户可见说明）
    - 同步 README 中的「当前版本」等过期字段
+
+   > 日常开发**不要提前改** `CHANGELOG.md`。CI 靠它的 diff 触发，误触会白烧一轮构建
+   > 并产出空 draft Release。积攒的更新内容先放本地，要发版时再合并成章节。
 3. **推送全部代码到远端**：
    ```bash
    git push origin canary

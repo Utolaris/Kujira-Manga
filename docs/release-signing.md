@@ -41,10 +41,11 @@ security find-generic-password -s Kujira-Manga-Key -w   # 会弹钥匙串授权
 ## 打 Release 包
 
 ```bash
-export JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home
 eval "$(./scripts/android signing-env)"
 ./gradlew :app:assembleRelease --console=plain
 ```
+
+JDK 由 `scripts/jdk-guard.sh` 强制校验为 Temurin 21，不用手动 `export JAVA_HOME`。
 
 产物落在 `app/build/outputs/apk/release/kujira-manga_v<版本>_<git短哈希>.apk`。
 
