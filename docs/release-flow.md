@@ -35,8 +35,9 @@ canary  ──(改动 CHANGELOG.md 并 push)──►  GitHub Actions  ──►
 4. **确认产物**：Actions 上传 APK Artifact，并创建/更新对应 tag 的 **draft** GitHub Release（正文为空）。
 5. **发布**：核对 draft Release 附件与 `CHANGELOG.md` 对应章节后，写好更新内容并发布：
    ```bash
-   gh release edit "vX.Y.Z" --body-file <更新内容.md> --draft=false
+   gh release edit "vX.Y.Z" --notes-file <更新内容.md> --draft=false
    ```
+   ⚠️ flag 是 `--notes-file`（不是 `--body-file`）。
    无 CI 签名时的兜底（本地签名）仍见 [release-signing.md](./release-signing.md)。
 
 ## Release CI

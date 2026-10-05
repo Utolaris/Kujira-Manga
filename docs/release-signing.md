@@ -11,7 +11,7 @@ Release 变体的签名密钥**不入库**：密钥库文件与密码分开存�
 | 钥匙串里存的是什么 | 密钥库的 `storePassword`（同一密码也用作 `keyPassword`） |
 | 密钥库文件 | `release-key/Kujira-Manga-Key.p12`（PKCS#12，已被 `.gitignore` 忽略） |
 | 密钥库别名（alias） | `Kujira-Manga-Key` |
-| 证书主体 | `CN=Kujira-Manga, OU=Release, O=Utolaris`，RSA 4096 |
+| 证书主体 | `CN=JMcomic Plus, OU=Release, O=Utolaris, L=Shanghai, ST=Shanghai, C=CN`，RSA 4096（v1.4.4 更名时未重签，`CN` 仍是旧名，指纹与文档记录一致） |
 | 环境变量 | `KUJIRA_MANGA_RELEASE_STORE_PASSWORD` / `KUJIRA_MANGA_RELEASE_KEY_PASSWORD` |
 
 > 旧的 `jmcomic-plus-release-signing` 钥匙串条目与 `release-key/jmcomic-plus-release.p12`
@@ -56,7 +56,7 @@ JDK 由 `scripts/jdk-guard.sh` 强制校验为 Temurin 21，不用手动 `export
 ./scripts/android apk-sign app/build/outputs/apk/release/*.apk
 ```
 
-期望：包名 `kujira.manga`、`versionName` 与 `version.properties` 一致、证书主体 `CN=Kujira-Manga, OU=Release, O=Utolaris`、v2 方案通过。
+期望：包名 `kujira.manga`、`versionName` 与 `version.properties` 一致、证书主体与上表一致、v2 方案通过。
 若 `apk-sign` 报「未签名」或证书是 debug 证书，说明环境变量没注入成功，
 Gradle 会静默产出未签名 APK —— 别急着上传。
 
