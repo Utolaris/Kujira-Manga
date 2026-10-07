@@ -3,6 +3,7 @@ package com.par9uet.jm.ui.screens.downloadScreen
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -216,6 +217,9 @@ fun DownloadComicDetailScreen(
                     detailState.authorList.forEach {
                         key(it) {
                             Text(
+                                modifier = Modifier.clickable {
+                                    mainNavController.navigate("comicSearchResult/${Uri.encode(it)}")
+                                },
                                 text = it,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 18.sp,

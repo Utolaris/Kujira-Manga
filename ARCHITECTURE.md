@@ -89,25 +89,30 @@ data/ repository/ retrofit/   历史命名保留
 
 ## 耦合现状
 
-`python3 scripts/check-coupling.py`（**2026-10-05 / canary**）。口径：模块 = 一二级包目录，
-细分模块单列；Ce = import 到的模块数，Ca = 依赖它的模块数，I = Ce/(Ce+Ca)。
-下表只保留决策相关行，完整列表以脚本输出为准。
+`python3 scripts/check-coupling.py`（**2026-10-05 20:55 / canary，含本次改动**）。
+口径：模块 = 一二级包目录，**细分模块单列**（`core/model` 与 `core` 根目录分开、
+`reader/atom` 与 `reader` 根包分开）；Ce = import 到的模块数，Ca = 依赖它的模块数，
+I = Ce/(Ce+Ca)。下表只保留决策相关行，完整列表以脚本输出为准。
+
+⚠️ **脚本口径 ≠ 递归总数**：`core` 行只算根目录 3 文件/122 行（`core/model`、
+`core/network` 另列）；`reader` 行只算根包 16 文件/2387 行。要总数得自己 `find -name '*.kt'`。
 
 | 模块 | 文件 | 行数 | Ce | Ca | I | 判断 |
 | --- | --- | --- | --- | --- | --- | --- |
 | `di` | 9 | 785 | 32 | 1 | 0.97 | 组合根，合法 |
-| `ui/screens` | 48 | 16,821 | 22 | 1 | 0.96 | 最大一块（16.8k 行）；直连已清零，见「表现层直连」 |
+| `ui/screens` | 48 | 16,825 | 22 | 1 | 0.96 | 最大一块；直连已清零，见「表现层直连」 |
 | `ui/viewModel` | 18 | 3,893 | 27 | 3 | 0.90 | L2；扇出最高但多为契约与偏好 |
 | `ui/components` | 22 | 2,224 | 10 | 2 | 0.83 | 已收窄，无 L3/L4 领域依赖 |
-| `favorites/data` | 14 | 1,251 | 10 | 3 | 0.77 | Room + 窄端口 |
 | `favorites/presentation` | 2 | 559 | 7 | 2 | 0.78 | L2 |
+| `favorites/data` | 14 | 1,251 | 10 | 3 | 0.77 | Room + 窄端口 |
+| `reader`（**仅根包**） | 16 | 2,387 | 8 | 6 | 0.57 | 根包说明见「阅读器链路」 |
 | `network` | 17 | 2,008 | 5 | 11 | 0.31 | DoH / RemoteConfig / 内置客户端 |
 | `storage` | 17 | 2,304 | 5 | 15 | 0.25 | 偏好与持久化收口 |
-| `data` | 20 | 1,403 | 0 | 24 | 0.00 | 零出度契约，不要动 |
-| `utils` | 14 | 844 | 1 | 22 | 0.04 | 稳定，不要动 |
-| `core` | 15 | 375 | ≤2 | 14–19 | 低 | 共享 DTO 与 `NetWorkResult` |
+| `core`（**仅根目录**） | 3 | 122 | 2 | 15 | 0.12 | `BaseRepository`、`ToastManager` |
+| `core/model` | 5 | 101 | 0 | 9 | 0.00 | 共享 DTO，**真正的零出度** |
+| `utils` | 14 | 848 | 1 | 28 | 0.03 | 稳定，不要动 |
+| `data`（= `data/models`） | 16 | 422 | 0 | 24 | 0.00 | 零出度契约，不要动（`data/comic` 另列） |
 | 根包（`App` / `MainActivity` / `JmApplication`） | 3 | 739 | 1–12 | 0 | 1.00 | 入口 |
-| `reader`（含根包 internal） | 22 | 3,254 | 8 | 6 | 0.57 | 根包说明见「阅读器链路」 |
 
 `ui/screens` 内最大文件：`ComicDetailScreen` 915、`LocalSettingScreen` 851、
 `BackupRestoreScreen` 781、`ComicReadScreen` 736、`FavoritesModalHost` 734、
