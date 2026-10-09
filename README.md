@@ -8,7 +8,7 @@
 <br>
 
 <div align="center">
-  **系统要求：Android 11（API 30）及以上**
+  系统要求：Android 11（API 30）及以上
 </div>
 
 ---
