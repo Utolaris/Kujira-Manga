@@ -1,7 +1,7 @@
 <div align="center">
   <img src="design/logo_readme.png" alt="Kujira-Manga" width="140">
   <h1>Kujira-Manga</h1>
-  <p>基于 <a href="https://18comic.vip">禁漫天堂</a> 深度魔改的 Android 客户端<br>
+  <p> <a href="https://18comic.vip">禁漫天堂</a> 第三方 Android  App<br>
   Kotlin + Jetpack Compose + Material 3，四层架构，Room 本地库，Retrofit/OkHttp 网络层，Koin 依赖注入</p>
 </div>
 
