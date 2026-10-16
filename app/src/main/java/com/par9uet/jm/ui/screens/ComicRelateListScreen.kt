@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.dp
 import com.par9uet.jm.ui.components.Comic
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.components.adaptiveComicGridCells
+import com.par9uet.jm.ui.components.comicGridMinCellSize
 import com.par9uet.jm.ui.viewModel.ComicDetailViewModel
 import com.par9uet.jm.contentfilter.filterBlockedTags
 import org.koin.compose.viewmodel.koinActivityViewModel
@@ -32,7 +33,7 @@ fun ComicRelateListScreen(
                     ?: emptyList()
             }
             LazyVerticalGrid(
-                columns = adaptiveComicGridCells(),
+                columns = adaptiveComicGridCells(minSize = comicGridMinCellSize()),
                 verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.Top),
                 horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.Start),
                 contentPadding = PaddingValues(

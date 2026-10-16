@@ -40,6 +40,7 @@ import com.par9uet.jm.ui.components.ComicSkeleton
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.components.LocalComicGridScrolling
 import com.par9uet.jm.ui.components.adaptiveComicGridCells
+import com.par9uet.jm.ui.components.comicGridMinCellSize
 import com.par9uet.jm.ui.glass.AppGlassTopBar
 import com.par9uet.jm.ui.glass.ChromeMode
 import com.par9uet.jm.ui.glass.GlassConfirmDialog
@@ -52,14 +53,15 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import org.koin.compose.viewmodel.koinActivityViewModel
 
 @Composable
-private fun UserHistoryComicSkeleton() {
+private fun UserHistoryComicSkeleton(gridColumns: Int) {
     Column(
         modifier = Modifier
             .fillMaxSize()
     ) {
         LazyVerticalGrid(
             modifier = Modifier.fillMaxSize(),
-            columns = adaptiveComicGridCells(0),
+            // 与真实网格同源：用户设置了固定列数时骨架必须一致，自适应列数只在未设置时用。
+            columns = adaptiveComicGridCells(gridColumns, minSize = comicGridMinCellSize()),
             verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Top),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(
@@ -158,7 +160,10 @@ fun UserHistoryComicScreen(
                         itemCount = comics.size,
                     ),
                     modifier = Modifier.fillMaxSize(),
-                    columns = adaptiveComicGridCells(miscSettings.gridColumns.history),
+                    columns = adaptiveComicGridCells(
+                        columns = miscSettings.gridColumns.history,
+                        minSize = comicGridMinCellSize(),
+                    ),
                     verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Top),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     contentPadding = PaddingValues(
@@ -193,7 +198,7 @@ fun UserHistoryComicScreen(
             }
         } else if (historyPageState.loading && historyPageState.items.isEmpty()) {
             Box(modifier = Modifier.padding(top = topContentPadding)) {
-                UserHistoryComicSkeleton()
+                UserHistoryComicSkeleton(gridColumns = miscSettings.gridColumns.history)
             }
         } else if (historyPageState.items.isEmpty()) {
             Box(
@@ -262,7 +267,7 @@ private fun HistoryComicGrid(
         LazyVerticalGrid(
             state = gridState,
             modifier = Modifier.fillMaxSize(),
-            columns = adaptiveComicGridCells(gridColumns),
+            columns = adaptiveComicGridCells(gridColumns, minSize = comicGridMinCellSize()),
             verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Top),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(

@@ -46,6 +46,7 @@ import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.components.PullRefreshAndLoadMoreGrid
 import com.par9uet.jm.ui.components.YearMonthSelectDialog
 import com.par9uet.jm.ui.components.adaptiveComicGridCells
+import com.par9uet.jm.ui.components.comicGridMinCellSize
 import com.par9uet.jm.ui.glass.GlassAnchoredMenu
 import com.par9uet.jm.ui.glass.GlassMenuAlignment
 import com.par9uet.jm.ui.glass.GlassMenuItem
@@ -74,12 +75,13 @@ internal fun searchResultBackTarget(previousRoute: String?): SearchResultBackTar
 @Composable
 private fun ComicSearchResultSkeleton(
     gridColumns: Int,
+    minSize: Dp,
     modifier: Modifier = Modifier,
 ) {
     // 骨架与结果列表共用同一套 GridCells，避免 3 列占位换成 N 列内容时的布局跳变。
     LazyVerticalGrid(
         modifier = modifier.fillMaxSize(),
-        columns = adaptiveComicGridCells(gridColumns),
+        columns = adaptiveComicGridCells(gridColumns, minSize = minSize),
         verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.Top),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         contentPadding = PaddingValues(10.dp),
@@ -106,6 +108,7 @@ internal fun SearchResultRefreshContent(
         // 已有缓存页时 Loading 只发生在下拉刷新/重连：继续展示内容，避免从详情返回闪骨架。
         refreshState is LoadState.Loading && itemCount == 0 -> ComicSearchResultSkeleton(
             gridColumns = searchGridColumns,
+            minSize = comicGridMinCellSize(),
             modifier = Modifier
                 .fillMaxSize()
                 .padding(top = topContentPadding),
@@ -312,7 +315,10 @@ fun ComicSearchResultScreen(
                 modifier = Modifier.fillMaxSize(),
                 lazyPagingItems = comicSearchLazyPagingItems,
                 key = { it.id },
-                columns = adaptiveComicGridCells(miscSettings.gridColumns.search),
+                columns = adaptiveComicGridCells(
+                    columns = miscSettings.gridColumns.search,
+                    minSize = comicGridMinCellSize(),
+                ),
                 contentPadding = PaddingValues(
                     start = 10.dp,
                     end = 10.dp,

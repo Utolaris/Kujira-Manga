@@ -54,9 +54,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.par9uet.jm.ui.components.Comic
 import com.par9uet.jm.ui.components.ComicSkeleton
-import com.par9uet.jm.ui.components.TabletComicGridMinCellSize
 import com.par9uet.jm.ui.components.adaptiveComicGridCells
-import com.par9uet.jm.ui.models.LocalTabletLayoutEnabled
+import com.par9uet.jm.ui.components.comicGridMinCellSize
 import com.par9uet.jm.ui.glass.AppGlassTopBar
 import com.par9uet.jm.ui.glass.GlassAnchoredMenuState
 import com.par9uet.jm.ui.glass.glassMenuAnchor
@@ -128,11 +127,7 @@ internal fun HomeScreen(
     val blockedTags by homeViewModel.blockedTags.collectAsState()
     val miscSettings by homeViewModel.misc.collectAsState()
     // 骨架与真实网格共用的自适应最小单元格：平板布局下更大，列数才一致。
-    val gridMinCellSize = if (LocalTabletLayoutEnabled.current) {
-        TabletComicGridMinCellSize
-    } else {
-        118.dp
-    }
+    val gridMinCellSize = comicGridMinCellSize()
     val pullRevealPadding = 36.dp * pullDownState.progress
     val selectedCategoryId = homeState.selectedCategoryId
     val selectedState = selectedCategoryId?.let { homeState.states[it] }

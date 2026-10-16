@@ -33,9 +33,8 @@ import coil.compose.AsyncImage
 import com.par9uet.jm.R
 import com.par9uet.jm.ui.components.Comic
 import com.par9uet.jm.ui.components.PullRefreshAndLoadMoreGrid
-import com.par9uet.jm.ui.components.TabletComicGridMinCellSize
 import com.par9uet.jm.ui.components.adaptiveComicGridCells
-import com.par9uet.jm.ui.models.LocalTabletLayoutEnabled
+import com.par9uet.jm.ui.components.comicGridMinCellSize
 import com.par9uet.jm.ui.interaction.pullDownToAction
 import com.par9uet.jm.ui.interaction.PullDownActionState
 import com.par9uet.jm.ui.interaction.favoritesListPositionKey
@@ -118,7 +117,7 @@ internal fun UserCollectComicScreen(
             key = { it.id },
             columns = adaptiveComicGridCells(
                 columns = miscSettings.gridColumns.collect,
-                minSize = if (LocalTabletLayoutEnabled.current) TabletComicGridMinCellSize else 118.dp,
+                minSize = comicGridMinCellSize(),
             ),
             gridState = gridState,
             verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.Top),

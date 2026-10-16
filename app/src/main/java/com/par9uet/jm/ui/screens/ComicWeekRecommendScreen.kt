@@ -35,6 +35,7 @@ import com.par9uet.jm.ui.components.PullRefreshAndLoadMoreGrid
 import com.par9uet.jm.ui.components.SelectDialog
 import com.par9uet.jm.ui.components.SelectOption
 import com.par9uet.jm.ui.components.adaptiveComicGridCells
+import com.par9uet.jm.ui.components.comicGridMinCellSize
 import com.par9uet.jm.ui.interaction.ListPositionKeyWeek
 import com.par9uet.jm.ui.interaction.rememberRestoringGridState
 import com.par9uet.jm.ui.viewModel.WeekViewModel
@@ -52,7 +53,7 @@ private fun ComicWeekRecommendSkeleton(
 ) {
     LazyVerticalGrid(
         modifier = modifier.fillMaxSize(),
-        columns = adaptiveComicGridCells(),
+        columns = adaptiveComicGridCells(minSize = comicGridMinCellSize()),
         verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.Top),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         contentPadding = PaddingValues(
@@ -169,7 +170,7 @@ fun ComicWeekRecommendScreen(
                 lazyPagingItems = weekRecommendComicPagingItems,
                 gridState = gridState,
                 key = { it.id },
-                columns = adaptiveComicGridCells(),
+                columns = adaptiveComicGridCells(minSize = comicGridMinCellSize()),
                 contentPadding = PaddingValues(
                     start = 10.dp,
                     end = 10.dp,

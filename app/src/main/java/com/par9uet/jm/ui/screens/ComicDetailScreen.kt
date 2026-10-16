@@ -171,41 +171,107 @@ private fun ComicInfoListItem(
 }
 
 @Composable
-private fun ComicDetailSkeleton(topContentPadding: Dp) {
+private fun ComicDetailSkeleton(id: Int, headerTopPadding: Dp) {
+    val isTabletLayout = LocalTabletLayoutEnabled.current
     val scrollState = rememberScrollState()
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(scrollState)
-            .padding(top = topContentPadding),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+            .verticalScroll(scrollState),
+        verticalArrangement = Arrangement.spacedBy(ComicDetailSectionSpacing),
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(0.75f)
-                .shimmer()
-        )
+        Box(modifier = Modifier.fillMaxWidth()) {
+            // 模糊封面背景只依赖 comicId：骨架期就开加载，内容就位时背景已经在画，
+            // 骨架与新设计之间不再有可感知的切换。
+            CoverBlurredBackground(
+                comicId = id,
+                remoteHost = LocalRemoteImageHost.current,
+                modifier = Modifier.matchParentSize(),
+            )
+            if (isTabletLayout) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, top = headerTopPadding, end = 16.dp, bottom = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(18.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .weight(0.42f)
+                            .widthIn(max = 320.dp)
+                            .aspectRatio(0.75f)
+                            .clip(MaterialTheme.shapes.small)
+                            .shimmer(),
+                    )
+                    Column(
+                        modifier = Modifier.weight(0.58f),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        SkeletonMetadataBars()
+                    }
+                }
+            } else {
+                Column(modifier = Modifier.padding(top = headerTopPadding)) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = ComicDetailHorizontalPadding + 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(180.dp)
+                                .aspectRatio(0.75f)
+                                .clip(MaterialTheme.shapes.small)
+                                .shimmer(),
+                        )
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            SkeletonMetadataBars()
+                        }
+                    }
+                }
+            }
+        }
         Column(
             modifier = Modifier.padding(horizontal = ComicDetailHorizontalPadding),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(0.8f)
-                    .height(36.dp)
-                    .clip(MaterialTheme.shapes.extraSmall)
-                    .shimmer()
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(0.4f)
-                    .height(34.dp)
-                    .clip(MaterialTheme.shapes.extraSmall)
-                    .shimmer()
-            )
+            TagSkeletonRows()
         }
     }
+}
+
+/** 标题/作者/统计条的近似占位，几何对齐 ComicTitleAndAuthors + CompactStatsRow。 */
+@Composable
+private fun SkeletonMetadataBars() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth(0.9f)
+            .height(26.dp)
+            .clip(MaterialTheme.shapes.small)
+            .shimmer()
+    )
+    Box(
+        modifier = Modifier
+            .fillMaxWidth(0.65f)
+            .height(26.dp)
+            .clip(MaterialTheme.shapes.small)
+            .shimmer()
+    )
+    Box(
+        modifier = Modifier
+            .fillMaxWidth(0.55f)
+            .height(14.dp)
+            .clip(MaterialTheme.shapes.small)
+            .shimmer()
+    )
+    Box(
+        modifier = Modifier
+            .fillMaxWidth(0.35f)
+            .height(12.dp)
+            .clip(MaterialTheme.shapes.small)
+            .shimmer()
+    )
 }
 
 @Composable
@@ -702,7 +768,7 @@ fun ComicDetailScreen(
                     )
                 }
                 requestedComic == null -> {
-                    ComicDetailSkeleton(topContentPadding = detailTopContentPadding)
+                    ComicDetailSkeleton(id = id, headerTopPadding = detailHeaderTopPadding)
                 }
                 else -> {
                     val comic = requestedComic
