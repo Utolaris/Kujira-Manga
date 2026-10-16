@@ -4,6 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
+import androidx.paging.PagingData
+import androidx.paging.cachedIn
+import com.par9uet.jm.data.models.Comment
 import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.data.models.ComicChapter
 import com.par9uet.jm.download.coordinator.DownloadManager
@@ -21,12 +24,16 @@ import com.par9uet.jm.ui.state.CommentSubmissionGate
 import com.par9uet.jm.ui.haptics.AppHaptics
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 private const val COMMENT_ERROR_VISIBLE_MILLIS = 5_000L
+
+/** 保留最近访问的漫画评论缓存数（activity 级 VM，避免无界增长）。 */
+private const val COMMENT_PAGER_CACHE_SIZE = 8
 
 class ComicDetailViewModel(
     private val comicRepository: ComicRepository,
@@ -327,12 +334,25 @@ class ComicDetailViewModel(
 
     private fun currentAccountId(): Int = favoriteSession.currentAccountId()
 
-    // Each screen remembers its own flow. A shared cached flow replays the previous comic's
-    // pages, and Paging keeps those items visible until the new refresh finishes.
-    fun commentPager(comicId: Int) = Pager(
-        config = PagingConfig(pageSize = 20, prefetchDistance = 6, initialLoadSize = 20),
-        pagingSourceFactory = { ComicCommentPagingSource(comicRepository, comicId) },
-    ).flow
+    // Per-comic cached flows: the detail screen is activity-scoped and reused across comic
+    // ids, so each id gets its OWN cachedIn flow — a single shared one would replay the
+    // previous comic's pages while the new refresh is loading. Returning from the reader
+    // re-collects the cached flow and shows loaded pages immediately (no skeleton); the
+    // screen then refreshes in the background and new comments prepend via paging diff.
+    private val commentPagerCache =
+        object : LinkedHashMap<Int, Flow<PagingData<Comment>>>(8, 0.75f, true) {
+            override fun removeEldestEntry(
+                eldest: MutableMap.MutableEntry<Int, Flow<PagingData<Comment>>>,
+            ): Boolean = size > COMMENT_PAGER_CACHE_SIZE
+        }
+
+    fun commentPager(comicId: Int): Flow<PagingData<Comment>> =
+        commentPagerCache.getOrPut(comicId) {
+            Pager(
+                config = PagingConfig(pageSize = 20, prefetchDistance = 6, initialLoadSize = 20),
+                pagingSourceFactory = { ComicCommentPagingSource(comicRepository, comicId) },
+            ).flow.cachedIn(viewModelScope)
+        }
 
     private val _commentComicState = MutableStateFlow(CommonUIState(data = null))
     val commentComicState = _commentComicState.asStateFlow()

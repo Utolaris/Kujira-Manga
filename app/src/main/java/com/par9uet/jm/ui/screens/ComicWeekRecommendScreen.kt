@@ -35,6 +35,8 @@ import com.par9uet.jm.ui.components.PullRefreshAndLoadMoreGrid
 import com.par9uet.jm.ui.components.SelectDialog
 import com.par9uet.jm.ui.components.SelectOption
 import com.par9uet.jm.ui.components.adaptiveComicGridCells
+import com.par9uet.jm.ui.interaction.ListPositionKeyWeek
+import com.par9uet.jm.ui.interaction.rememberRestoringGridState
 import com.par9uet.jm.ui.viewModel.WeekViewModel
 import org.koin.compose.viewmodel.koinActivityViewModel
 
@@ -83,6 +85,12 @@ fun ComicWeekRecommendScreen(
     val weekDataState by weekViewModel.weekDataState.collectAsState()
     val weekFilterState by weekViewModel.weekFilterState.collectAsState()
     val weekRecommendComicPagingItems = weekViewModel.weekComicPager.collectAsLazyPagingItems()
+    // 位置记录：从每周推荐进入漫画再返回时维持原位置。按刊号隔离——换刊号 = 新位置。
+    val gridState = rememberRestoringGridState(
+        key = "$ListPositionKeyWeek|${weekFilterState.categoryId ?: "-"}",
+        itemCount = weekRecommendComicPagingItems.itemCount,
+        appendComplete = weekRecommendComicPagingItems.loadState.append.endOfPaginationReached,
+    )
     var showSelectDialog by remember { mutableStateOf(false) }
     val categoryList = weekDataState.data?.categoryList.orEmpty()
     val currentCategoryLabel = categoryList
@@ -159,6 +167,7 @@ fun ComicWeekRecommendScreen(
             PullRefreshAndLoadMoreGrid(
                 modifier = Modifier.fillMaxSize(),
                 lazyPagingItems = weekRecommendComicPagingItems,
+                gridState = gridState,
                 key = { it.id },
                 columns = adaptiveComicGridCells(),
                 contentPadding = PaddingValues(

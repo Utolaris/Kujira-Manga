@@ -45,6 +45,7 @@ fun <T : Any> PullRefreshAndLoadMoreGrid(
     gridState: LazyGridState = rememberLazyGridState(),
     itemVisible: (item: T) -> Boolean = { true },
     enablePullRefresh: Boolean = true,
+    animateItems: Boolean = false,
     itemContent: @Composable ((item: T) -> Unit),
 ) {
     val isRefreshing = lazyPagingItems.loadState.refresh is LoadState.Loading
@@ -83,19 +84,46 @@ fun <T : Any> PullRefreshAndLoadMoreGrid(
                     }
                 }
             }
+            // 动画模式要求 key 稳定：插入新条目时旧条目的 key 不变，animateItem 才能把
+            // 「新增」和「位移」区分开。业务 key 只在真的撞车时才追加序号（分页竞态
+            // 下的偏移重复），避免默认的 "#index" 后缀让一次插入把所有条目都变成新 key。
+            val stableKeys: List<Any?> = if (animateItems) {
+                val seen = HashMap<Any, Int>()
+                List(lazyPagingItems.itemCount) { index ->
+                    val item = lazyPagingItems.peek(index)
+                    if (item == null) {
+                        null
+                    } else {
+                        val base = key(item)
+                        val ordinal = seen.getOrDefault(base, 0)
+                        seen[base] = ordinal + 1
+                        if (ordinal == 0) base else "$base~dup$ordinal"
+                    }
+                }
+            } else {
+                emptyList()
+            }
             items(
                 lazyPagingItems.itemCount,
                 // 业务 id 可能在分页膨胀/竞态下重复；LazyGrid 对重复 key 会直接崩溃。
-                // 用 index 做后缀保证 key 全局唯一（封面仍按 URL 缓存，不受影响）。
                 key = { index ->
                     val item = lazyPagingItems.peek(index)
-                    if (item == null) "paging_placeholder_$index"
-                    else "${key(item)}#$index"
+                    when {
+                        item == null -> "paging_placeholder_$index"
+                        animateItems -> stableKeys[index]!!
+                        else -> "${key(item)}#$index"
+                    }
                 },
             ) { index ->
                 val item = lazyPagingItems[index]
                 if (item != null && itemVisible(item)) {
-                    itemContent(item)
+                    if (animateItems) {
+                        Box(modifier = Modifier.animateItem()) {
+                            itemContent(item)
+                        }
+                    } else {
+                        itemContent(item)
+                    }
                 }
             }
             when (val appendState = lazyPagingItems.loadState.append) {
@@ -139,7 +167,7 @@ fun <T : Any> PullRefreshAndLoadMoreGrid(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    "\u6ca1\u6709\u66f4\u591a\u6570\u636e\u4e86",
+                                    "你仿佛来到了涩涩之海的尽头",
                                     style = MaterialTheme.typography.bodySmall
                                 )
                             }

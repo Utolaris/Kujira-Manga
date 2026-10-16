@@ -22,8 +22,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -34,7 +36,6 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -50,10 +51,11 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -161,6 +163,37 @@ fun ComicReadScreen(
         targetIndex = target
         comicReadViewModel.decodeIndex(target, context)
         comicReadViewModel.showToolBar()
+    }
+
+    // 用户能看到页码的地方只有底部工具栏（ToolsBar 是 currentIndexState 的纯函数，显示错必然是
+    // 这个值错）。所以工具栏可见期间就按阅读器的**真实位置**持续对账：无论上游哪条同步链路
+    // （翻页观察者、程序化滚动标志）曾经卡住，只要用户看得见工具栏，页码就是对的。
+    //
+    // 不做成"只在 false→true 那一刻检查"：真实位置和滚动状态都进 key，位置变了、滚动结束了
+    // 都会再对一次账，补上"滑动还没停稳就点开工具栏"的那个窗口。
+    //
+    // 正在滚动（含程序化动画、拖页底滑块）时一律让位：那一刻页码本来就**故意**不等于真实位置——
+    // 滑块正被用户拖着、或翻页动画还没走完，此时写回会把动画拽回旧页。
+    val readerPage = readerVisiblePage(readMode, lazyListState, pagerState)
+    val readerScrolling = readerIsScrolling(readMode, lazyListState, pagerState)
+    LaunchedEffect(isShowToolbar, readMode, size, readerPage, readerScrolling) {
+        if (!isShowToolbar || size <= 0) return@LaunchedEffect
+        // 等一帧再判断：刚被要求跳页时，驱动它的那条链路要到这一帧才把 isScrollInProgress
+        // 立起来。不等的话会把"拖到第 3 页"这种正在执行的请求当成页码过期，立刻拽回旧页。
+        withFrameNanos { }
+        if (readerIsScrolling(readMode, lazyListState, pagerState)) return@LaunchedEffect
+        val page = readerVisiblePage(readMode, lazyListState, pagerState)
+        if (page !in 0 until size) return@LaunchedEffect
+        if (currentIndexState != page) {
+            currentIndexState = page
+            comicReadViewModel.decodeIndex(page, context)
+        }
+        // targetIndex 也要跟上：它还停在被卡住的旧页时，任何一次"targetIndex / list.size 变化"
+        // 都会让阅读器跳回那一页（ComicPageRead 的 animateScrollToPage、ComicScrollRead 的
+        // scrollToItem 都认这个旧目标）。这里写成真实页后，两个消费方都会看到"已在目标页"而空转。
+        if (targetIndex != page) {
+            targetIndex = page
+        }
     }
 
     LaunchedEffect(comicId, localOnly) {
@@ -282,7 +315,7 @@ fun ComicReadScreen(
             ) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     if (loading) {
-                        CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                        ReimuLoadingIndicator(modifier = Modifier.align(Alignment.Center))
                     } else if (size <= 0) {
                         Text(
                             text = comicPicState.errorMsg.orEmpty().ifBlank { "暂无可阅读图片" },
@@ -461,6 +494,24 @@ fun ComicReadScreen(
 private enum class ReadPanelDialog {
     Cache,
     Chapter
+}
+
+/** 阅读器当前真实页码：滚动模式看第一张可见页，其余模式看 Pager 的当前页。 */
+private fun readerVisiblePage(
+    readMode: String,
+    lazyListState: LazyListState,
+    pagerState: PagerState,
+): Int = if (readMode == "scroll") lazyListState.firstVisibleItemIndex else pagerState.currentPage
+
+/** 阅读器是否正在滚动（含程序化翻页动画）。 */
+private fun readerIsScrolling(
+    readMode: String,
+    lazyListState: LazyListState,
+    pagerState: PagerState,
+): Boolean = if (readMode == "scroll") {
+    lazyListState.isScrollInProgress
+} else {
+    pagerState.isScrollInProgress
 }
 
 @Composable

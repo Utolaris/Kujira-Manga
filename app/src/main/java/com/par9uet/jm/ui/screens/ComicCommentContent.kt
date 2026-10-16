@@ -314,6 +314,8 @@ private fun CommentList(
             bottom = bottomContentPadding,
         ),
         enablePullRefresh = false,
+        // 刷新保留已加载列表，新评论从顶部淡入、旧评论下移。
+        animateItems = true,
     ) { comment ->
         CommentWithAction(comment) { target ->
             when (authState) {
