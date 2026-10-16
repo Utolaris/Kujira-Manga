@@ -15,16 +15,18 @@ data class FavoritesSelectionState(
     val selectedComicIds: Set<Int> = emptySet(),
 )
 
-/** Saved scroll position of the Favorites grid for the current list context. */
-data class FavoritesViewportState(
-    val firstVisibleItemIndex: Int = 0,
-    val firstVisibleItemScrollOffset: Int = 0,
-    val resetGeneration: Long = 0,
-)
-
+/**
+ * 收藏夹不再自己保存滚动位置：位置统一由全局 `ListPositionMemory` 按
+ * 「文件夹 + 筛选条件」的 key 记录，换筛选即换 key、自然回到顶部。
+ */
 data class FavoriteSyncUiState(
     val isSyncing: Boolean = false,
     val isForceRefresh: Boolean = false,
+    /**
+     * 本次同步是账号的**首次全量缓存构建**（登录后从未完成过一次全量同步）。
+     * 收藏页据此显示「初次构建收藏夹缓存」的等待动画；普通手动/自动同步不置位。
+     */
+    val isInitialBuild: Boolean = false,
     val completed: Int = 0,
     val total: Int = 0,
     val phase: String = "",
@@ -47,7 +49,6 @@ data class FavoritesUiState(
     val folders: Map<String, String> = emptyMap(),
     val filter: FavoritesFilter = FavoritesFilter(),
     val selection: FavoritesSelectionState = FavoritesSelectionState(),
-    val viewport: FavoritesViewportState = FavoritesViewportState(),
     val searchActive: Boolean = false,
     val modal: FavoritesModal? = null,
     val tagCounts: Map<String, Int> = emptyMap(),
@@ -97,10 +98,4 @@ sealed interface FavoritesIntent {
     data class CreateFolderSubmitted(val name: String) : FavoritesIntent
     data class RenameFolderSubmitted(val folderId: Int, val name: String) : FavoritesIntent
     data object DeleteFolderConfirmed : FavoritesIntent
-
-    data class ViewportSaved(
-        val firstVisibleItemIndex: Int,
-        val firstVisibleItemScrollOffset: Int,
-        val resetGeneration: Long,
-    ) : FavoritesIntent
 }

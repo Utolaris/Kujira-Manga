@@ -37,6 +37,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.ContentPaste
 import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.TabletMac
 import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Download
@@ -293,6 +294,13 @@ fun LocalSettingScreen(
                         title = "\u5e73\u677f\u6a21\u5f0f",
                         value = ui.tabletLayoutEnabled == true,
                         onCheckedChange = settingsViewModel::setTabletLayoutEnabled
+                    )
+                    // null = 未显式设置：跟随平板布局开关（平板默认隐藏，手机默认显示）。
+                    SettingsSwitchRow(
+                        icon = Icons.Rounded.VisibilityOff,
+                        title = "隐藏导航按钮",
+                        value = ui.hideNavigationButtons ?: (ui.tabletLayoutEnabled == true),
+                        onCheckedChange = settingsViewModel::setHideNavigationButtons
                     )
                     SettingsRow(
                         Icons.Rounded.GridView,

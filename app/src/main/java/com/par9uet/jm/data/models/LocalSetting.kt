@@ -93,6 +93,9 @@ data class LocalSetting(
     // 平板（大屏）布局开关。null = 尚未判定：手机侧首个非零窗口宽度写 false；
     // 平板侧由首次询问弹窗或设置开关写入。之后只由设置开关改写。
     val tabletLayoutEnabled: Boolean? = null,
+    // 隐藏主导航按钮（首页/收藏/设置）。null = 未显式设置：跟随平板布局开关
+    // （平板默认隐藏，手机默认显示）。显式设置后只由设置开关改写。
+    val hideNavigationButtons: Boolean? = null,
     // 历史遗留：原「图片内存优化」开关。设置已移除；字段保留兼容旧备份 JSON，读取时忽略。
     val readMemoryOptEnabled: Boolean = false,
     val readDecodeConcurrency: Int = 2,

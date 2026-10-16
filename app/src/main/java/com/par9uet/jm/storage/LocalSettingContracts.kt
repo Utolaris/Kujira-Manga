@@ -86,6 +86,11 @@ data class MiscSettingsState(
      * 平板侧由首次询问弹窗或设置开关写入（见 `ui/screens/TabletLayout.kt`）。
      */
     val tabletLayoutEnabled: Boolean? = null,
+    /**
+     * 隐藏主导航按钮（首页/收藏/设置）。null = 未显式设置：
+     * 生效值跟随 [tabletLayoutEnabled]（平板默认隐藏，手机默认显示）。
+     */
+    val hideNavigationButtons: Boolean? = null,
 )
 
 /**

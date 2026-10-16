@@ -190,6 +190,9 @@ fun TabScreen(
     BoxWithConstraints {
         // 平板模式由设置开关决定（首次安装会询问）；组合根 ProvideTabletLayout 统一注入。
         val useNavigationRail = LocalTabletLayoutEnabled.current
+        // 导航按钮（首页/收藏/设置）是否隐藏：未显式设置时跟随平板布局——平板默认隐藏。
+        val miscSettings by homeViewModel.misc.collectAsState()
+        val hideNavigation = miscSettings.hideNavigationButtons ?: useNavigationRail
         val navigationVisibility = remember(useNavigationRail, selectedTab) {
             ScrollAwareNavigationState(coroutineScope)
         }
@@ -210,8 +213,9 @@ fun TabScreen(
         val settingsTopContentPadding =
             statusBarInset + AppGlassTopBarDefaults.ContentHeight
         val contentBottomPadding =
-            if (useNavigationRail) {
-                0.dp
+            if (useNavigationRail || hideNavigation) {
+                // 平板或隐藏导航时只保留系统手势区，内容不再给玻璃底栏让位。
+                navigationBarInset
             } else {
                 glassStyle.barHeight + glassStyle.outerMargin + navigationBarInset
             }
@@ -298,7 +302,7 @@ fun TabScreen(
                         },
                     )
                 }
-                if (!useNavigationRail) {
+                if (!useNavigationRail && !hideNavigation) {
                     BottomNavigationBarComponent(
                         selectedTab = selectedTab,
                         onTabSelected = ::selectTab,
@@ -420,7 +424,7 @@ fun TabScreen(
                 overlayContent = {
                     Box(modifier = Modifier.fillMaxSize()) {
                         AnimatedVisibility(
-                            visible = navigationVisibility.visible,
+                            visible = !hideNavigation && navigationVisibility.visible,
                             modifier = Modifier.align(Alignment.CenterStart),
                             enter = slideInHorizontally(tween(180)) { -it },
                             exit = slideOutHorizontally(tween(180)) { -it },

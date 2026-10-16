@@ -48,6 +48,8 @@ data class SettingsUiState(
     val gridColumns: GridColumnsSnapshot = GridColumnsSnapshot(),
     /** null = 尚未判定（首个非零窗口宽度决定默认值）。 */
     val tabletLayoutEnabled: Boolean? = null,
+    /** null = 未显式设置，生效值跟随 [tabletLayoutEnabled]。 */
+    val hideNavigationButtons: Boolean? = null,
     val cacheBudgetMb: Int = 1024,
 ) {
     /** Human-readable one-line summary of the current app lock state. */
@@ -194,6 +196,7 @@ class SettingsViewModel(
                 search = misc.misc.gridColumns.search,
             ),
             tabletLayoutEnabled = misc.misc.tabletLayoutEnabled,
+            hideNavigationButtons = misc.misc.hideNavigationButtons,
             cacheBudgetMb = cacheBudgetMb,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
@@ -253,6 +256,10 @@ class SettingsViewModel(
 
     fun setTabletLayoutEnabled(enabled: Boolean) =
         localSettingManager.setTabletLayoutEnabled(enabled)
+
+    /** 导航按钮可见性；显式写入后不再跟随平板布局默认值。 */
+    fun setHideNavigationButtons(hidden: Boolean) =
+        localSettingManager.setHideNavigationButtons(hidden)
 
     companion object {
         private val AVAILABLE_API_SET = AVAILABLE_APIS.toSet()

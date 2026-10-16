@@ -3,13 +3,20 @@ package com.par9uet.jm.ui.screens
 import android.os.SystemClock
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.text.style.TextAlign
 import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -22,6 +29,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.paging.LoadState
 import androidx.paging.compose.collectAsLazyPagingItems
+import coil.compose.AsyncImage
+import com.par9uet.jm.R
 import com.par9uet.jm.ui.components.Comic
 import com.par9uet.jm.ui.components.PullRefreshAndLoadMoreGrid
 import com.par9uet.jm.ui.components.TabletComicGridMinCellSize
@@ -29,7 +38,9 @@ import com.par9uet.jm.ui.components.adaptiveComicGridCells
 import com.par9uet.jm.ui.models.LocalTabletLayoutEnabled
 import com.par9uet.jm.ui.interaction.pullDownToAction
 import com.par9uet.jm.ui.interaction.PullDownActionState
+import com.par9uet.jm.ui.interaction.favoritesListPositionKey
 import com.par9uet.jm.ui.interaction.rememberPullDownActionState
+import com.par9uet.jm.ui.interaction.rememberRestoringGridState
 import com.par9uet.jm.favorites.model.FavoritesIntent
 import com.par9uet.jm.favorites.presentation.FavoritesViewModel
 import com.par9uet.jm.ui.viewModel.UserViewModel
@@ -64,79 +75,29 @@ internal fun UserCollectComicScreen(
         }
     }
 
-    // Restore the saved viewport from the FIRST frame; no visible jump back to top.
-    val savedViewport = favoritesState.viewport
-    val gridState = rememberLazyGridState(
-        initialFirstVisibleItemIndex = savedViewport.firstVisibleItemIndex,
-        initialFirstVisibleItemScrollOffset = savedViewport.firstVisibleItemScrollOffset,
+    val favoriteItemCount = collectComicLazyPagingItems.itemCount
+    val favoriteAppendComplete = collectComicLazyPagingItems.loadState.append.let {
+        it is LoadState.NotLoading && it.endOfPaginationReached
+    }
+    // 滚动位置走全局位置记录，key = 文件夹 + 有效筛选条件：
+    // 换文件夹 / 换关键词 / 换筛选条件 = 新 key = 从顶部开始；同一列表返回 = 命中记忆。
+    // 首帧就用记忆值构造，不做可见的回跳。
+    val gridState = rememberRestoringGridState(
+        key = favoritesListPositionKey(
+            folderId = favoritesState.selectedFolderId,
+            searchText = favoritesState.filter.searchText,
+            tags = favoritesState.filter.selectedTags,
+            authors = favoritesState.filter.selectedAuthors,
+            tagLogic = favoritesState.filter.tagLogic.name,
+        ),
+        itemCount = favoriteItemCount,
+        appendComplete = favoriteAppendComplete,
     )
     var isGridScrolling by remember { mutableStateOf(false) }
     LaunchedEffect(gridState) {
         snapshotFlow { gridState.isScrollInProgress }
             .distinctUntilChanged()
             .collect { isGridScrolling = it }
-    }
-    val favoriteItemCount = collectComicLazyPagingItems.itemCount
-    val favoriteAppendComplete = collectComicLazyPagingItems.loadState.append.let {
-        it is LoadState.NotLoading && it.endOfPaginationReached
-    }
-    val initialResetGeneration = remember { savedViewport.resetGeneration }
-    var initialViewportRestorePending by remember { mutableStateOf(true) }
-    var suppressViewportPersistence by remember { mutableStateOf(false) }
-
-    // An empty first Paging snapshot temporarily clamps LazyGridState to (0, 0). Do not treat
-    // that as the restored position; wait until the saved item is loaded or Paging confirms the
-    // list has ended, then apply the target once and release persistence.
-    LaunchedEffect(
-        savedViewport.resetGeneration,
-        favoriteItemCount,
-        favoriteAppendComplete,
-    ) {
-        if (!initialViewportRestorePending || favoriteItemCount <= 0) return@LaunchedEffect
-        val savedIndex = savedViewport.firstVisibleItemIndex
-        if (!favoriteAppendComplete && favoriteItemCount <= savedIndex) return@LaunchedEffect
-
-        val targetIndex = savedIndex.coerceAtMost(favoriteItemCount - 1)
-        if (gridState.firstVisibleItemIndex != targetIndex ||
-            gridState.firstVisibleItemScrollOffset != savedViewport.firstVisibleItemScrollOffset
-        ) {
-            gridState.scrollToItem(targetIndex, savedViewport.firstVisibleItemScrollOffset)
-        }
-        androidx.compose.runtime.withFrameNanos { }
-        initialViewportRestorePending = false
-    }
-
-    // A reset changes the existing state as well as the saved value. The generation makes this
-    // effect distinct from the initial restore, and the short suppression window prevents the
-    // old grid position from racing back into the ViewModel while scrollToItem is settling.
-    LaunchedEffect(savedViewport.resetGeneration) {
-        if (savedViewport.resetGeneration == initialResetGeneration) return@LaunchedEffect
-        suppressViewportPersistence = true
-        try {
-            gridState.scrollToItem(0, 0)
-            androidx.compose.runtime.withFrameNanos { }
-        } finally {
-            suppressViewportPersistence = false
-        }
-    }
-
-    // Persist the viewport on every settled scroll change; distinctUntilChanged keeps this cheap.
-    // Re-keying on the generation also cancels a collector that still carries the old token.
-    LaunchedEffect(gridState, savedViewport.resetGeneration, initialViewportRestorePending) {
-        val resetGeneration = savedViewport.resetGeneration
-        snapshotFlow {
-            Triple(
-                collectComicLazyPagingItems.itemCount,
-                gridState.firstVisibleItemIndex,
-                gridState.firstVisibleItemScrollOffset,
-            )
-        }.distinctUntilChanged().collect { (itemCount, index, offset) ->
-            if (itemCount > 0 && !initialViewportRestorePending && !suppressViewportPersistence) {
-                favoritesViewModel.onIntent(
-                    FavoritesIntent.ViewportSaved(index, offset, resetGeneration)
-                )
-            }
-        }
     }
     val pullRevealPadding = 36.dp * pullDownState.progress
     val gridModifier = Modifier
@@ -185,5 +146,49 @@ internal fun UserCollectComicScreen(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) { mainContent() }
+    // 首次登录的全量缓存构建期间（列表尚未提交任何条目）显示等待动画，
+    // 普通手动/自动同步不打扰列表。构建完成或已有内容时照常显示网格。
+    val showInitialCacheLoader =
+        favoritesState.sync.isSyncing &&
+            favoritesState.sync.isInitialBuild &&
+            collectComicLazyPagingItems.itemCount == 0
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (showInitialCacheLoader) {
+            InitialFavoritesCacheLoader(
+                modifier = Modifier.fillMaxSize(),
+                topContentPadding = topContentPadding,
+            )
+        } else {
+            mainContent()
+        }
+    }
+}
+
+/** 首次构建收藏夹缓存的等待动画：GIF 居中，下方固定提示文案。 */
+@Composable
+private fun InitialFavoritesCacheLoader(
+    modifier: Modifier = Modifier,
+    topContentPadding: Dp = 0.dp,
+) {
+    Column(
+        modifier = modifier.padding(top = topContentPadding),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        AsyncImage(
+            model = R.drawable.reimu_loading,
+            contentDescription = null,
+            modifier = Modifier.size(96.dp),
+            // 48x48 像素风源图放大一倍；最近邻插值保持像素边缘干净。
+            filterQuality = FilterQuality.None,
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = "初次构建收藏夹缓存需要较长时间，请稍后。",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+    }
 }

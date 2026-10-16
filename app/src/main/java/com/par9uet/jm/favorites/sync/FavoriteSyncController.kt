@@ -91,7 +91,7 @@ class FavoriteSyncController(
             refreshSession()
             if (!session.isCurrent(snapshot) || localMode.isLocalMode) return
             pendingInitialAccount = snapshot.accountId
-            if (!_state.value.isSyncing) startSync(FAVORITE_SCOPE_ALL, force = true)
+            if (!_state.value.isSyncing) startSync(FAVORITE_SCOPE_ALL, force = true, initial = true)
         }
     }
 
@@ -160,10 +160,14 @@ class FavoriteSyncController(
         job.start()
     }
 
-    private fun startSync(folderId: Int, force: Boolean) {
+    private fun startSync(folderId: Int, force: Boolean, initial: Boolean = false) {
         val snapshot = observedSession
         val generation = ++requestGeneration
-        _state.value = FavoriteSyncUiState(isSyncing = true, isForceRefresh = force)
+        _state.value = FavoriteSyncUiState(
+            isSyncing = true,
+            isForceRefresh = force,
+            isInitialBuild = initial,
+        )
         val job = applicationScope.launch(start = CoroutineStart.LAZY) {
             var failure: NetWorkResult.Error? = null
             var succeeded = false
@@ -220,7 +224,8 @@ class FavoriteSyncController(
                                 pendingInitialAccount = null
                                 notifyCacheInitialized = true
                             } else {
-                                startSync(FAVORITE_SCOPE_ALL, force = true)
+                                // 首次构建被单文件夹同步打断后继续全量，仍是首次构建。
+                                startSync(FAVORITE_SCOPE_ALL, force = true, initial = true)
                             }
                         }
                         // Automatic requests are never replayed after success or failure.

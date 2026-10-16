@@ -150,6 +150,13 @@ class LocalSettingManager(
         updateSetting { it.copy(tabletLayoutEnabled = enabled) }
 
     /**
+     * 用户在设置里显式切换导航按钮可见性；写入后不再跟随平板布局默认值。
+     * @see MiscSettingsState.hideNavigationButtons
+     */
+    fun setHideNavigationButtons(hidden: Boolean) =
+        updateSetting { it.copy(hideNavigationButtons = hidden) }
+
+    /**
      * 首次判定平板布局：只在还没有值的时候落盘，之后由设置开关独占。
      * 手机侧由 `rememberTabletLayout` 直接写 false；平板侧留给询问弹窗/设置开关
      * 写入 true/false。调用方必须在窗口宽度已知时才调用。
@@ -545,6 +552,7 @@ class LocalSettingManager(
             search = setting.searchGridColumns,
         ),
         tabletLayoutEnabled = setting.tabletLayoutEnabled,
+        hideNavigationButtons = setting.hideNavigationButtons,
     )
 
     private fun toAppLockState(setting: LocalSetting) = AppLockState(
