@@ -10,10 +10,13 @@ import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.data.models.ComicSearchOrderFilter
 import com.par9uet.jm.repository.ComicRepository
 import com.par9uet.jm.storage.ContentPreferences
+import com.par9uet.jm.ui.interaction.ListPositionMemory
+import com.par9uet.jm.ui.interaction.searchListPositionKey
 import com.par9uet.jm.ui.pagingSource.SearchComicFilter
 import com.par9uet.jm.ui.pagingSource.SearchComicPagingSource
 import com.par9uet.jm.utils.log
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,16 +24,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
-
-data class SearchViewportState(
-    val firstVisibleItemIndex: Int = 0,
-    val firstVisibleItemScrollOffset: Int = 0,
-    val resetGeneration: Long = 0L,
-) {
-    fun reset(): SearchViewportState = SearchViewportState(
-        resetGeneration = resetGeneration + 1L,
-    )
-}
+import kotlinx.coroutines.launch
 
 class SearchViewModel(
     private val comicRepository: ComicRepository,
@@ -38,6 +32,7 @@ class SearchViewModel(
     private val historySearchManager: com.par9uet.jm.storage.HistorySearchManager,
     private val blockedTagTemplatePreferences: com.par9uet.jm.storage.BlockedTagTemplatePreferences,
     private val miscSettingsPreferences: com.par9uet.jm.storage.MiscSettingsPreferences,
+    private val listPositionMemory: ListPositionMemory,
 ) : ViewModel() {
     /** Search editor / result pages collect prefs + history through the VM. */
     val historySearchState = historySearchManager.historySearchState
@@ -52,46 +47,69 @@ class SearchViewModel(
     val searchComicFilterState = _searchComicFilterState.asStateFlow()
     private val _searchComicIdState = MutableStateFlow<Int?>(null)
     val searchComicIdState = _searchComicIdState.asStateFlow()
-    private val _searchViewportState = MutableStateFlow(SearchViewportState())
-    val searchViewportState = _searchViewportState.asStateFlow()
 
     /**
-     * 每个查询一份 Pager；`cachedIn` 留在 `flatMapLatest` **内**，避免换关键字时
-     * 上一代 PagingData 和新结果混在同一份展示里。
+     * 每个查询一份常驻的 PagingData 缓存（按 queryKey 隔离）。
      *
-     * 外层再 `stateIn(Eagerly)` 把整条链挂在 viewModelScope：结果页进详情后 UI 会
-     * 取消收集，若不共享，`flatMapLatest` 上游会随收集一起取消、缓存销毁，返回时
-     * 只能重新请求。Eagerly 共享后返回直接拿到当前查询的缓存 PagingData。
+     * 之前 `flatMapLatest` 换查询即丢弃旧缓存：从查询 A 进详情、点作者进入查询 C、
+     * 再返回 A 时 A 的列表要从零重拉——视口恢复等不到 `itemCount > savedIndex`，
+     * 表现为「回到顶部」。按查询缓存后返回旧查询立即重放缓存列表，视口恢复有数据可对齐。
+     * 缓存数量有上限，最旧的作废（下次进入该查询重新加载）。
      */
+    private val searchPagersByQuery = LinkedHashMap<String, Flow<PagingData<Comic>>>()
+
+    /** 屏蔽标签变化时整体作废重建（分页源在构造时读取最新标签）。 */
+    private val _searchPagerReload = MutableStateFlow(0)
+
+    init {
+        viewModelScope.launch {
+            contentPreferences.blockedTags.collect {
+                if (searchPagersByQuery.isNotEmpty()) {
+                    searchPagersByQuery.clear()
+                    _searchPagerReload.update { it + 1 }
+                }
+            }
+        }
+    }
+
     @OptIn(ExperimentalCoroutinesApi::class)
     val searchComicPager: kotlinx.coroutines.flow.StateFlow<PagingData<Comic>> = combine(
         _searchComicFilterState,
-        contentPreferences.blockedTags
-    ) { filter, blockedTagList -> filter to blockedTagList }
-        .flatMapLatest { (filter, blockedTagList) ->
-            Pager(
-                config = PagingConfig(
-                    pageSize = 20,
-                    prefetchDistance = 6,
-                    initialLoadSize = 20
-                ),
-                pagingSourceFactory = {
-                    SearchComicPagingSource(
-                        comicRepository,
-                        filter.copy(excludedTags = (filter.excludedTags + blockedTagList).distinct()),
-                    ) { id ->
-                        _searchComicIdState.update {
-                            id
-                        }
-                    }
-                }
-            ).flow.cachedIn(viewModelScope)
-        }
+        _searchPagerReload,
+    ) { filter, _ -> filter }
+        .flatMapLatest { filter -> pagerFor(filter) }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.Eagerly,
             initialValue = PagingData.empty(),
         )
+
+    private fun pagerFor(filter: SearchComicFilter): Flow<PagingData<Comic>> {
+        val queryKey = filter.queryKey()
+        searchPagersByQuery[queryKey]?.let { return it }
+        val flow = Pager(
+            config = PagingConfig(
+                pageSize = 20,
+                prefetchDistance = 6,
+                initialLoadSize = 20
+            ),
+            pagingSourceFactory = {
+                SearchComicPagingSource(
+                    comicRepository,
+                    filter.copy(excludedTags = (filter.excludedTags + contentPreferences.blockedTags.value).distinct()),
+                ) { id ->
+                    _searchComicIdState.update {
+                        id
+                    }
+                }
+            }
+        ).flow.cachedIn(viewModelScope)
+        searchPagersByQuery[queryKey] = flow
+        while (searchPagersByQuery.size > MAX_CACHED_SEARCH_PAGERS) {
+            searchPagersByQuery.remove(searchPagersByQuery.keys.first())
+        }
+        return flow
+    }
 
     fun changeSearchComicOrderFilter(order: ComicSearchOrderFilter) {
         _searchComicIdState.update { null }
@@ -99,8 +117,8 @@ class SearchViewModel(
         val next = current.copy(order = order)
         if (next == current) return
         // revision 一起 bump：结果页用 revision 做 key，排序切换也必须换代收集。
+        // 滚动位置不用管：位置 key 含排序维度，换排序即新 key，自然从顶部开始。
         _searchComicFilterState.value = next.copy(revision = current.revision + 1L)
-        _searchViewportState.update(SearchViewportState::reset)
     }
 
     /**
@@ -116,7 +134,6 @@ class SearchViewModel(
             month = month,
             revision = current.revision + 1L,
         )
-        _searchViewportState.update(SearchViewportState::reset)
     }
 
     fun changeSearchComicContent(searchContent: String) {
@@ -138,8 +155,12 @@ class SearchViewModel(
      * 搜索结果页入口：路由参数是权威查询。
      *
      * 查询变化时 bump revision 强制新 Pager；查询相同则保持不动，
-     * 以免返回结果页时打断视口恢复——此时 UI 必须用 revision 做 key，
+     * 以免返回结果页时打断列表展示——此时 UI 必须用 revision 做 key，
      * 确保不会把上一次查询的缓存列表画到本次结果上。
+     *
+     * 滚动位置不再由本 VM 管理：结果页按「路由查询 + 排序/年月」这个 key
+     * 读写全局位置记录，跨查询往返（搜索→详情→作者搜索→返回旧搜索）时
+     * 旧查询的位置自然还在，不需要任何代际归零/恢复逻辑。
      */
     fun enterSearchResult(searchContent: String, excludedTags: List<String>) {
         _searchComicIdState.update { null }
@@ -159,7 +180,6 @@ class SearchViewModel(
             return
         }
         _searchComicFilterState.value = next.copy(revision = current.revision + 1L)
-        _searchViewportState.update(SearchViewportState::reset)
     }
 
     /**
@@ -175,38 +195,26 @@ class SearchViewModel(
             "SearchViewModel",
             "submitSearch content=[$searchContent] excluded=${excludedTags.size} $excludedTags",
         )
-        _searchComicFilterState.value = current
-            .copy(searchContent = searchContent, excludedTags = excludedTags)
-            .copy(revision = current.revision + 1L)
-        _searchViewportState.update(SearchViewportState::reset)
-    }
-
-    fun saveSearchViewport(
-        firstVisibleItemIndex: Int,
-        firstVisibleItemScrollOffset: Int,
-        resetGeneration: Long,
-    ) {
-        _searchViewportState.update { current ->
-            if (current.resetGeneration != resetGeneration) {
-                current
-            } else {
-                current.copy(
-                    firstVisibleItemIndex = firstVisibleItemIndex.coerceAtLeast(0),
-                    firstVisibleItemScrollOffset = firstVisibleItemScrollOffset.coerceAtLeast(0),
-                )
-            }
-        }
+        // 显式重搜的同一查询也视为新浏览：Pager 缓存作废（重复搜索必须真实触网），
+        // 位置记录一并清掉，下次进入从顶部开始。
+        val nextFilter = current.copy(searchContent = searchContent, excludedTags = excludedTags)
+        searchPagersByQuery.remove(nextFilter.queryKey())
+        listPositionMemory.clear(searchListPositionKey(nextFilter.queryKey()))
+        _searchComicFilterState.value = nextFilter.copy(revision = current.revision + 1L)
     }
 
     private fun updateSearchFilter(next: SearchComicFilter) {
         val current = _searchComicFilterState.value
         if (next.matchesQuery(current)) return
         _searchComicFilterState.value = next.copy(revision = current.revision + 1L)
-        _searchViewportState.update(SearchViewportState::reset)
     }
 
     fun consumeSearchComicId() {
         _searchComicIdState.update { null }
     }
 
+    private companion object {
+        /** 按查询缓存的 Pager 上限；超过时最旧的作废，防止常驻内存无限增长。 */
+        const val MAX_CACHED_SEARCH_PAGERS = 8
+    }
 }

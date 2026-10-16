@@ -26,6 +26,8 @@ import com.par9uet.jm.favorites.usecase.RenameFavoriteFolder
 import com.par9uet.jm.favorites.usecase.UncollectFavorites
 import com.par9uet.jm.core.network.NetWorkResult
 import com.par9uet.jm.storage.ContentPreferences
+import com.par9uet.jm.ui.interaction.ListPositionMemory
+import com.par9uet.jm.ui.interaction.favoritesListPositionKey
 import com.par9uet.jm.core.ToastManager
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -47,6 +49,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -65,7 +68,7 @@ class FavoritesViewModelTest {
         val baselineEmissions = emissions
         // 基线必须真的非零：否则「同步状态变化不重建 pager」在订阅彻底失效时也会通过。
         assertTrue("collectComicPager 必须至少发射一次初值", baselineEmissions > 0)
-        val viewport = environment.viewModel.uiState.value.viewport
+        val positionKey = environment.viewModel.uiState.value.positionKey()
         environment.sync.publish(FavoriteSyncUiState(isSyncing = true))
         runCurrent()
         environment.sync.publish(FavoriteSyncUiState(isSyncing = true, completed = 20, total = 20))
@@ -74,7 +77,8 @@ class FavoritesViewModelTest {
         runCurrent()
 
         assertEquals(baselineEmissions, emissions)
-        assertEquals(viewport, environment.viewModel.uiState.value.viewport)
+        // 同步状态本身不改变数据集：位置 key 必须原样不动。
+        assertEquals(positionKey, environment.viewModel.uiState.value.positionKey())
     }
 
     @Test
@@ -167,22 +171,15 @@ class FavoritesViewModelTest {
     }
 
     @Test
-    fun `folder selection resets selection search viewport and requests that folder`() = runTest(scheduler) {
+    fun `folder selection resets selection search and position key, and requests that folder`() = runTest(scheduler) {
         val environment = environment()
         runCurrent()
 
         environment.viewModel.onIntent(FavoritesIntent.SearchEntered)
         environment.viewModel.onIntent(FavoritesIntent.SearchChanged("query"))
         environment.viewModel.onIntent(FavoritesIntent.ComicSelectionToggled(comicId = 11))
-        val savedGeneration = environment.viewModel.uiState.value.viewport.resetGeneration
-        environment.viewModel.onIntent(
-            FavoritesIntent.ViewportSaved(
-                firstVisibleItemIndex = 8,
-                firstVisibleItemScrollOffset = 3,
-                resetGeneration = savedGeneration,
-            )
-        )
-        val previousGeneration = environment.viewModel.uiState.value.viewport.resetGeneration
+        val searchingKey = environment.viewModel.uiState.value.positionKey()
+        environment.memory.save(searchingKey, index = 8, offset = 3)
 
         environment.viewModel.onIntent(FavoritesIntent.FolderSelected(folderId = 7))
 
@@ -191,9 +188,8 @@ class FavoritesViewModelTest {
         assertEquals(FavoritesSelectionState(), state.selection)
         assertFalse(state.searchActive)
         assertEquals("", state.filter.searchText)
-        assertEquals(0, state.viewport.firstVisibleItemIndex)
-        assertEquals(0, state.viewport.firstVisibleItemScrollOffset)
-        assertTrue(state.viewport.resetGeneration > previousGeneration)
+        // 换文件夹 = 换了数据集：位置 key 必须换，等于从顶部开始。
+        assertTrue(state.positionKey() != searchingKey)
         assertEquals(
             listOf(SyncRequest(FavoriteSyncRequestKind.AUTO, folderId = 7)),
             environment.sync.requests,
@@ -201,7 +197,7 @@ class FavoritesViewModelTest {
     }
 
     @Test
-    fun `viewport returns to the top whenever the search scope changes`() = runTest(scheduler) {
+    fun `position key changes whenever the search scope changes`() = runTest(scheduler) {
         data class ScopeChange(
             val scenario: String,
             val before: List<FavoritesIntent>,
@@ -228,17 +224,15 @@ class FavoritesViewModelTest {
             runCurrent()
             case.before.forEach(environment.viewModel::onIntent)
 
-            val savedGeneration = environment.viewModel.uiState.value.viewport.resetGeneration
-            environment.viewModel.onIntent(FavoritesIntent.ViewportSaved(4, 6, savedGeneration))
-            val previousGeneration = environment.viewModel.uiState.value.viewport.resetGeneration
+            val keyBefore = environment.viewModel.uiState.value.positionKey()
+            environment.memory.save(keyBefore, index = 4, offset = 6)
 
             case.trigger.forEach(environment.viewModel::onIntent)
 
             val state = environment.viewModel.uiState.value
             assertEquals(case.scenario, case.expectedSearchText, state.filter.searchText)
-            assertEquals(case.scenario, 0, state.viewport.firstVisibleItemIndex)
-            assertEquals(case.scenario, 0, state.viewport.firstVisibleItemScrollOffset)
-            assertTrue(case.scenario, state.viewport.resetGeneration > previousGeneration)
+            // 搜索范围变化 = 数据集变化：key 变了，上一次的位置不会串到新列表上。
+            assertTrue(case.scenario, state.positionKey() != keyBefore)
         }
     }
 
@@ -259,9 +253,8 @@ class FavoritesViewModelTest {
         environment.viewModel.onIntent(FavoritesIntent.SearchChanged("query"))
         environment.viewModel.onIntent(FavoritesIntent.ComicSelectionToggled(comicId = 11))
         environment.viewModel.onIntent(FavoritesIntent.FolderManagementOpened)
-        val savedGeneration = environment.viewModel.uiState.value.viewport.resetGeneration
-        environment.viewModel.onIntent(FavoritesIntent.ViewportSaved(5, 2, savedGeneration))
-        val previousGeneration = environment.viewModel.uiState.value.viewport.resetGeneration
+        val searchingKey = environment.viewModel.uiState.value.positionKey()
+        environment.memory.save(searchingKey, index = 5, offset = 2)
 
         environment.viewModel.onIntent(FavoritesIntent.Left)
 
@@ -279,39 +272,31 @@ class FavoritesViewModelTest {
         assertEquals(FavoritesSelectionState(), state.selection)
         assertEquals(null, state.modal)
         assertEquals("", state.filter.searchText)
-        assertEquals(0, state.viewport.firstVisibleItemIndex)
-        assertEquals(0, state.viewport.firstVisibleItemScrollOffset)
-        assertTrue(state.viewport.resetGeneration > previousGeneration)
+        // 退出带关键词的搜索 = 数据集换了：位置 key 也换，等于从顶部开始。
+        assertTrue(state.positionKey() != searchingKey)
     }
 
     @Test
-    fun `viewport is preserved when the dataset did not change`() = runTest(scheduler) {
+    fun `position key is preserved when the dataset did not change`() = runTest(scheduler) {
         data class Preserve(
             val scenario: String,
-            val saved: Pair<Int, Int>,
             val trigger: List<FavoritesIntent>,
         )
 
         listOf(
             Preserve(
                 scenario = "left without active search",
-                saved = 100 to 4,
                 trigger = listOf(FavoritesIntent.Left),
             ),
             Preserve(
                 scenario = "entering and exiting an empty search",
-                saved = 60 to 7,
                 trigger = listOf(FavoritesIntent.SearchEntered, FavoritesIntent.SearchExited),
             ),
         ).forEach { case ->
             val environment = environment()
             runCurrent()
 
-            val savedGeneration = environment.viewModel.uiState.value.viewport.resetGeneration
-            environment.viewModel.onIntent(
-                FavoritesIntent.ViewportSaved(case.saved.first, case.saved.second, savedGeneration)
-            )
-            val previousGeneration = environment.viewModel.uiState.value.viewport.resetGeneration
+            val savedKey = environment.viewModel.uiState.value.positionKey()
 
             case.trigger.forEach(environment.viewModel::onIntent)
 
@@ -319,27 +304,26 @@ class FavoritesViewModelTest {
             assertFalse(case.scenario, state.searchActive)
             assertEquals(case.scenario, FavoritesSelectionState(), state.selection)
             assertEquals(case.scenario, null, state.modal)
-            assertEquals(case.scenario, case.saved.first, state.viewport.firstVisibleItemIndex)
-            assertEquals(case.scenario, case.saved.second, state.viewport.firstVisibleItemScrollOffset)
-            assertEquals(case.scenario, previousGeneration, state.viewport.resetGeneration)
+            // 数据集没换 → key 不变 → 之前存的位置照样能命中。
+            assertEquals(case.scenario, savedKey, state.positionKey())
         }
     }
 
     @Test
-    fun `repeating the same search query does not reset the viewport`() = runTest(scheduler) {
+    fun `repeating the same search query keeps the position key`() = runTest(scheduler) {
         val environment = environment()
         runCurrent()
         environment.viewModel.onIntent(FavoritesIntent.SearchChanged("query"))
-        val generation = environment.viewModel.uiState.value.viewport.resetGeneration
-        environment.viewModel.onIntent(FavoritesIntent.ViewportSaved(30, 3, generation))
+        val key = environment.viewModel.uiState.value.positionKey()
+        environment.memory.save(key, index = 30, offset = 3)
 
-        // updateSearch 在 query 未变时提前返回：重复下发同一关键词不得把列表打回顶部。
+        // updateSearch 在 query 未变时提前返回：重复下发同一关键词不得换 key（= 不得打回顶部）。
         environment.viewModel.onIntent(FavoritesIntent.SearchChanged("query"))
 
         val state = environment.viewModel.uiState.value
-        assertEquals(30, state.viewport.firstVisibleItemIndex)
-        assertEquals(3, state.viewport.firstVisibleItemScrollOffset)
-        assertEquals(generation, state.viewport.resetGeneration)
+        assertEquals(key, state.positionKey())
+        assertEquals(30, environment.memory.position(key)?.index)
+        assertEquals(3, environment.memory.position(key)?.offset)
     }
 
     @Test
@@ -359,7 +343,15 @@ class FavoritesViewModelTest {
         environment.viewModel.onIntent(FavoritesIntent.SearchChanged("query"))
         environment.viewModel.onIntent(FavoritesIntent.ComicSelectionToggled(comicId = 11))
         environment.viewModel.onIntent(FavoritesIntent.FolderManagementOpened)
-        val previousGeneration = environment.viewModel.uiState.value.viewport.resetGeneration
+        // 位置改由全局记录维护：把当前列表的位置存下来，换号后必须一起作废。
+        val savedPositionKey = favoritesListPositionKey(
+            folderId = 7,
+            searchText = "query",
+            tags = setOf("tag"),
+            authors = setOf("author"),
+            tagLogic = TagFilterLogic.NOT.name,
+        )
+        environment.memory.save(savedPositionKey, index = 12, offset = 34)
 
         environment.session.switchAccount(8)
         runCurrent()
@@ -370,9 +362,7 @@ class FavoritesViewModelTest {
         assertEquals(FavoritesSelectionState(), state.selection)
         assertFalse(state.searchActive)
         assertEquals(null, state.modal)
-        assertEquals(0, state.viewport.firstVisibleItemIndex)
-        assertEquals(0, state.viewport.firstVisibleItemScrollOffset)
-        assertTrue(state.viewport.resetGeneration > previousGeneration)
+        assertNull("换号后收藏夹的保存位置必须一起作废", environment.memory.position(savedPositionKey))
     }
 
     @Test
@@ -459,6 +449,19 @@ class FavoritesViewModelTest {
     // current）才成立。真正的契约「批次进行中的会话转换被推迟、批次完整跑在旧账号上」
     // 已在 FavoriteUseCasesTest 覆盖；批次内 `committed == null` 分支属防御性死代码。
 
+    /**
+     * 收藏夹的滚动位置 key：由「文件夹 + 有效筛选条件」推出。
+     * key 变了 = 数据集换了 = 应该从顶部开始；没变 = 之前存的位置照样命中。
+     */
+    private fun com.par9uet.jm.favorites.model.FavoritesUiState.positionKey(): String =
+        favoritesListPositionKey(
+            folderId = selectedFolderId,
+            searchText = filter.searchText,
+            tags = filter.selectedTags,
+            authors = filter.selectedAuthors,
+            tagLogic = filter.tagLogic.name,
+        )
+
     private data class SyncRequest(
         val kind: FavoriteSyncRequestKind,
         val folderId: Int,
@@ -471,6 +474,7 @@ class FavoritesViewModelTest {
         val local: RecordingLocalMutation,
         val sync: RecordingSyncRequester,
         val events: MutableList<String>,
+        val memory: ListPositionMemory,
     )
 
     private fun environment(): TestEnvironment {
@@ -480,6 +484,7 @@ class FavoritesViewModelTest {
         val local = RecordingLocalMutation(events)
         val query = EmptyFavoriteLocalQuery()
         val sync = RecordingSyncRequester(events)
+        val memory = ListPositionMemory()
         val viewModel = FavoritesViewModel(
             favoriteSession = session,
             contentPreferences = FakeLocalSettings(),
@@ -495,8 +500,9 @@ class FavoritesViewModelTest {
             syncController = sync,
             localMode = com.par9uet.jm.favorites.alwaysNetworkLocalModeStatus(),
             localModeExitScheduler = com.par9uet.jm.core.model.LocalModeExitScheduler { true },
+            listPositionMemory = memory,
         )
-        return TestEnvironment(viewModel, session, remote, local, sync, events)
+        return TestEnvironment(viewModel, session, remote, local, sync, events, memory)
     }
 
     private class FakeLocalSettings : ContentPreferences {

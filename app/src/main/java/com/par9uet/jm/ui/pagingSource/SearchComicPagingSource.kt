@@ -33,6 +33,14 @@ data class SearchComicFilter(
             excludedTags == other.excludedTags &&
             year == other.year &&
             month == other.month
+
+    /**
+     * 视口槽位的查询键，与 [matchesQuery] 同一相等语义。
+     * 搜索结果页的滚动位置按查询隔离存储，跨查询往返（搜索→详情→作者搜索→返回）
+     * 时能恢复各自上次的位置。
+     */
+    fun queryKey(): String =
+        "$order\u0001$searchContent\u0001${excludedTags.joinToString("\u0002")}\u0001$year\u0001$month"
 }
 
 /**

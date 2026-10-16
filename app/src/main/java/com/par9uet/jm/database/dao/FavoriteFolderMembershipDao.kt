@@ -26,6 +26,12 @@ interface FavoriteFolderMembershipDao {
     )
     suspend fun maxRemoteOrder(accountId: Int, folderId: Int): Int
 
+    @Query(
+        "SELECT COALESCE(MIN(remoteOrder), 0) FROM favorite_folder_memberships " +
+            "WHERE accountId = :accountId AND folderId = :folderId"
+    )
+    suspend fun minRemoteOrder(accountId: Int, folderId: Int): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(entities: List<FavoriteFolderMembershipEntity>)
 

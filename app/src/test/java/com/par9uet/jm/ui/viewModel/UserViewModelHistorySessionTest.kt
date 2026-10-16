@@ -43,6 +43,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -96,8 +97,8 @@ class UserViewModelHistorySessionTest {
         assertEquals(setOf(101), environment.viewModel.historyEditState.value.selectedComicIds)
         assertEquals(1, environment.viewModel.historyEditState.value.session?.accountId)
 
-        val presenterA = presentHistory(environment.viewModel)
-        assertEquals(listOf(101), presenterA.ids())
+        val pageA = loadHistoryToSettled(environment.viewModel)
+        assertEquals(listOf(101), pageA.items.map { it.id })
         val pagesForA = environment.repository.historyPageRequests.size
 
         environment.loginAs(id = 2, username = "accountB")
@@ -108,9 +109,10 @@ class UserViewModelHistorySessionTest {
         assertTrue(edit.selectedComicIds.isEmpty())
         assertNull(edit.session)
 
-        // A new Pager must be created for B; collecting it loads B's pages, never A's cache.
-        val presenterB = presentHistory(environment.viewModel)
-        assertEquals(listOf(201), presenterB.ids())
+        // 会话切换必须清空 A 的列表；重新加载得到 B 的页，绝不复用 A 的缓存。
+        assertTrue(environment.viewModel.historyPageState.value.items.isEmpty())
+        val pageB = loadHistoryToSettled(environment.viewModel)
+        assertEquals(listOf(201), pageB.items.map { it.id })
         assertTrue(environment.repository.historyPageRequests.size > pagesForA)
     }
 
@@ -120,8 +122,8 @@ class UserViewModelHistorySessionTest {
         runCurrent()
 
         environment.viewModel.enterHistoryEdit(comicId = 101)
-        val presenterA = presentHistory(environment.viewModel)
-        assertEquals(listOf(101), presenterA.ids())
+        val pageA = loadHistoryToSettled(environment.viewModel)
+        assertEquals(listOf(101), pageA.items.map { it.id })
 
         environment.repository.activeAccountIdForHistory = 0
         environment.viewModel.logout()
@@ -132,9 +134,8 @@ class UserViewModelHistorySessionTest {
         assertTrue(edit.selectedComicIds.isEmpty())
         assertNull(edit.session)
 
-        // Unauthenticated pager starts empty instead of reusing A's items.
-        val presenterOut = presentHistory(environment.viewModel)
-        assertTrue(presenterOut.ids().isEmpty())
+        // Unauthenticated state starts empty instead of reusing A's items.
+        assertTrue(environment.viewModel.historyPageState.value.items.isEmpty())
     }
 
     @Test
@@ -142,18 +143,63 @@ class UserViewModelHistorySessionTest {
         val environment = environment(historyFailuresAfterSwitch = true)
         runCurrent()
 
-        val presenterA = presentHistory(environment.viewModel)
-        assertEquals(listOf(101), presenterA.ids())
+        val pageA = loadHistoryToSettled(environment.viewModel)
+        assertEquals(listOf(101), pageA.items.map { it.id })
 
         environment.loginAs(id = 2, username = "accountB")
         runCurrent()
 
-        val presenterB = presentHistory(environment.viewModel)
+        val pageB = loadHistoryToSettled(environment.viewModel)
         assertTrue(
-            "B must not see A's cached history after a failed refresh, got ${presenterB.ids()}",
-            presenterB.ids().isEmpty(),
+            "B must not see A's cached history after a failed refresh, got ${pageB.items}",
+            pageB.items.isEmpty(),
         )
-        assertTrue(presenterB.refreshState() is LoadState.Error)
+        assertTrue("refresh failure must surface as error, got ${pageB.error}", pageB.error != null)
+    }
+
+    /**
+     * 历史页只有一页：刷新只打第 1 页，且**不会再有任何后续请求**——
+     * 这是「往下滑动不产生新请求」的回归防线（曾经有过上拉加载第二页的实现，已撤销）。
+     */
+    @Test
+    fun `history only ever requests the first page`() = runTest(scheduler) {
+        val environment = environment()
+        runCurrent()
+
+        val state = loadHistoryToSettled(environment.viewModel)
+        assertEquals(listOf(101), state.items.map { it.id })
+        assertEquals(listOf(1), environment.repository.historyPageRequests)
+
+        // 多次刷新仍然只碰第 1 页，页码不会推进。
+        environment.viewModel.refreshHistory()
+        runCurrent()
+        environment.viewModel.refreshHistory()
+        runCurrent()
+
+        assertEquals(listOf(1, 1, 1), environment.repository.historyPageRequests)
+        assertEquals(listOf(101), environment.viewModel.historyPageState.value.items.map { it.id })
+    }
+
+    @Test
+    fun `in-flight refresh from a previous session is discarded`() = runTest(scheduler) {
+        val environment = environment()
+        runCurrent()
+
+        environment.repository.historyPageDelayMs = 50
+        environment.viewModel.refreshHistory()
+        runCurrent()
+
+        // 请求还在飞的时候换号：旧会话的响应不许写进新会话的列表。
+        environment.loginAs(id = 2, username = "accountB")
+        runCurrent()
+        environment.repository.historyPageDelayMs = 0
+        advanceUntilIdle()
+        runCurrent()
+
+        assertTrue(
+            "旧会话的刷新结果不得落进 B 的列表，实际=${environment.viewModel.historyPageState.value.items.map { it.id }}",
+            environment.viewModel.historyPageState.value.items.isEmpty(),
+        )
     }
 
     @Test
@@ -205,38 +251,17 @@ class UserViewModelHistorySessionTest {
         assertTrue(environment.repository.deletedIds.isEmpty())
     }
 
-    private suspend fun TestScope.presentHistory(
+    /** 触发历史首页加载并驱动调度器直到落定（成功或失败），返回当前分页状态。 */
+    private fun TestScope.loadHistoryToSettled(
         viewModel: UserViewModel,
-    ): HistoryItemPresenter {
-        val data = viewModel.historyComicPager.first()
-        val presenter = HistoryItemPresenter(coroutineContext)
-        val job = backgroundScope.launch(Dispatchers.Unconfined) {
-            presenter.collectFrom(data)
-        }
-        // Drive the test dispatcher until the first refresh settles (success or error).
-        repeat(200) {
-            val refresh = presenter.refreshState()
-            if (refresh is LoadState.NotLoading || refresh is LoadState.Error) return@repeat
+    ): UserViewModel.HistoryPageState {
+        viewModel.refreshHistory()
+        runCurrent()
+        var guard = 0
+        while (viewModel.historyPageState.value.loading && guard++ < 200) {
             runCurrent()
         }
-        presenter.attachJob(job)
-        return presenter
-    }
-
-    private class HistoryItemPresenter(
-        context: CoroutineContext,
-    ) : PagingDataPresenter<Comic>(context) {
-        private var job: Job? = null
-
-        override suspend fun presentPagingDataEvent(event: PagingDataEvent<Comic>) = Unit
-
-        fun attachJob(collectJob: Job) {
-            job = collectJob
-        }
-
-        fun refreshState(): LoadState? = loadStateFlow.value?.refresh
-
-        fun ids(): List<Int> = (0 until size).mapNotNull { index -> peek(index)?.id }
+        return viewModel.historyPageState.value
     }
 
     private class FakeUserStorage(initial: User = User.create()) : UserStorage {
@@ -272,6 +297,9 @@ class UserViewModelHistorySessionTest {
         var activeAccountIdForHistory: Int = 1
         var failHistoryAfterAccountSwitch = false
 
+        /** 让请求挂起一段时间，用于复现「响应在飞时换号」的竞态。 */
+        var historyPageDelayMs: Long = 0
+
         override suspend fun login(username: String, password: String): NetWorkResult<CandidateSession> {
             val id = currentAccountId
             return NetWorkResult.Success(
@@ -289,6 +317,7 @@ class UserViewModelHistorySessionTest {
 
         override suspend fun getHistoryComicList(page: Int): NetWorkResult<ComicPage> {
             historyPageRequests += page
+            if (historyPageDelayMs > 0) kotlinx.coroutines.delay(historyPageDelayMs)
             val accountId = activeAccountIdForHistory
             if (accountId <= 0) {
                 return NetWorkResult.Success(ComicPage(items = emptyList(), total = null))

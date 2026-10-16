@@ -2,7 +2,6 @@ package com.par9uet.jm.favorites.presentation
 
 import com.par9uet.jm.favorites.model.FavoritesIntent
 import com.par9uet.jm.favorites.model.FavoritesModal
-import com.par9uet.jm.favorites.model.FavoritesViewportState
 
 /**
  * Pure modal-state reducer. Kept out of the ViewModel so modal navigation rules stay
@@ -33,9 +32,6 @@ internal fun reduceFavoritesModal(
     FavoritesIntent.FolderActionDismissed -> FavoritesModal.FolderManagement
     else -> current
 }
-
-internal fun FavoritesViewportState.reset(): FavoritesViewportState =
-    FavoritesViewportState(resetGeneration = resetGeneration + 1)
 
 /** Toast copy for batch favorite mutations (move / uncollect). */
 internal fun favoriteBatchMessage(succeeded: Int, failed: Int, action: String): String =

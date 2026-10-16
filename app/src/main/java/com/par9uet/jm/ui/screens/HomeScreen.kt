@@ -17,7 +17,6 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Password
@@ -63,7 +62,9 @@ import com.par9uet.jm.ui.glass.GlassAnchoredMenuState
 import com.par9uet.jm.ui.glass.glassMenuAnchor
 import com.par9uet.jm.ui.interaction.pullDownToAction
 import com.par9uet.jm.ui.interaction.PullDownActionState
+import com.par9uet.jm.ui.interaction.ListPositionKeyHome
 import com.par9uet.jm.ui.interaction.rememberPullDownActionState
+import com.par9uet.jm.ui.interaction.rememberRestoringGridState
 import com.par9uet.jm.ui.viewModel.HomeViewModel
 import com.par9uet.jm.contentfilter.filterBlockedTags
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -87,6 +88,9 @@ internal fun resolveHomeCategoryTitle(
 @Composable
 private fun HomeSkeleton(
     gridColumns: Int,
+    // 与真实网格同源：平板布局用更大的最小单元格，否则自适应列数在冷启动骨架
+    // 和内容加载后不一致，占位尺寸对不上。
+    minSize: Dp,
     topContentPadding: Dp,
     bottomContentPadding: Dp,
     gridState: LazyGridState,
@@ -95,7 +99,7 @@ private fun HomeSkeleton(
     LazyVerticalGrid(
         modifier = modifier.fillMaxSize(),
         state = gridState,
-        columns = adaptiveComicGridCells(gridColumns),
+        columns = adaptiveComicGridCells(gridColumns, minSize = minSize),
         verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Top),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(
@@ -123,8 +127,26 @@ internal fun HomeScreen(
     val preferenceRecommendEnabled by homeViewModel.preferenceRecommendEnabled.collectAsState()
     val blockedTags by homeViewModel.blockedTags.collectAsState()
     val miscSettings by homeViewModel.misc.collectAsState()
+    // 骨架与真实网格共用的自适应最小单元格：平板布局下更大，列数才一致。
+    val gridMinCellSize = if (LocalTabletLayoutEnabled.current) {
+        TabletComicGridMinCellSize
+    } else {
+        118.dp
+    }
     val pullRevealPadding = 36.dp * pullDownState.progress
-    val gridState = rememberLazyGridState()
+    val selectedCategoryId = homeState.selectedCategoryId
+    val selectedState = selectedCategoryId?.let { homeState.states[it] }
+    // Full-page skeleton is only for bootstrap, before the real category structure exists.
+    val showSkeleton = homeState.categories.isEmpty() || selectedCategoryId == null
+    val currentContent = selectedState?.content.orEmpty()
+    val comicList = remember(currentContent, blockedTags) {
+        currentContent.filterBlockedTags(blockedTags).distinctBy { it.id }
+    }
+    // 位置记录：从首页进入漫画再返回时维持原位置。按分类隔离 —— 换分类 = 新位置。
+    val gridState = rememberRestoringGridState(
+        key = "$ListPositionKeyHome|${selectedCategoryId ?: -1}",
+        itemCount = comicList.size,
+    )
     var isGridScrolling by remember { mutableStateOf(false) }
     LaunchedEffect(gridState) {
         snapshotFlow { gridState.isScrollInProgress }
@@ -141,13 +163,10 @@ internal fun HomeScreen(
         homeViewModel.refreshHome()
     }
 
-    val selectedCategoryId = homeState.selectedCategoryId
-    val selectedState = selectedCategoryId?.let { homeState.states[it] }
-    // Full-page skeleton is only for bootstrap, before the real category structure exists.
-    val showSkeleton = homeState.categories.isEmpty() || selectedCategoryId == null
     if (showSkeleton) {
         HomeSkeleton(
             gridColumns = miscSettings.gridColumns.home,
+            minSize = gridMinCellSize,
             topContentPadding = topContentPadding + pullRevealPadding,
             bottomContentPadding = bottomContentPadding,
             gridState = gridState,
@@ -156,16 +175,12 @@ internal fun HomeScreen(
         return
     }
 
-    val currentContent = selectedState?.content.orEmpty()
-    val comicList = remember(currentContent, blockedTags) {
-        currentContent.filterBlockedTags(blockedTags).distinctBy { it.id }
-    }
     LazyVerticalGrid(
         modifier = pullDownModifier.fillMaxSize(),
         state = gridState,
         columns = adaptiveComicGridCells(
             columns = miscSettings.gridColumns.home,
-            minSize = if (LocalTabletLayoutEnabled.current) TabletComicGridMinCellSize else 118.dp,
+            minSize = gridMinCellSize,
         ),
         verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Top),
         horizontalArrangement = Arrangement.spacedBy(12.dp),

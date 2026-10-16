@@ -62,6 +62,7 @@ class FavoritesViewModel(
     private val localMode: com.par9uet.jm.core.model.ConnectionModeStatus,
     private val localModeExitScheduler: com.par9uet.jm.core.model.LocalModeExitScheduler,
     private val localFavoriteOperationGate: com.par9uet.jm.favorites.usecase.LocalFavoriteOperationGate,
+    private val listPositionMemory: com.par9uet.jm.ui.interaction.ListPositionMemory,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(FavoritesUiState())
     val uiState = _uiState.asStateFlow()
@@ -85,6 +86,9 @@ class FavoritesViewModel(
     init {
         viewModelScope.launch {
             accountIdFlow.distinctUntilChanged().collect {
+                // 账号（或会话代际）变化：所有文件夹的保存位置一起作废，
+                // 新的列表从顶部开始——位置本身由全局记录维护。
+                listPositionMemory.clearPrefix("${com.par9uet.jm.ui.interaction.ListPositionKeyFavorites}|")
                 _uiState.update { state ->
                     state.copy(
                         selectedFolderId = 0,
@@ -93,7 +97,6 @@ class FavoritesViewModel(
                         filter = FavoritesFilter(),
                         modal = null,
                         syncErrorVisible = false,
-                        viewport = state.viewport.reset(),
                     )
                 }
             }
@@ -233,7 +236,6 @@ class FavoritesViewModel(
                             tagLogic = TagFilterLogic.AND,
                         ),
                         modal = reduceFavoritesModal(it.modal, FavoritesIntent.FilterCleared),
-                        viewport = it.viewport.reset(),
                     )
                 }
             }
@@ -259,7 +261,6 @@ class FavoritesViewModel(
             is FavoritesIntent.RenameFolderSubmitted -> submitRenameFolder(intent.folderId, intent.name)
             FavoritesIntent.DeleteFolderConfirmed -> submitDeleteFolder()
 
-            is FavoritesIntent.ViewportSaved -> saveViewport(intent)
         }
     }
 
@@ -275,7 +276,6 @@ class FavoritesViewModel(
                 searchActive = false,
                 filter = it.filter.copy(searchText = ""),
                 modal = null,
-                viewport = it.viewport.reset(),
             )
         }
         requestAutomaticSync(folderId)
@@ -286,20 +286,15 @@ class FavoritesViewModel(
         _uiState.update {
             it.copy(
                 filter = it.filter.copy(searchText = query),
-                viewport = it.viewport.reset(),
             )
         }
     }
 
     private fun exitSearch() {
-        val hadSearchQuery = _uiState.value.filter.searchText.isNotEmpty()
         _uiState.update {
             it.copy(
                 searchActive = false,
                 filter = it.filter.copy(searchText = ""),
-                // Only an effective dataset change deserves a viewport reset; entering and
-                // immediately leaving an empty search must keep the saved scroll position.
-                viewport = if (hadSearchQuery) it.viewport.reset() else it.viewport,
             )
         }
     }
@@ -322,7 +317,6 @@ class FavoritesViewModel(
                     tagLogic = intent.tagLogic,
                 ),
                 modal = null,
-                viewport = it.viewport.reset(),
             )
         }
     }
@@ -442,24 +436,12 @@ class FavoritesViewModel(
                 is NetWorkResult.Error -> toastManager.showAsync(result.message)
                 is NetWorkResult.Success -> {
                     if (_uiState.value.selectedFolderId == modal.folderId) {
-                        _uiState.update { it.copy(selectedFolderId = 0, viewport = it.viewport.reset()) }
+                        _uiState.update { it.copy(selectedFolderId = 0) }
                     }
                     requestAutomaticSync()
                     toastManager.showAsync("删除成功")
                 }
             }
-        }
-    }
-
-    private fun saveViewport(intent: FavoritesIntent.ViewportSaved) {
-        _uiState.update { state ->
-            if (intent.resetGeneration != state.viewport.resetGeneration) return@update state
-            state.copy(
-                viewport = state.viewport.copy(
-                    firstVisibleItemIndex = intent.firstVisibleItemIndex,
-                    firstVisibleItemScrollOffset = intent.firstVisibleItemScrollOffset,
-                )
-            )
         }
     }
 
@@ -488,16 +470,12 @@ class FavoritesViewModel(
     }
 
     private fun clearTransientState() {
-        val hadSearchQuery = _uiState.value.filter.searchText.isNotEmpty()
         _uiState.update {
             it.copy(
                 searchActive = false,
                 filter = it.filter.copy(searchText = ""),
                 selection = FavoritesSelectionState(),
                 modal = null,
-                // Leaving the tab alone never scrolls the user back to the top; a cleared
-                // active search query changes the effective list and therefore does.
-                viewport = if (hadSearchQuery) it.viewport.reset() else it.viewport,
             )
         }
     }

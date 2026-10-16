@@ -8,6 +8,7 @@ import androidx.paging.cachedIn
 import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.core.model.SignInData
 import com.par9uet.jm.session.CandidateSession
+import com.par9uet.jm.contentfilter.filterBlockedTags
 import com.par9uet.jm.session.UserRepository
 import com.par9uet.jm.session.UserSessionSnapshot
 import com.par9uet.jm.core.network.NetWorkResult
@@ -16,7 +17,6 @@ import com.par9uet.jm.storage.ContentPreferences
 import com.par9uet.jm.core.ToastManager
 import com.par9uet.jm.session.UserManager
 import com.par9uet.jm.core.model.CommonUIState
-import com.par9uet.jm.ui.pagingSource.HistoryComicPagingSource
 import com.par9uet.jm.ui.pagingSource.HistoryCommentPagingSource
 import com.par9uet.jm.utils.log
 import com.par9uet.jm.utils.logError
@@ -139,47 +139,74 @@ class UserViewModel(
         }
     }
 
-    private val _historyRefreshVersion = MutableStateFlow(0)
+    /**
+     * 历史浏览状态：**只有一页**。
+     *
+     * `watch_list` 只请求第 1 页（最新 20 条），往下滑动不再产生任何请求——
+     * 不做预取、不做上拉加载、也没有页尾加载指示器。
+     */
+    data class HistoryPageState(
+        val items: List<Comic> = emptyList(),
+        val loading: Boolean = false,
+        val error: String? = null,
+    )
+
+    private val _historyPageState = MutableStateFlow(HistoryPageState())
+    val historyPageState = _historyPageState.asStateFlow()
 
     /**
-     * Bumps the history pager generation. Used by the delete-success path (immediate refresh)
-     * and, on the screen side, by the entry/resume lifecycle refresh.
+     * 在途请求令牌：换号/登出后旧会话的响应不许写进新会话。
      */
-    fun refreshHistoryComicPager() {
-        _historyRefreshVersion.update { it + 1 }
+    private var historyLoadToken = 0
+
+    /**
+     * 拉取最新一页（或刷新）。刷新期间保留旧列表展示，拉到新数据后整体替换。
+     * 每次进入历史页调用一次，之后再没有任何请求。
+     */
+    fun refreshHistory() {
+        val current = _historyPageState.value
+        if (current.loading || localMode.isLocalMode) return
+        val token = ++historyLoadToken
+        _historyPageState.value = current.copy(loading = true, error = null)
+        viewModelScope.launch { loadLatestHistory(token) }
     }
 
-    /**
-     * History comics and history comments share the same account+generation paging lifecycle:
-     * [UserManager.sessionState] rebuilds the pager so account B never reuses A's cached pages.
-     * blockedTags still participates because tag filtering is applied inside the paging source.
-     *
-     * `cachedIn` 在 flatMapLatest 内（单代缓存），外层 `stateIn(Eagerly)` 保证离开页面后缓存仍在。
-     */
-    @OptIn(ExperimentalCoroutinesApi::class)
-    val historyComicPager = combine(
-        userManager.sessionState,
-        contentPreferences.blockedTags,
-        _historyRefreshVersion,
-        localMode.isLocalModeFlow,
-    ) { session, blockedTagList, _, isLocal -> Triple(session, blockedTagList, isLocal) }
-        .flatMapLatest { (_, blockedTagList, isLocal) ->
-        if (isLocal) return@flatMapLatest flowOf(androidx.paging.PagingData.empty())
-        Pager(
-            config = PagingConfig(
-                pageSize = HistoryComicPagingSource.PAGE_SIZE,
-                prefetchDistance = 6,
-                initialLoadSize = HistoryComicPagingSource.PAGE_SIZE,
-            ),
-            pagingSourceFactory = {
-                HistoryComicPagingSource(userRepository, blockedTagList)
+    private suspend fun loadLatestHistory(token: Int) {
+        if (token != historyLoadToken) return
+        val blockedTagList = contentPreferences.blockedTags.value
+        val result = try {
+            userRepository.getHistoryComicList(1)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            finishHistoryLoad(token, error.message ?: "加载失败，请重试", null)
+            return
+        }
+        when (result) {
+            is NetWorkResult.Error -> finishHistoryLoad(token, result.message, null)
+            is NetWorkResult.Success -> finishHistoryLoad(token, null, result.data.items, blockedTagList)
+        }
+    }
+
+    private fun finishHistoryLoad(
+        token: Int,
+        error: String?,
+        raw: List<Comic>?,
+        blockedTagList: List<String> = emptyList(),
+    ) {
+        if (token != historyLoadToken) return
+        _historyPageState.update { state ->
+            if (error != null || raw == null) {
+                state.copy(loading = false, error = error ?: "加载失败，请重试")
+            } else {
+                state.copy(
+                    items = raw.filterBlockedTags(blockedTagList),
+                    loading = false,
+                    error = null,
+                )
             }
-        ).flow.cachedIn(viewModelScope)
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.Eagerly,
-        initialValue = androidx.paging.PagingData.empty(),
-    )
+        }
+    }
 
     private val _historyEditState = MutableStateFlow(HistoryEditState())
     val historyEditState = _historyEditState.asStateFlow()
@@ -194,6 +221,10 @@ class UserViewModel(
                 ) {
                     _historyEditState.value = HistoryEditState()
                 }
+                // 会话变化重置历史分页：A 的列表绝不带给 B（登出则清空，等下次进入再拉）。
+                // 同时作废在途请求，旧会话的响应不许写进新会话。
+                historyLoadToken++
+                _historyPageState.value = HistoryPageState()
             }
         }
     }
@@ -317,7 +348,8 @@ class UserViewModel(
             toastManager.showAsync(message)
             if (success > 0) {
                 com.par9uet.jm.ui.haptics.AppHaptics.deleteMulti()
-                _historyRefreshVersion.update { it + 1 }
+                // 删除后重拉首页，顺序与远端保持一致
+                refreshHistory()
             }
             clearHistorySelection()
         }

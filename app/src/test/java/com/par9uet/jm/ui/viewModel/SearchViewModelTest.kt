@@ -14,6 +14,8 @@ import com.par9uet.jm.storage.HistorySearchManager
 import com.par9uet.jm.storage.HistorySearchStore
 import com.par9uet.jm.storage.MiscSettingsPreferences
 import com.par9uet.jm.storage.MiscSettingsState
+import com.par9uet.jm.ui.interaction.ListPositionMemory
+import com.par9uet.jm.ui.interaction.searchListPositionKey
 import java.lang.reflect.Proxy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -59,7 +61,10 @@ class SearchViewModelTest {
         override fun remove() { items = emptyList() }
     }
 
-    private fun buildVm(repository: ComicRepository): SearchViewModel {
+    private fun buildVm(
+        repository: ComicRepository,
+        memory: ListPositionMemory = ListPositionMemory(),
+    ): SearchViewModel {
         val settings = FakeSettings()
         return SearchViewModel(
             repository,
@@ -67,6 +72,7 @@ class SearchViewModelTest {
             HistorySearchManager(FakeHistorySearchStore()),
             settings,
             settings,
+            memory,
         )
     }
 
@@ -234,55 +240,73 @@ class SearchViewModelTest {
         assertEquals(ComicSearchOrderFilter.MOST_LIKE_COUNT, vm.searchComicFilterState.value.order)
     }
 
+    /**
+     * 滚动位置现在由全局位置记录按「查询键」隔离保存。
+     *
+     * 这一组用例钉住的是**返回时能找回位置**这件事成立的前提：同一查询 = 同一个 key，
+     * 换查询 / 换排序 / 换年月 = 另一个 key（于是从顶部开始）。之前的 generation 归零
+     * 逻辑在「搜索 → 详情 → 点作者 → 返回 → 返回」时会把返回旧查询误判成换代。
+     */
     @Test
     fun returningToUnchangedSearchKeepsSavedViewport() = runTest(scheduler) {
-        val vm = buildVm(FakeComicRepository())
+        val memory = ListPositionMemory()
+        val vm = buildVm(FakeComicRepository(), memory)
         vm.changeSearchComicContent("neko", listOf("tag1"))
-        val generation = vm.searchViewportState.value.resetGeneration
-        vm.saveSearchViewport(
-            firstVisibleItemIndex = 42,
-            firstVisibleItemScrollOffset = 96,
-            resetGeneration = generation,
-        )
+        val key = searchListPositionKey(vm.searchComicFilterState.value.queryKey())
+        memory.save(key, index = 42, offset = 96)
 
+        // 结果页每次重新进入都会重放同一个查询（同 key）。
         vm.changeSearchComicContent("neko", listOf("tag1"))
+        vm.enterSearchResult("neko", listOf("tag1"))
 
-        assertEquals(42, vm.searchViewportState.value.firstVisibleItemIndex)
-        assertEquals(96, vm.searchViewportState.value.firstVisibleItemScrollOffset)
-        assertEquals(generation, vm.searchViewportState.value.resetGeneration)
+        val restored = memory.position(searchListPositionKey(vm.searchComicFilterState.value.queryKey()))
+        assertEquals(42, restored?.index)
+        assertEquals(96, restored?.offset)
     }
 
     @Test
-    fun changingSearchContextResetsViewportAndRejectsStaleSaves() = runTest(scheduler) {
-        val vm = buildVm(FakeComicRepository())
-        val oldGeneration = vm.searchViewportState.value.resetGeneration
-        vm.saveSearchViewport(12, 48, oldGeneration)
+    fun changingSearchContextStartsFromAFreshKey() = runTest(scheduler) {
+        val memory = ListPositionMemory()
+        val vm = buildVm(FakeComicRepository(), memory)
+        vm.changeSearchComicContent("neko", emptyList())
+        val oldKey = searchListPositionKey(vm.searchComicFilterState.value.queryKey())
+        memory.save(oldKey, index = 12, offset = 48)
 
-        vm.changeSearchComicContent("new query", emptyList())
-        val reset = vm.searchViewportState.value
+        vm.enterSearchResult("new query", emptyList())
+        val newKey = searchListPositionKey(vm.searchComicFilterState.value.queryKey())
 
-        assertEquals(0, reset.firstVisibleItemIndex)
-        assertEquals(0, reset.firstVisibleItemScrollOffset)
-        assertTrue(reset.resetGeneration > oldGeneration)
-
-        vm.saveSearchViewport(99, 99, oldGeneration)
-        assertEquals(reset, vm.searchViewportState.value)
+        assertTrue("换查询必须换成新的位置 key", newKey != oldKey)
+        assertNull("新查询没有记忆，等于从顶部开始", memory.position(newKey))
     }
 
     @Test
-    fun changingSearchOrderResetsViewport() = runTest(scheduler) {
-        val vm = buildVm(FakeComicRepository())
-        val generation = vm.searchViewportState.value.resetGeneration
-        vm.saveSearchViewport(18, 72, generation)
+    fun changingSearchOrderStartsFromAFreshKey() = runTest(scheduler) {
+        val memory = ListPositionMemory()
+        val vm = buildVm(FakeComicRepository(), memory)
+        vm.changeSearchComicContent("neko", emptyList())
+        val newestKey = searchListPositionKey(vm.searchComicFilterState.value.queryKey())
+        memory.save(newestKey, index = 18, offset = 72)
 
         vm.changeSearchComicOrderFilter(ComicSearchOrderFilter.MOST_VIEWED)
+        val mostViewedKey = searchListPositionKey(vm.searchComicFilterState.value.queryKey())
 
-        assertEquals(0, vm.searchViewportState.value.firstVisibleItemIndex)
-        assertEquals(0, vm.searchViewportState.value.firstVisibleItemScrollOffset)
-        assertTrue(vm.searchViewportState.value.resetGeneration > generation)
+        assertTrue("换排序必须换成新的位置 key", mostViewedKey != newestKey)
+        assertNull(memory.position(mostViewedKey))
+        // 原来那个排序的位置还在：切回去仍然找得回。
+        assertEquals(18, memory.position(newestKey)?.index)
+    }
 
-        val resetGeneration = vm.searchViewportState.value.resetGeneration
-        vm.changeSearchComicOrderFilter(ComicSearchOrderFilter.MOST_VIEWED)
-        assertEquals(resetGeneration, vm.searchViewportState.value.resetGeneration)
+    @Test
+    fun repeatingTheSameSearchClearsTheSavedViewport() = runTest(scheduler) {
+        val memory = ListPositionMemory()
+        val vm = buildVm(FakeComicRepository(), memory)
+        vm.changeSearchComicContent("neko", emptyList())
+        val key = searchListPositionKey(vm.searchComicFilterState.value.queryKey())
+        memory.save(key, index = 42, offset = 96)
+
+        // 显式重搜同一关键词 = 新的一次浏览：位置作废，从顶部开始。
+        vm.submitSearch("neko", emptyList())
+
+        assertNull(memory.position(key))
     }
 }

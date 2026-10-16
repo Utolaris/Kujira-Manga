@@ -21,31 +21,34 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
-import androidx.paging.LoadState
-import androidx.paging.compose.collectAsLazyPagingItems
 import com.par9uet.jm.ui.components.BackIconButton
 import com.par9uet.jm.ui.components.Comic
 import com.par9uet.jm.ui.components.ComicSkeleton
 import com.par9uet.jm.ui.components.CommonScaffold
-import com.par9uet.jm.ui.components.PullRefreshAndLoadMoreGrid
+import com.par9uet.jm.ui.components.LocalComicGridScrolling
 import com.par9uet.jm.ui.components.adaptiveComicGridCells
 import com.par9uet.jm.ui.glass.AppGlassTopBar
 import com.par9uet.jm.ui.glass.ChromeMode
 import com.par9uet.jm.ui.glass.GlassConfirmDialog
 import com.par9uet.jm.ui.glass.GlassTopBarModeTransition
+import com.par9uet.jm.ui.interaction.ListPositionKeyHistory
+import com.par9uet.jm.ui.interaction.rememberRestoringGridState
 import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.UserViewModel
+import kotlinx.coroutines.flow.distinctUntilChanged
 import org.koin.compose.viewmodel.koinActivityViewModel
 
 @Composable
@@ -78,7 +81,7 @@ private fun UserHistoryComicSkeleton() {
 fun UserHistoryComicScreen(
     userViewModel: UserViewModel = koinActivityViewModel(),
 ) {
-    val historyComicLazyPagingItems = userViewModel.historyComicPager.collectAsLazyPagingItems()
+    val historyPageState by userViewModel.historyPageState.collectAsState()
     val historyEditState by userViewModel.historyEditState.collectAsState()
     val miscSettings by userViewModel.misc.collectAsState()
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
@@ -90,8 +93,8 @@ fun UserHistoryComicScreen(
             localHistory.map { it.toComic() }.filter { it.id in historyEditState.selectedComicIds }
         }
     } else {
-        remember(historyComicLazyPagingItems.itemSnapshotList, historyEditState.selectedComicIds) {
-            historyComicLazyPagingItems.itemSnapshotList.filterNotNull().filter { it.id in historyEditState.selectedComicIds }
+        remember(historyPageState.items, historyEditState.selectedComicIds) {
+            historyPageState.items.filter { it.id in historyEditState.selectedComicIds }
         }
     }
     // Session switch clears the selection (and therefore editing); dismiss any open
@@ -103,10 +106,9 @@ fun UserHistoryComicScreen(
         userViewModel.clearHistorySelection()
     }
 
-    // Exactly one refresh per genuine destination resume: presented items stay visible while the
-    // new generation loads, and recomposition never re-triggers this lifecycle effect.
+    // 每次进入历史页拉一次最新一页；页面内部不再有任何请求。
     LifecycleResumeEffect(Unit) {
-        historyComicLazyPagingItems.refresh()
+        userViewModel.refreshHistory()
         onPauseOrDispose { }
     }
 
@@ -151,6 +153,10 @@ fun UserHistoryComicScreen(
                 }
             } else {
                 androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+                    state = rememberRestoringGridState(
+                        key = "$ListPositionKeyHistory|local",
+                        itemCount = comics.size,
+                    ),
                     modifier = Modifier.fillMaxSize(),
                     columns = adaptiveComicGridCells(miscSettings.gridColumns.history),
                     verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Top),
@@ -185,48 +191,102 @@ fun UserHistoryComicScreen(
                     }
                 }
             }
-        } else if (historyComicLazyPagingItems.loadState.refresh is LoadState.Loading && historyComicLazyPagingItems.itemCount == 0) {
+        } else if (historyPageState.loading && historyPageState.items.isEmpty()) {
             Box(modifier = Modifier.padding(top = topContentPadding)) {
                 UserHistoryComicSkeleton()
             }
+        } else if (historyPageState.items.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = topContentPadding),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = historyPageState.error ?: "暂无历史记录",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         } else {
-            PullRefreshAndLoadMoreGrid(
-                modifier = Modifier.fillMaxSize(),
-                lazyPagingItems = historyComicLazyPagingItems,
-                key = { it.id },
-                columns = adaptiveComicGridCells(miscSettings.gridColumns.history),
-                // Match HomeScreen so cover width and gutters are identical across tabs.
-                verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Top),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                contentPadding = PaddingValues(
-                    start = 12.dp,
-                    end = 12.dp,
-                    top = topContentPadding + 12.dp,
-                    bottom = bottomContentPadding,
-                ),
-                // 不要下拉刷新：LifecycleResumeEffect 每次回页已 refresh，入口重复；
-                // 且 resume 触发的 Loading 会在未手势时误播下拉刷新动画。
-                enablePullRefresh = false,
-            ) { comic ->
+            HistoryComicGrid(
+                pageState = historyPageState,
+                gridColumns = miscSettings.gridColumns.history,
+                topContentPadding = topContentPadding,
+                bottomContentPadding = bottomContentPadding,
+                editing = historyEditState.editing,
+                selectedComicIds = historyEditState.selectedComicIds,
+                onComicLongClick = { comic ->
+                    if (historyEditState.editing) {
+                        userViewModel.toggleHistorySelected(comic.id)
+                    } else {
+                        userViewModel.enterHistoryEdit(comic.id)
+                    }
+                },
+                onComicToggleSelected = { userViewModel.toggleHistorySelected(it.id) },
+            )
+        }
+    }
+
+}
+
+/**
+ * 历史浏览网格（单页）：
+ * 只展示官方返回的最新一页 20 条。往下滑动**不会再发任何请求**——
+ * 不预取、不上拉加载、也没有页尾加载指示器。
+ */
+@Composable
+private fun HistoryComicGrid(
+    pageState: com.par9uet.jm.ui.viewModel.UserViewModel.HistoryPageState,
+    gridColumns: Int,
+    topContentPadding: Dp,
+    bottomContentPadding: Dp,
+    editing: Boolean,
+    selectedComicIds: Set<Int>,
+    onComicLongClick: (com.par9uet.jm.data.models.Comic) -> Unit,
+    onComicToggleSelected: (com.par9uet.jm.data.models.Comic) -> Unit,
+) {
+    // 位置记录：进入漫画再返回时维持离开前的位置。
+    val gridState = rememberRestoringGridState(
+        key = ListPositionKeyHistory,
+        itemCount = pageState.items.size,
+    )
+    var isGridScrolling by remember { mutableStateOf(false) }
+    LaunchedEffect(gridState) {
+        snapshotFlow { gridState.isScrollInProgress }
+            .distinctUntilChanged()
+            .collect { isGridScrolling = it }
+    }
+
+    CompositionLocalProvider(LocalComicGridScrolling provides isGridScrolling) {
+        LazyVerticalGrid(
+            state = gridState,
+            modifier = Modifier.fillMaxSize(),
+            columns = adaptiveComicGridCells(gridColumns),
+            verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Top),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(
+                start = 12.dp,
+                end = 12.dp,
+                top = topContentPadding + 12.dp,
+                bottom = bottomContentPadding,
+            ),
+        ) {
+            items(
+                count = pageState.items.size,
+                key = { pageState.items[it].id },
+            ) { index ->
+                val comic = pageState.items[index]
                 Comic(
                     comic = comic,
-                    editing = historyEditState.editing,
-                    selected = comic.id in historyEditState.selectedComicIds,
-                    onLongClick = {
-                        if (historyEditState.editing) {
-                            userViewModel.toggleHistorySelected(comic.id)
-                        } else {
-                            userViewModel.enterHistoryEdit(comic.id)
-                        }
-                    },
-                    onToggleSelected = {
-                        userViewModel.toggleHistorySelected(comic.id)
-                    },
+                    editing = editing,
+                    selected = comic.id in selectedComicIds,
+                    onLongClick = { onComicLongClick(comic) },
+                    onToggleSelected = { onComicToggleSelected(comic) },
                 )
             }
         }
     }
-
 }
 
 /** Reference implementation for the shared glass confirmation design. */

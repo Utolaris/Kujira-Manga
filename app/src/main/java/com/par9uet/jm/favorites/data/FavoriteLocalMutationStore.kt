@@ -39,11 +39,21 @@ internal class FavoriteLocalMutationStore(
             ))
             metadataDao.upsert(metadata.toEntity(accountId, now))
             termDao.replaceTerms(accountId, comic.id, metadata.toTerms(accountId, item))
+            // 新收藏置顶：云端同步后服务端把最新收藏放在列表首位（remoteOrder 从 0 起）。
+            // 本地预览用 MIN(remoteOrder) - 1 抢占队首，与硬编码 0 不同——0 会与云端 0 号位
+            // 并列，再被 albumId ASC 顶到第二位，直到下一次同步才归位。连续本地收藏依次
+            // 递减，顺序仍然正确；下一次同步按服务端真实顺序整表重写归位。
+            val allOrder = membershipDao.minRemoteOrder(accountId, FAVORITE_SCOPE_ALL) - 1
+            val folderOrder = if (folderId == FAVORITE_SCOPE_ALL) {
+                allOrder
+            } else {
+                membershipDao.minRemoteOrder(accountId, folderId) - 1
+            }
             membershipDao.upsertAll(
                 buildList {
-                    add(FavoriteFolderMembershipEntity(accountId, FAVORITE_SCOPE_ALL, comic.id, 0, now))
+                    add(FavoriteFolderMembershipEntity(accountId, FAVORITE_SCOPE_ALL, comic.id, allOrder, now))
                     if (folderId != FAVORITE_SCOPE_ALL) {
-                        add(FavoriteFolderMembershipEntity(accountId, folderId, comic.id, 0, now))
+                        add(FavoriteFolderMembershipEntity(accountId, folderId, comic.id, folderOrder, now))
                     }
                 }
             )
