@@ -64,6 +64,7 @@ class CatalogViewModelWiringTest {
                 single<com.par9uet.jm.storage.BlockedTagTemplatePreferences> { settings }
                 single<com.par9uet.jm.storage.MiscSettingsPreferences> { settings }
                 single { historySearchManager }
+                single { com.par9uet.jm.ui.interaction.ListPositionMemory() }
             })
         }
         try {
@@ -72,20 +73,16 @@ class CatalogViewModelWiringTest {
             val week = app.koin.get<WeekViewModel>()
             assertTrue(calls.isEmpty())
             search.changeSearchComicContent("saved query", listOf("excluded"))
-            val generation = search.searchViewportState.value.resetGeneration
-            search.saveSearchViewport(42, 8, generation)
             home.refreshHome()
             week.getWeekData()
             advanceUntilIdle()
             assertTrue(calls.containsAll(listOf("getEmbeddedHomeCategory", "getWeekData")))
             assertTrue(calls.none { it !in setOf("getEmbeddedHomeCategory", "getWeekData", "getComicList") })
             assertEquals("saved query", search.searchComicFilterState.value.searchContent)
-            assertEquals(42, search.searchViewportState.value.firstVisibleItemIndex)
             assertEquals("week", week.weekFilterState.value.categoryId)
             assertEquals("hot", week.weekFilterState.value.typeId)
             week.changeWeekCategoryFilter("another")
             assertEquals("builtin_week_hot", home.homeState.value.selectedCategoryId)
-            assertEquals(generation, search.searchViewportState.value.resetGeneration)
         } finally {
             // Eagerly 的 stateIn 在 close 时取消；必须先排空 Main 上的收尾再 resetMain。
             app.close()

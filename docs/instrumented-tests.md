@@ -72,7 +72,7 @@ adb shell appops get kujira.manga.debug | grep 10021
 | backup | `BackupRestoreOperationsTest` | 备份编解码 + 下载排队 |
 | cache | `DocumentCacheStorageTest` | SAF 文档 |
 | cache.atom | `CacheFilesDeviceTest` | 真实删除；`reader_pages` 租约目录不被普通清理删掉 |
-| cache.migration | `CacheMigrationDeviceTest` | 文件↔SAF 互迁、旧 ZIP、不可读来源不切目录；下载/迁移创建 `.nomedia`，启动补齐已有漫画目录，不屏蔽父目录 |
+| cache.migration | `CacheMigrationDeviceTest` | 文件↔SAF 互迁、旧 ZIP、不可读来源不切目录；下载/迁移**不写** `.nomedia`，用户的漫画在文件管理器里可见 |
 | database | `AppDatabaseMigrationTest` / `FavoriteStoreRealDatabaseTest` | Room migration；文件型 SQLite、中文搜索、账号隔离；各收藏夹共享的同步完成时间在重开数据库后保留 |
 | download | `DownloadContentFilesTest` | 章节页文件读写 |
 | download.export | `PdfExportDeviceTest` | 真实 `PdfDocument` + SAF；失败时用 `DocumentsContract.deleteDocument` 清不完整 PDF |

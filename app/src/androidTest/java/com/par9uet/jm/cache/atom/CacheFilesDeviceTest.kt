@@ -37,7 +37,6 @@ class CacheFilesDeviceTest {
     }
 
     private fun areaDirectory(area: CacheArea): File = when (area) {
-        CacheArea.PDF -> File(root, "pdf_export")
         CacheArea.ALL -> root
         else -> File(root, area.id)
     }
@@ -53,15 +52,13 @@ class CacheFilesDeviceTest {
     @Test
     fun scanReportsRealByteCountsAndZeroForMissingAreas() {
         seed(CacheArea.COMMON, 100, "a.bin", "b.bin")
-        seed(CacheArea.DECODE, 40, "c.bin")
 
         val sizes = sizes()
 
         assertEquals(200L, sizes[CacheArea.COMMON])
-        assertEquals(40L, sizes[CacheArea.DECODE])
         assertEquals(0L, sizes[CacheArea.DOWNLOAD])
         assertEquals(0L, sizes[CacheArea.READER])
-        assertEquals(240L, sizes[CacheArea.ALL])
+        assertEquals(200L, sizes[CacheArea.ALL])
     }
 
     @Test
@@ -77,16 +74,12 @@ class CacheFilesDeviceTest {
     fun clearingEverythingKeepsTheReaderCacheIntact() {
         seed(CacheArea.COMMON, 16, "a.bin")
         seed(CacheArea.DOWNLOAD, 16, "b.bin")
-        seed(CacheArea.DECODE, 16, "c.bin")
-        seed(CacheArea.PDF, 16, "d.pdf")
         seed(CacheArea.READER, 16, "page.bin")
 
         runBlocking { files.remove(setOf(CacheArea.ALL)) }
 
         assertFalse(areaDirectory(CacheArea.COMMON).exists())
         assertFalse(areaDirectory(CacheArea.DOWNLOAD).exists())
-        assertFalse(areaDirectory(CacheArea.DECODE).exists())
-        assertFalse(areaDirectory(CacheArea.PDF).exists())
         assertTrue("阅读器目录必须保留，只能由阅读器租约协议回收", areaDirectory(CacheArea.READER).exists())
         assertEquals(listOf("page.bin"), areaDirectory(CacheArea.READER).list()?.toList())
     }

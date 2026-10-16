@@ -84,7 +84,7 @@ val favoriteModule = module {
     }
     viewModel {
         FavoritesViewModel(
-            get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(),
+            get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(),
         )
     }
 }

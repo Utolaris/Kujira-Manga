@@ -10,7 +10,6 @@ private const val DOWNLOAD_TREE_URI_KEY = "tree_uri"
 private const val CACHE_MIGRATION_REQUEST_ID_KEY = "cache_migration_request_id"
 
 fun getCommonCacheDir(context: Context) = tryCreateDir(File(context.cacheDir, "common"))
-fun getCommonPicDecodeCacheDir(context: Context, comicId: Int) = tryCreateDir(File(context.cacheDir, "pic_decode/$comicId"))
 fun getDownloadDir(context: Context) = tryCreateDir(File(context.cacheDir, "download"))
 
 fun getDownloadTreeUri(context: Context): android.net.Uri? =

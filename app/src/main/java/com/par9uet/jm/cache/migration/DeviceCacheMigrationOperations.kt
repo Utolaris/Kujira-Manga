@@ -11,7 +11,6 @@ import com.par9uet.jm.cache.cachePathContentStatus
 import com.par9uet.jm.cache.cachePathIsDirectory
 import com.par9uet.jm.cache.cachePathSize
 import com.par9uet.jm.cache.deleteCachePath
-import com.par9uet.jm.cache.ensureComicCacheNoMedia
 import com.par9uet.jm.cache.findCacheChildPathOrThrow
 import com.par9uet.jm.cache.findExistingComicChapterPath
 import com.par9uet.jm.cache.findOrCreateCacheDocument
@@ -232,14 +231,12 @@ class DeviceCacheMigrationOperations(
 
     private fun destinationComicRoot(record: DownloadComic, treeUri: String): String {
         val comicName = getComicCacheRootName(record)
-        if (treeUri.isBlank()) return File(getDownloadDir(appContext), comicName).also(File::mkdirs).absolutePath.also {
-            ensureComicCacheNoMedia(appContext, it)
-        }
+        if (treeUri.isBlank()) return File(getDownloadDir(appContext), comicName).also(File::mkdirs).absolutePath
         val tree = treeUri.toUri()
         val root = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
         return requireNotNull(findOrCreateCacheDocument(appContext, root, comicName, DocumentsContract.Document.MIME_TYPE_DIR)) {
             "无法创建迁移目标漫画目录：$comicName"
-        }.toString().also { ensureComicCacheNoMedia(appContext, it) }
+        }.toString()
     }
 
     /** Recreate only the chapter that is about to be copied, so unrelated target content survives. */

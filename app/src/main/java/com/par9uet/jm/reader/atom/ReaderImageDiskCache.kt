@@ -34,6 +34,17 @@ private data class DecodedCacheWrite(
     val generation: Long,
 )
 
+private const val MIN_MAX_DISK_CACHE_BYTES = 32L * 1024L * 1024L
+
+/**
+ * 上限 + 回收目标的原子快照。两者必须配对发布：分两个字段写会让裁剪协程读到半新半旧的
+ * 组合，按旧目标回收甚至整趟跳过。目标固定取上限的 7/8，留一点写入余量。
+ */
+private class DiskCacheLimits(bytes: Long) {
+    val maxBytes: Long = bytes.coerceAtLeast(MIN_MAX_DISK_CACHE_BYTES)
+    val targetBytes: Long = maxBytes * 7L / 8L
+}
+
 /** Owns reader source/decoded files, leases, generations, writes and disk trimming. */
 internal class ReaderImageDiskCache(
     directory: File,
@@ -43,8 +54,11 @@ internal class ReaderImageDiskCache(
     private val sourceCacheMutex = Mutex()
     private val decodedCacheMutex = Mutex()
     private val cacheGeneration = AtomicLong(0L)
-    private val maxDiskCacheBytes = maxBytes.coerceAtLeast(32L * 1024L * 1024L)
-    private val targetDiskCacheBytes = (maxDiskCacheBytes * 7L / 8L)
+
+    // 额度可在进程存活期间被改（「缓存控制」里拖滑块/从备份恢复）。裁剪跑在 IO 协程里、
+    // 改值来自设置流，所以整体替换快照而不是逐个改字段。
+    @Volatile
+    private var limits = DiskCacheLimits(maxBytes)
     private val diskCacheDir = directory.apply { mkdirs() }
     private val activeSourceFiles = ConcurrentHashMap<File, AtomicInteger>()
     private val decodedCacheWrites = Channel<DecodedCacheWrite>(
@@ -73,6 +87,20 @@ internal class ReaderImageDiskCache(
         File(diskCacheDir, "${readerCacheKey(pageKey, "decoded", profile)}.webp")
 
     fun currentGeneration(): Long = cacheGeneration.get()
+
+    /**
+     * 总预算变化后更新上限，并**立刻**按 LRU 回收一次——不等下一次写入。
+     *
+     * 用户在「缓存控制」里把额度调低到已用之下时必须当场见效：原来只有 `writeDecodedCache`
+     * 收尾才会排一次裁剪，静态阅读（或干脆没再翻页）时缓存会一直挂在旧额度上。
+     * 回收目标仍是上限的 7/8，与写入触发的裁剪一致。
+     */
+    fun updateMaxBytes(bytes: Long) {
+        val updated = DiskCacheLimits(bytes)
+        if (updated.maxBytes == limits.maxBytes) return
+        limits = updated
+        requestDiskTrim()
+    }
 
     suspend fun createSourceTempFile(): File = sourceCacheMutex.withLock {
         ensureDiskCacheDir()
@@ -235,6 +263,7 @@ internal class ReaderImageDiskCache(
     }
 
     private suspend fun trimDiskCache() {
+        val snapshot = limits
         if (!sourceCacheMutex.tryLock()) return
         try {
             if (!decodedCacheMutex.tryLock()) return
@@ -246,9 +275,9 @@ internal class ReaderImageDiskCache(
                         (file.extension == "source" || file.extension == "webp")
                 }.orEmpty()
                 var total = files.sumOf(File::length)
-                if (total <= maxDiskCacheBytes) return
+                if (total <= snapshot.maxBytes) return
                 files.sortedBy(File::lastModified).forEach { file ->
-                    if (total <= targetDiskCacheBytes) return@forEach
+                    if (total <= snapshot.targetBytes) return@forEach
                     total -= file.length()
                     file.delete()
                 }

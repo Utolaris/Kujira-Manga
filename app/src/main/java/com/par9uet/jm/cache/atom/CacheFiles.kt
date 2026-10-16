@@ -12,9 +12,33 @@ interface CacheFiles {
     suspend fun remove(areas: Set<CacheArea>)
 }
 
-class DeviceCacheFiles(private val cacheDirectory: File) : CacheFiles {
+/**
+ * 用户自定义下载目录（SAF）的字节数。未设置自定义路径时恒为 0。
+ *
+ * 设置了自定义目录后下载不再落在 `cacheDir` 下，只扫 `cacheDir` 会把下载统计成 0；
+ * 该端口把外部目录的占用接回统计口径。没有自定义路径的实现返回 0，不改变原行为。
+ */
+fun interface ExternalDownloadSize {
+    suspend fun sizeBytes(): Long
+}
+
+class DeviceCacheFiles(
+    private val cacheDirectory: File,
+    private val externalDownloadSize: ExternalDownloadSize = ExternalDownloadSize { 0L },
+) : CacheFiles {
     override suspend fun scan(): List<CacheSize> = withContext(Dispatchers.IO) {
-        CacheArea.entries.map { CacheSize(it, size(directory(it))) }
+        // 外部目录不在 cacheDir 内，所以必须同时并入 DOWNLOAD 与 ALL：只加 DOWNLOAD 会让
+        // `ALL - 命名合计` 的残差算出负数被吞掉，饼图里其他分区的占比跟着失真。
+        val external = externalDownloadSize.sizeBytes()
+        CacheArea.entries.map { area ->
+            val local = size(directory(area))
+            val total = if (area == CacheArea.DOWNLOAD || area == CacheArea.ALL) {
+                local + external
+            } else {
+                local
+            }
+            CacheSize(area, total)
+        }
     }
 
     override suspend fun remove(areas: Set<CacheArea>) = withContext(Dispatchers.IO) {
@@ -28,7 +52,6 @@ class DeviceCacheFiles(private val cacheDirectory: File) : CacheFiles {
 
     private fun directory(area: CacheArea): File = when (area) {
         CacheArea.ALL -> cacheDirectory
-        CacheArea.PDF -> File(cacheDirectory, "pdf_export")
         else -> File(cacheDirectory, area.id)
     }
 

@@ -14,6 +14,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.ui.navigation.NavigationMotion
+import com.par9uet.jm.ui.interaction.LocalListPositionMemory
 import com.par9uet.jm.ui.screens.downloadScreen.DownloadScreen
 import com.par9uet.jm.ui.screens.downloadScreen.DownloadComicDetailScreen
 import com.par9uet.jm.ui.screens.readScreen.ComicReadScreen
@@ -27,6 +28,8 @@ import org.koin.compose.viewmodel.koinActivityViewModel
 fun AppScreen(
     searchViewModel: SearchViewModel = koinActivityViewModel(),
     externalNavController: NavHostController? = null,
+    listPositionMemory: com.par9uet.jm.ui.interaction.ListPositionMemory =
+        org.koin.compose.koinInject(),
 ) {
     val mainNavController = externalNavController ?: rememberNavController()
     val context = LocalContext.current
@@ -40,6 +43,7 @@ fun AppScreen(
     }
     CompositionLocalProvider(
         LocalMainNavController provides mainNavController,
+        LocalListPositionMemory provides listPositionMemory,
     ) {
         NavHost(
             modifier = Modifier.fillMaxSize(),

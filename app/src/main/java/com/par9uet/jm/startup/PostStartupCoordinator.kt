@@ -68,12 +68,6 @@ class PostStartupCoordinator(
         launchTask("阅读历史") {
             koin.get<ReadHistoryManager>().load()
         }
-        launchTask("缓存相册屏蔽") {
-            val failures = com.par9uet.jm.cache.protectExistingComicCache(
-                koin.get(), koin.get<com.par9uet.jm.database.dao.DownloadComicDao>().getAll(),
-            )
-            if (failures > 0) koin.get<ToastManager>().showAsync("部分漫画缓存无法屏蔽相册收录，请检查目录授权或更换目录")
-        }
         launchTask("本地浏览历史") {
             koin.get<com.par9uet.jm.storage.LocalBrowseHistoryManager>().load()
         }

@@ -64,11 +64,22 @@ val comicModule = module {
     single<com.par9uet.jm.reader.atom.LocalChapterFiles> { com.par9uet.jm.reader.atom.DeviceLocalChapterFiles(get()) }
     single { com.par9uet.jm.reader.molecule.LoadLocalChapter(get(), get()) }
     single {
-        ReaderImagePipeline(get(), get(), get(), get(), get())
+        // ReaderPreferences 也是 LocalSettingManager 的别名，这里取同一实例的预算流：
+        // 调低额度时阅读磁盘缓存要当场按新份额回收，而不是等下一次写入。
+        val settings = get<LocalSettingManager>()
+        ReaderImagePipeline(
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+            cacheBudgetMb = settings.cacheBudgetMb,
+            downloadExemptFromCacheLimit = settings.downloadExemptFromCacheLimit,
+        )
     }
 
     viewModel { HomeViewModel(get(), get(), get(), get()) }
-    viewModel { SearchViewModel(get(), get(), get(), get(), get()) }
+    viewModel { SearchViewModel(get(), get(), get(), get(), get(), get()) }
     viewModel { WeekViewModel(get(), get()) }
     viewModel { ComicDetailViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { ComicReadViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }

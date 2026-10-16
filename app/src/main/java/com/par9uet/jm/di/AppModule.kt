@@ -211,8 +211,16 @@ val appModule = module {
     }
     single { ReaderResumeManager(secureStorage = get()) }
     single { ToastManager() }
+    // 全局列表位置记录：首页 / 收藏夹 / 历史 / 搜索共用一份，进入漫画再返回维持原位置。
+    single { com.par9uet.jm.ui.interaction.ListPositionMemory() }
+    single<com.par9uet.jm.cache.atom.ExternalDownloadSize> {
+        com.par9uet.jm.cache.DocumentTreeDownloadSize(get<android.content.Context>())
+    }
     single<com.par9uet.jm.cache.atom.CacheFiles> {
-        com.par9uet.jm.cache.atom.DeviceCacheFiles(get<android.content.Context>().cacheDir)
+        com.par9uet.jm.cache.atom.DeviceCacheFiles(
+            get<android.content.Context>().cacheDir,
+            get<com.par9uet.jm.cache.atom.ExternalDownloadSize>(),
+        )
     }
     viewModel {
         val reader = get<com.par9uet.jm.reader.ReaderImagePipeline>()
@@ -222,6 +230,7 @@ val appModule = module {
             get(),
             reader::clearDiskCache,
             downloads::clearDownloadedCache,
+            get(),
         )
     }
     single { DownloadToastAggregator(get()) }

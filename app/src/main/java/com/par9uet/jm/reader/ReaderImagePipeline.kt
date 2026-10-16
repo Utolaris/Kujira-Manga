@@ -5,6 +5,7 @@ import android.content.Context
 import android.os.SystemClock
 import androidx.core.net.toUri
 import com.par9uet.jm.BuildConfig
+import com.par9uet.jm.cache.CacheBudget
 import com.par9uet.jm.image.JmImageHostHealthManager
 import com.par9uet.jm.network.DohManager
 import com.par9uet.jm.reader.atom.ReaderBitmapCache
@@ -20,6 +21,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -31,6 +34,8 @@ class ReaderImagePipeline internal constructor(
     imageHostHealthManager: JmImageHostHealthManager,
     dohManager: DohManager,
     connectionPool: okhttp3.ConnectionPool,
+    private val cacheBudgetMb: StateFlow<Int>,
+    private val downloadExemptFromCacheLimit: StateFlow<Boolean>,
 ) {
     private val appContext = context.applicationContext
     private val activityManager = appContext.getSystemService(ActivityManager::class.java)
@@ -61,15 +66,13 @@ class ReaderImagePipeline internal constructor(
         null
     }
     private val bitmapCache = ReaderBitmapCache(readerBitmapCacheBudgetBytes(memoryClassMb))
+    // 构造期就按当前总预算落上限；后续变更由 observeCacheBudget 立刻回收（不依赖下一次写入）。
     private val diskCache = ReaderImageDiskCache(
         directory = File(appContext.cacheDir, "reader_pages"),
         scope = scope,
-        maxBytes = com.par9uet.jm.cache.CacheBudget.readerDiskCacheBytes(
-            readerPreferences.let {
-                // 读一次当前总预算；后续预算变更在设置里重建 Coil，阅读磁盘下次写入时按新值 trim。
-                // 这里用默认总额即可避免构造期依赖尚未加载的 LocalSetting。
-                com.par9uet.jm.cache.CacheBudget.DEFAULT_TOTAL_MB
-            }
+        maxBytes = CacheBudget.readerDiskCacheBytes(
+            cacheBudgetMb.value,
+            downloadExemptFromCacheLimit.value,
         ),
     )
     private val visibleRequestTracker = ReaderVisibleRequestTracker()
@@ -108,6 +111,7 @@ class ReaderImagePipeline internal constructor(
     init {
         appContext.registerComponentCallbacks(bitmapCache)
         observePrefetchConcurrency()
+        observeCacheBudget()
     }
 
     suspend fun loadVisiblePage(page: ReaderPage): ReaderDecodedPage =
@@ -195,6 +199,21 @@ class ReaderImagePipeline internal constructor(
                     if (networkConcurrency >= 3 && count >= 5) 2 else 1,
                 )
             }
+        }
+    }
+
+    /**
+     * 总预算变化（「缓存控制」调档、无限制、备份恢复）后立刻把阅读磁盘缓存压回新份额。
+     *
+     * 组件各管各的份额：Coil 侧由 `CoverImageLoaderHolder` 重建 loader 生效，阅读侧原先只在
+     * 构造期读一次值，把额度调到已用之下时 reader_pages 会一直挂在旧上限上。这里订阅同一个
+     * 设置流，`updateMaxBytes` 内部按 LRU 立即回收。
+     */
+    private fun observeCacheBudget() {
+        scope.launch {
+            combine(cacheBudgetMb, downloadExemptFromCacheLimit) { totalMb, exempt ->
+                CacheBudget.readerDiskCacheBytes(totalMb, exempt)
+            }.collect { diskCache.updateMaxBytes(it) }
         }
     }
 

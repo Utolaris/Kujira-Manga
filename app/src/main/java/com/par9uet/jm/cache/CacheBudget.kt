@@ -5,9 +5,13 @@ package com.par9uet.jm.cache
  *
  * 下载漫画默认不受缓存控制（`downloadExempt=true`）：
  * - 用户额度语义：受控已用（不含下载）与总预算比较。
- * - 组件技术上限：原 DOWNLOAD 30% 按比例并入 COMMON/READER/OTHER，使受控组件用满预算。
+ * - 组件技术上限：原 DOWNLOAD 30% 按比例并入 COMMON/READER，使受控组件用满预算。
  *
- * 下载受控时：COMMON 20% / READER 40% / OTHER 10%（DECODE+PDF）/ DOWNLOAD 30%。
+ * 下载受控时：COMMON 7/30 / READER 14/30 / DOWNLOAD 30%。
+ *
+ * 历史上存在过第三个受控分项 OTHER 10%：`pic_decode`（解码临时文件）与 `pdf_export`
+ * 都在阅读器管线重写（f211db9）与 PDF 直写用户目录之后失去了写入方，分区已删除。
+ * 这 10% 按 COMMON:READER 原比例（1:2）精确拆分并入两者，比例与合计均未变。
  *
  * 额度 UI 使用离散档位；「无限制」以 [UNLIMITED_MB] 哨兵值持久化。
  * 无限制时关闭超额语义，组件磁盘缓存仍按 [MAX_TOTAL_MB] 份额取技术上限。
@@ -26,13 +30,12 @@ object CacheBudget {
     private const val MB = 1024L * 1024L
 
     /** 下载受控时的推荐份额（相对总预算）。 */
-    const val COVER_SHARE = 0.20f
-    const val READER_SHARE = 0.40f
-    const val OTHER_SHARE = 0.10f
+    const val COVER_SHARE = 7f / 30f
+    const val READER_SHARE = 14f / 30f
     const val DOWNLOAD_SHARE = 0.30f
 
     /** 受控组件合计份额（下载受控时 = 1 - DOWNLOAD_SHARE）。 */
-    private val CONTROLLED_SHARE = COVER_SHARE + READER_SHARE + OTHER_SHARE
+    private val CONTROLLED_SHARE = COVER_SHARE + READER_SHARE
 
     fun isUnlimited(totalMb: Int): Boolean = totalMb == UNLIMITED_MB
 
@@ -74,9 +77,6 @@ object CacheBudget {
     fun readerDiskCacheMb(totalMb: Int = DEFAULT_TOTAL_MB, downloadExempt: Boolean = true): Int =
         (technicalTotalMb(totalMb) * shareOf(READER_SHARE, downloadExempt)).toInt().coerceAtLeast(64)
 
-    fun otherCacheMb(totalMb: Int = DEFAULT_TOTAL_MB, downloadExempt: Boolean = true): Int =
-        (technicalTotalMb(totalMb) * shareOf(OTHER_SHARE, downloadExempt)).toInt().coerceAtLeast(32)
-
     fun downloadCacheMb(totalMb: Int = DEFAULT_TOTAL_MB, downloadExempt: Boolean = false): Int =
         if (downloadExempt) {
             0
@@ -93,9 +93,6 @@ object CacheBudget {
 
     fun readerDiskCacheBytes(totalMb: Int = DEFAULT_TOTAL_MB, downloadExempt: Boolean = true): Long =
         readerDiskCacheMb(totalMb, downloadExempt).toLong() * MB
-
-    fun otherCacheBytes(totalMb: Int = DEFAULT_TOTAL_MB, downloadExempt: Boolean = true): Long =
-        otherCacheMb(totalMb, downloadExempt).toLong() * MB
 
     fun downloadCacheBytes(totalMb: Int = DEFAULT_TOTAL_MB, downloadExempt: Boolean = false): Long =
         downloadCacheMb(totalMb, downloadExempt).toLong() * MB

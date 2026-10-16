@@ -1,6 +1,5 @@
 package com.par9uet.jm.ui.components
 
-import androidx.compose.foundation.Image
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -10,8 +9,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutModifier
@@ -68,8 +65,8 @@ internal fun JmCoverImage(
     val candidateUrl = nextCoverCandidateUrl(candidateUrls, attemptedUrls)
     val cacheKey = remember(comicId) { jmCoverCacheKey(comicId) }
     val displayGate = remember(comicId, candidateUrl) { CoverImageDisplayGate() }
-    var displayedPainter by remember(comicId, candidateUrl) { mutableStateOf<Painter?>(null) }
-    val sizeResolver = remember { JmCoverSizeResolver() }
+    var displayedCover by remember(comicId, candidateUrl) { mutableStateOf<DisplayedCover?>(null) }
+    val sizeResolver = remember { CoverSizeResolver() }
     val request = remember(context, candidateUrl, cacheKey, sizeResolver) {
         candidateUrl?.let { url ->
             ImageRequest.Builder(context)
@@ -104,7 +101,11 @@ internal fun JmCoverImage(
                         } else {
                             // Memory cache hits are cheap to publish even during a fling.
                             displayGate.clearDeferredPainter()
-                            displayedPainter = state.painter
+                            displayedCover = DisplayedCover(
+                                painter = state.painter,
+                                // 内存缓存命中瞬时上屏；磁盘/网络命中淡入 300ms。
+                                animate = !state.result.dataSource.isMemorySource(),
+                            )
                         }
                         if (BuildConfig.DEBUG) {
                             log(
@@ -146,30 +147,36 @@ internal fun JmCoverImage(
 
     // Publish a completed non-memory result once after the fling. The painter is reused directly,
     // so settling the grid does not create a second request or a burst of cache lookups.
+    // 期刊发表必然来自磁盘/网络（内存命中不走 defer），所以这里统一带淡入。
     LaunchedEffect(isScrolling, displayGate) {
         if (!isScrolling) {
             displayGate.takeDeferredPainter()?.let { painter ->
-                displayedPainter = painter
+                displayedCover = DisplayedCover(painter, animate = true)
             }
         }
     }
 
-    Image(
-        painter = displayedPainter ?: remember { ColorPainter(Color.Transparent) },
+    CoverCrossfadeImage(
+        painter = displayedCover?.painter,
+        skipAnimation = displayedCover?.animate == false,
         contentDescription = contentDescription,
         contentScale = contentScale,
         modifier = modifier.then(sizeResolver),
     )
 }
 
-private fun DataSource.isMemorySource(): Boolean =
-    this == DataSource.MEMORY_CACHE || this == DataSource.MEMORY
+/** 当前应上屏的封面与是否需要淡入动画（内存缓存命中不需要）。 */
+private data class DisplayedCover(val painter: Painter, val animate: Boolean)
 
 internal fun shouldDeferCoverResult(isScrolling: Boolean, dataSource: DataSource): Boolean =
     isScrolling && !dataSource.isMemorySource()
 
-/** The public AsyncImage API keeps this resolver internal, so mirror its grid-size behavior here. */
-private class JmCoverSizeResolver : SizeResolver, LayoutModifier {
+/**
+ * The public AsyncImage API keeps this resolver internal, so mirror its grid-size behavior here.
+ * 供 [JmCoverImage] 与 [LocalCoverImage] 共用：裸 model 的 rememberAsyncImagePainter 会挂起等待
+ * drawSize（官方文档明示），必须显式给请求 size 才不会死锁。
+ */
+internal class CoverSizeResolver : SizeResolver, LayoutModifier {
     private val currentConstraints = MutableStateFlow(Constraints(0, 0, 0, 0))
 
     override suspend fun size(): Size = currentConstraints

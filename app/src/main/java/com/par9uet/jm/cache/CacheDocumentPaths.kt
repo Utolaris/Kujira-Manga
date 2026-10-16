@@ -20,9 +20,7 @@ fun getTreeUriForCachePath(path: String): Uri? = runCatching {
 
 fun getComicDownloadRootPath(context: Context, comic: DownloadComic): String {
     val treeUri = getDownloadTreeUri(context)
-    if (treeUri == null) return getComicDownloadRootDir(context, comic).absolutePath.also {
-        ensureComicCacheNoMedia(context, it)
-    }
+    if (treeUri == null) return getComicDownloadRootDir(context, comic).absolutePath
     val root = DocumentsContract.buildDocumentUriUsingTree(
         treeUri,
         DocumentsContract.getTreeDocumentId(treeUri),
@@ -32,9 +30,7 @@ fun getComicDownloadRootPath(context: Context, comic: DownloadComic): String {
         root,
         getComicCacheRootName(comic),
         DocumentsContract.Document.MIME_TYPE_DIR,
-    )) { "无法创建漫画缓存目录：${getComicCacheRootName(comic)}" }.toString().also {
-        ensureComicCacheNoMedia(context, it)
-    }
+    )) { "无法创建漫画缓存目录：${getComicCacheRootName(comic)}" }.toString()
 }
 
 fun getComicChapterDownloadPath(context: Context, comic: DownloadComic): String {

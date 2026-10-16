@@ -22,6 +22,10 @@ import org.koin.compose.getKoin
 /**
  * 持有当前封面 ImageLoader。磁盘缓存上限跟随「缓存控制」总预算，
  * 变更后重建 loader 并 shutdown 旧实例。
+ *
+ * 注意：重建只换上限。Coil 的 DiskLruCache 在下一次写入（`completeEdit` 发现 size > maxSize）
+ * 或日志重写时才真正裁剪，所以调低额度后 common 目录要到下次封面写入才收敛；
+ * 阅读侧 reader_pages 由 `ReaderImagePipeline` 当场回收，不依赖下一次写入。
  */
 class CoverImageLoaderHolder(
     private val context: Context,

@@ -11,8 +11,8 @@ import com.par9uet.jm.cache.cachePathExists
 import com.par9uet.jm.cache.cachePathHasContent
 import com.par9uet.jm.cache.getCacheParentPath
 import com.par9uet.jm.cache.deleteCachePath
-import com.par9uet.jm.cache.protectExistingComicCache
 import com.par9uet.jm.cache.findCacheChildPath
+import com.par9uet.jm.cache.getChapterCacheName
 import com.par9uet.jm.cache.findOrCreateCacheDocument
 import com.par9uet.jm.cache.getDownloadDir
 import com.par9uet.jm.cache.getDownloadTreeUri
@@ -100,33 +100,24 @@ class CacheMigrationDeviceTest {
         assertTrue(DeviceLocalChapterFilesForTest.images(context, migrated).isNotEmpty())
         assertFalse(sourceCover.exists())
         assertFalse(sourcePage.exists())
+        // .nomedia 会让 MediaStore 整棵剪掉该目录，用户在文件管理器里就看不到自己的漫画。
         val comicRoot = getCacheParentPath(migrated.coverPath)!!
-        assertTrue(findCacheChildPath(context, comicRoot, ".nomedia") != null)
-        assertTrue(findCacheChildPath(context, getCacheParentPath(comicRoot)!!, ".nomedia") == null)
+        assertTrue(findCacheChildPath(context, comicRoot, ".nomedia") == null)
     }
 
-    @Test fun `startup repairs existing saf marker without hiding the selected parent`() = runBlocking {
-        val saved = createSafComic(4801).comic
-        val root = getCacheParentPath(saved.coverPath)!!
-        val marker = findCacheChildPath(context, root, ".nomedia")!!
-        assertTrue(deleteCachePath(context, marker))
-        protectExistingComicCache(context, listOf(saved))
-        protectExistingComicCache(context, listOf(saved))
-        assertTrue(findCacheChildPath(context, root, ".nomedia") != null)
-        assertTrue(findCacheChildPath(context, getCacheParentPath(root)!!, ".nomedia") == null)
-        assertTrue(listComicImageEntries(context, saved.zipPath).isNotEmpty())
-    }
-
-    @Test fun `renamed media marker aborts downloads and is not accepted as protection`() = runBlocking {
-        val tree = createTreeDirectory("renamed-marker-${UUID.randomUUID()}")
+    @Test fun `downloading into a custom tree creates no media-hiding marker`() = runBlocking {
+        val tree = createTreeDirectory("no-marker-${UUID.randomUUID()}")
         setDownloadTreeUri(context, tree.toString())
-        val comic = DownloadComic(4802, "unsupported marker", emptyList(), coverPath = "", zipPath = "",
+        val comic = DownloadComic(4802, "no marker", emptyList(), coverPath = "", zipPath = "",
             progress = 0f, status = DownloadStatus.PENDING, createTime = 1L)
-        assertTrue(runCatching { DownloadContentFiles(context).chapterPath(comic) }.isFailure)
+
+        val chapterPath = DownloadContentFiles(context).chapterPath(comic)
         val root = findCacheChildPath(context, targetRootDocument(tree), "JM4802")!!
+
         assertTrue(findCacheChildPath(context, root, ".nomedia") == null)
         assertTrue(findCacheChildPath(context, root, ".nomedia.bin") == null)
-        assertTrue(findCacheChildPath(context, root, "chapter-4802") == null)
+        assertTrue(findCacheChildPath(context, root, getChapterCacheName(comic)) != null)
+        assertFalse(chapterPath.isBlank())
     }
 
     @Test
@@ -355,7 +346,7 @@ class CacheMigrationDeviceTest {
             val files = DownloadContentFiles(context)
             val chapterPath = files.chapterPath(comic)
             val root = getCacheParentPath(chapterPath)!!
-            assertTrue(findCacheChildPath(context, root, ".nomedia") != null)
+            assertTrue(findCacheChildPath(context, root, ".nomedia") == null)
             assertTrue(listComicImageEntries(context, chapterPath).isEmpty())
             files.writePage(chapterPath, 0, bitmap)
             val coverPath = files.writeCover(comic, bitmap)

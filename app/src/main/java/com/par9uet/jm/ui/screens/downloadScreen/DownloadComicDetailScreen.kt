@@ -14,8 +14,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -47,18 +51,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import coil.ImageLoader
-import coil.compose.AsyncImage
 import com.par9uet.jm.ui.models.LocalRemoteImageHost
 import com.par9uet.jm.ui.components.ChapterMultiSelectDialog
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.components.ChapterSingleSelectDialog
 import com.par9uet.jm.ui.components.ComicContentTag
 import com.par9uet.jm.ui.components.JmCoverImage
+import com.par9uet.jm.ui.components.LocalCoverImage
+import com.par9uet.jm.ui.glass.GlassSurface
+import com.par9uet.jm.ui.glass.GlassSurfaceStyle
 import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.DownloadExportViewModel
 import com.par9uet.jm.download.export.PdfExportMode
@@ -86,6 +93,12 @@ fun DownloadComicDetailScreen(
     val exporting = exportState.exporting
     val selectedExportChapterIds = exportState.selectedChapterIds
     var activeDialog by remember { mutableStateOf<DownloadDetailDialog?>(null) }
+    // 底部悬浮玻璃操作条（对齐漫画详情页的观感：悬浮 + 高斯模糊，非通栏底栏）
+    val navigationBarInset = with(LocalDensity.current) {
+        WindowInsets.navigationBars.getBottom(this).toDp()
+    }
+    val detailBarHeight = 64.dp
+    val detailBarBottomPadding = 8.dp + navigationBarInset
 
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
@@ -103,19 +116,22 @@ fun DownloadComicDetailScreen(
 
     CommonScaffold(
         title = detailState.title.ifBlank { "缓存详情" },
-        bottomBar = {
+        overlayContent = {
+            // 底部悬浮玻璃操作条：不再用通栏 bottomBar，观感对齐漫画详情页
             if (detailState.found && detailState.canRead) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    tonalElevation = 3.dp,
-                    shadowElevation = 3.dp,
-                    color = MaterialTheme.colorScheme.surfaceContainer
+                GlassSurface(
+                    surfaceId = "download-detail-actions",
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .widthIn(max = 600.dp)
+                        .padding(horizontal = 12.dp)
+                        .padding(bottom = detailBarBottomPadding)
+                        .height(detailBarHeight),
+                    style = GlassSurfaceStyle(cornerRadius = 32.dp),
                 ) {
                     DownloadDetailBottomActions(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .navigationBarsPadding()
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        modifier = Modifier.fillMaxSize(),
                         isMultiChapter = detailState.isMultiChapter,
                         exporting = exporting,
                         onExport = {
@@ -131,8 +147,6 @@ fun DownloadComicDetailScreen(
                     )
                 }
             }
-        },
-        overlayContent = {
             when (activeDialog) {
                 DownloadDetailDialog.ReadChapter -> {
                     ChapterSingleSelectDialog(
@@ -193,7 +207,11 @@ fun DownloadComicDetailScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(scrollState)
-                .padding(top = topContentPadding, bottom = bottomContentPadding)
+                .padding(
+                    top = topContentPadding,
+                    // 悬浮玻璃操作条悬浮在内容上方，底部留出整条高度避免遮内容
+                    bottom = bottomContentPadding + detailBarHeight + detailBarBottomPadding,
+                )
         ) {
             LocalCover(
                 title = detailState.title,
@@ -360,22 +378,16 @@ private fun DownloadDetailBottomActions(
     onRead: () -> Unit,
 ) {
     Row(
-        modifier = modifier,
+        modifier = modifier.padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        FilledTonalButton(
+        Button(
             modifier = Modifier.weight(1f),
-            enabled = !exporting,
             contentPadding = PaddingValues(horizontal = 8.dp),
-            onClick = onExport
+            onClick = onRead
         ) {
-            Icon(
-                imageVector = Icons.Default.PictureAsPdf,
-                contentDescription = null,
-                modifier = Modifier.padding(end = 6.dp)
-            )
-            Text(if (exporting) "导出中" else if (isMultiChapter) "导出" else "导出 PDF")
+            Text(if (isMultiChapter) "阅读" else "阅读缓存")
         }
         if (isMultiChapter) {
             Button(
@@ -391,12 +403,18 @@ private fun DownloadDetailBottomActions(
                 Text("章节")
             }
         }
-        Button(
+        FilledTonalButton(
             modifier = Modifier.weight(1f),
+            enabled = !exporting,
             contentPadding = PaddingValues(horizontal = 8.dp),
-            onClick = onRead
+            onClick = onExport
         ) {
-            Text(if (isMultiChapter) "阅读" else "阅读缓存")
+            Icon(
+                imageVector = Icons.Default.PictureAsPdf,
+                contentDescription = null,
+                modifier = Modifier.padding(end = 6.dp)
+            )
+            Text(if (exporting) "导出中" else if (isMultiChapter) "导出" else "导出 PDF")
         }
     }
 }
@@ -410,7 +428,7 @@ private fun LocalCover(
     imageLoader: ImageLoader
 ) {
     if (coverPath.isNotBlank()) {
-        AsyncImage(
+        LocalCoverImage(
             model = coverPath,
             imageLoader = imageLoader,
             contentDescription = "${title}的封面",

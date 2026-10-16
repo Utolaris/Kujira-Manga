@@ -66,17 +66,31 @@ class CacheBudgetTest {
         val total = 1024
         val coverExempt = CacheBudget.coverDiskCacheMb(total, downloadExempt = true)
         val readerExempt = CacheBudget.readerDiskCacheMb(total, downloadExempt = true)
-        val otherExempt = CacheBudget.otherCacheMb(total, downloadExempt = true)
         val coverFixed = CacheBudget.coverDiskCacheMb(total, downloadExempt = false)
         val readerFixed = CacheBudget.readerDiskCacheMb(total, downloadExempt = false)
 
-        // 豁免时受控组件技术上限应高于固定 20%/40%（原 30% 下载份额按比例并入）
+        // 豁免时受控组件技术上限应高于固定 25%/45%（原 30% 下载份额按比例并入）
         assertTrue(coverExempt > coverFixed)
         assertTrue(readerExempt > readerFixed)
         assertEquals(0, CacheBudget.downloadCacheMb(total, downloadExempt = true))
 
         // 受控组件份额之和接近总额度（允许取整误差）
-        val controlledSum = coverExempt + readerExempt + otherExempt
+        val controlledSum = coverExempt + readerExempt
         assertTrue(controlledSum >= total - 8 && controlledSum <= total + 8)
+    }
+
+    @Test
+    fun `removing the other share keeps the cover to reader ratio intact`() {
+        // OTHER 10% 删除后按原 20:40 = 1:2 拆入两者；比例必须精确保住，不能拍脑袋取整。
+        val controlledTotal = CacheBudget.COVER_SHARE + CacheBudget.READER_SHARE
+        assertEquals(2f, CacheBudget.READER_SHARE / CacheBudget.COVER_SHARE, 0.0001f)
+        // 受控时（下载不豁免）三项之和恰好为总额度，不留悬空份额。
+        assertEquals(
+            1.0f,
+            CacheBudget.COVER_SHARE + CacheBudget.READER_SHARE + CacheBudget.DOWNLOAD_SHARE,
+            0.0001f,
+        )
+        // 归一化后受控两项吃掉全部受控预算。
+        assertEquals(1.0f, controlledTotal / (1f - CacheBudget.DOWNLOAD_SHARE), 0.0001f)
     }
 }

@@ -93,6 +93,27 @@ fun CacheCleanupScreen(
                 },
                 onDismiss = { showClearConfirm = false },
             )
+            state.cleanPrompt?.let { prompt ->
+                GlassConfirmDialog(
+                    visible = true,
+                    title = "缓存超出新额度",
+                    message = buildString {
+                        append("当前缓存占用 ${formatBytes(prompt.usedBytes)}，")
+                        append("已超过新额度 ${formatBytes(prompt.budgetBytes)}，")
+                        append("超出 ${formatBytes(prompt.overflowBytes)}。")
+                        if (state.downloadExempt) {
+                            append("是否立即清理？已下载漫画不受缓存控制，不会被删除。")
+                        } else {
+                            append("是否立即清理？已下载漫画也会被一并清理，之后需重新下载。")
+                        }
+                    },
+                    confirmText = "立即清理",
+                    destructive = true,
+                    surfaceId = "cache-budget-clean-glass-confirm",
+                    onConfirm = viewModel::confirmCleanPrompt,
+                    onDismiss = viewModel::dismissCleanPrompt,
+                )
+            }
         },
     ) { topContentPadding, bottomContentPadding ->
         if (state.loading) {
@@ -115,16 +136,6 @@ fun CacheCleanupScreen(
                     ),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                state.result?.let { message ->
-                    Card {
-                        Text(
-                            text = message,
-                            modifier = Modifier.fillMaxWidth().padding(16.dp),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                    }
-                }
-
                 TotalBudgetSection(
                     state = state,
                     onBudgetSelected = viewModel::setBudgetMb,
@@ -203,7 +214,12 @@ private fun TotalBudgetSection(
             Text(
                 text = usageLine,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                // 超额时整行染色：用户可能拒掉那次询问，之后也得看得见「还在超着」。
+                color = if (state.overBudget) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
             )
             BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                 val availableWidth = maxWidth

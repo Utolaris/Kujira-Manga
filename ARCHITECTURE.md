@@ -5,7 +5,7 @@
 
 > 本文描述**当前代码的真实状态**。与代码不符的措辞视为文档缺陷，应直接修正。
 > 统计口径：`app/src/main/java/com/par9uet/jm` 下 `*.kt`，`find | wc -l` 汇总。
-> 最近核对 **2026-10-05**（canary）：**387** 文件 / **49,741** 行。
+> 最近核对 **2026-10-16**（canary）：**390** 文件 / **50,688** 行。
 > 耦合表用 `python3 scripts/check-coupling.py` 复现（细分口径，见脚本头）。
 
 ## 层级
@@ -89,7 +89,7 @@ data/ repository/ retrofit/   历史命名保留
 
 ## 耦合现状
 
-`python3 scripts/check-coupling.py`（**2026-10-05 20:55 / canary，含本次改动**）。
+`python3 scripts/check-coupling.py`（**2026-10-16 / canary**）。
 口径：模块 = 一二级包目录，**细分模块单列**（`core/model` 与 `core` 根目录分开、
 `reader/atom` 与 `reader` 根包分开）；Ce = import 到的模块数，Ca = 依赖它的模块数，
 I = Ce/(Ce+Ca)。下表只保留决策相关行，完整列表以脚本输出为准。
@@ -99,13 +99,13 @@ I = Ce/(Ce+Ca)。下表只保留决策相关行，完整列表以脚本输出为
 
 | 模块 | 文件 | 行数 | Ce | Ca | I | 判断 |
 | --- | --- | --- | --- | --- | --- | --- |
-| `di` | 9 | 785 | 32 | 1 | 0.97 | 组合根，合法 |
-| `ui/screens` | 48 | 16,825 | 22 | 1 | 0.96 | 最大一块；直连已清零，见「表现层直连」 |
-| `ui/viewModel` | 18 | 3,893 | 27 | 3 | 0.90 | L2；扇出最高但多为契约与偏好 |
-| `ui/components` | 22 | 2,224 | 10 | 2 | 0.83 | 已收窄，无 L3/L4 领域依赖 |
-| `favorites/presentation` | 2 | 559 | 7 | 2 | 0.78 | L2 |
-| `favorites/data` | 14 | 1,251 | 10 | 3 | 0.77 | Room + 窄端口 |
-| `reader`（**仅根包**） | 16 | 2,387 | 8 | 6 | 0.57 | 根包说明见「阅读器链路」 |
+| `di` | 9 | 805 | 32 | 1 | 0.97 | 组合根，合法 |
+| `ui/screens` | 48 | 17,158 | 22 | 1 | 0.96 | 最大一块；直连已清零，见「表现层直连」 |
+| `ui/viewModel` | 18 | 4,027 | 29 | 3 | 0.91 | L2；扇出最高但多为契约与偏好 |
+| `ui/components` | 24 | 2,488 | 10 | 2 | 0.83 | 已收窄，无 L3/L4 领域依赖 |
+| `favorites/presentation` | 2 | 533 | 7 | 2 | 0.78 | L2 |
+| `favorites/data` | 14 | 1,261 | 10 | 3 | 0.77 | Room + 窄端口 |
+| `reader`（**仅根包**） | 16 | 2,406 | 9 | 6 | 0.60 | 根包说明见「阅读器链路」 |
 | `network` | 17 | 2,008 | 5 | 11 | 0.31 | DoH / RemoteConfig / 内置客户端 |
 | `storage` | 17 | 2,304 | 5 | 15 | 0.25 | 偏好与持久化收口 |
 | `core`（**仅根目录**） | 3 | 122 | 2 | 15 | 0.12 | `BaseRepository`、`ToastManager` |
@@ -114,8 +114,8 @@ I = Ce/(Ce+Ca)。下表只保留决策相关行，完整列表以脚本输出为
 | `data`（= `data/models`） | 16 | 422 | 0 | 24 | 0.00 | 零出度契约，不要动（`data/comic` 另列） |
 | 根包（`App` / `MainActivity` / `JmApplication`） | 3 | 739 | 1–12 | 0 | 1.00 | 入口 |
 
-`ui/screens` 内最大文件：`ComicDetailScreen` 915、`LocalSettingScreen` 851、
-`BackupRestoreScreen` 781、`ComicReadScreen` 736、`FavoritesModalHost` 734、
+`ui/screens` 内最大文件：`ComicDetailScreen` 1,300、`LocalSettingScreen` 851、
+`ComicReadScreen` 788、`BackupRestoreScreen` 781、`FavoritesModalHost` 734、
 `CheckUpdateScreen` 694。**这些是可读性问题，不是跨层耦合**——不再按行数机械拆分。
 真要动手优先 `DownloadComicDetailScreen`（跨 4 层），而不是 `LocalSettingScreen`（纯设置项渲染）。
 
@@ -240,21 +240,64 @@ memory 命中仍立即上屏。封面专用 OkHttp：`Dispatcher` 全局 12 / �
 （512 MB / 1 / 2 / 4 / 8 GB，距离相等取较小档）。`LocalSetting.cacheBudgetMb` 类型仍是 `Int`，
 `LocalSettingStorage`/`LocalSettingManager` 的 coerce 必须让 `-1` 穿透，**不得夹成 256**。
 
-份额：COMMON 20% + READER 40% + OTHER 10%（DECODE/PDF 各半）+ DOWNLOAD 30%。
+份额：COMMON 7/30 + READER 14/30 + DOWNLOAD 30%。
 下载豁免时 DOWNLOAD 不占用户额度，原 30% **按比例并入**受控组件技术上限
-（cover 20/70、reader 40/70、other 10/70），避免份额悬空。
+（cover 7/21、reader 14/21），避免份额悬空。
 **无限额度时**各组件磁盘 bytes 一律按 `MAX_TOTAL_MB` 算技术上限，
 但 UI 与 `overBudget` **不**把该技术上限当用户额度——`overBudget` 在无限时恒 false。
+
+历史上还有第三个受控分项 OTHER 10%（`pic_decode` 与 `pdf_export` 各半），**已删除**：
+`pdf_export` 从未被写入（`PdfExport` 用 `DocumentsContract.createDocument` 直写用户选定目录），
+`pic_decode` 自阅读器管线重写（f211db9 删除 `ComicPicImageState` 写入方）后同样零写入方——
+解码产物早已改由 `ReaderImageDiskCache` 写进 `reader_pages`。两个分区都是界面上的恒 0 死切片，
+`otherCacheMb/otherCacheBytes` 更是零消费者，故一并移除；那 10% 按 COMMON:READER 原比例（1:2）
+精确拆分并入两者，比例与合计均未变。**新增分区前必须先确认存在写入方**，否则只是在给死代码加统计。
 
 API 契约：`*DiskCacheMb/Bytes(totalMb)` 入参是**总额度**；
 `componentMbToBytes(componentMb)` 入参是**已分享额的组件 MB**，禁止二次套份额。
 封面链路 `CoverImageLoaderHolder.coverDiskCacheMb(cacheBudgetMb)` → `Config.componentMbToBytes`。
 历史字段 `LocalSetting.coverDiskCacheMb` 仅备份透传，不再驱动 Coil。
 
-统计口径：命名分区 COMMON / READER / DECODE / PDF / DOWNLOAD，`ALL` 扫整个 `cacheDir`。
-残差 = `ALL - 命名合计`（http_cache、updates 等）计入「其他」切片与额度已用。
+额度收紧的执行：**各组件按自己那份技术上限自裁剪**，触发源是 `cacheBudgetMb` /
+`downloadExemptFromCacheLimit` 两条设置流，不依赖下一次写入。
+- READER：`ReaderImagePipeline.observeCacheBudget` → `ReaderImageDiskCache.updateMaxBytes(bytes)`
+  → 立刻按 LRU 回收到上限的 7/8（`requestDiskTrim`）。这是命令行外唯一的 reader_pages 回收触发点。
+- COMMON：`CoverImageLoaderHolder` 重建 loader 只换上限；Coil 的 DiskLruCache 在下一次
+  写入（`completeEdit` 发现 `size > maxSize`）或日志重写时才会真正裁剪，属**延迟收敛**。
+- `CacheCleanupViewModel` 在额度变更后用 400ms 静默窗口重扫（连续拖档位合并为一次），
+  避免把裁剪前的旧占用画进饼图。
+
+自裁剪只压**各组件那一份**，没人替用户删 COMMON 与残差目录；所以额度调低到
+当前受控占用之下时必须由人拍板：`CacheCleanupViewModel.setBudgetMb` 先落盘（组件订阅这条流），
+再按 `previousMb → newMb` 是否为「调低」且 `controlledUsedBytes > CacheBudget.totalBytes(newMb)`
+挂出 `CacheCleanPrompt`（`usedBytes` / `budgetBytes` / `overflowBytes`），`CacheCleanupScreen`
+弹玻璃确认框。确认走 `confirmCleanPrompt` → 与手动「清理缓存」**同一条** `runClean` 删除路径
+（下载豁免语义一致）；放弃走 `dismissCleanPrompt`，额度照新值生效。判定读的是写盘后
+`localSettingManager.cacheBudgetMb.value`，写盘失败（不 publish）因此不会误弹；调高、调平、
+无限制一律清空上一轮询问。`CacheControlState.overBudget` 仍恒算真实占用，拒掉询问后
+`CacheCleanupScreen` 把额度行染成 error 色。
+
+统计口径：命名分区 COMMON / READER / DOWNLOAD，`ALL` 扫整个 `cacheDir`。
+残差 = `ALL - 命名合计`（http_cache、cacheDir 根目录的临时文件等）计入「其他」切片与额度已用。
 `controlledUsedBytes` = 豁免时 `ALL - DOWNLOAD`，否则 `ALL`，与 `overBudget` 同口径。
 `CacheCleanupScreen` **不 import `cache.*`**，档位与明细由 VM 以 `budgetStops`/`pieSlices` 注入。
+
+**自定义下载目录必须进统计**。用户在设置里把下载目录指到 SAF 树后，下载字节不再落在
+`cacheDir` 下，只扫 `cacheDir` 会把「已下载的漫画」算成 0。
+`DeviceCacheFiles` 因此持有 `ExternalDownloadSize` 端口（DI 注入 `DocumentTreeDownloadSize`，
+无自定义路径时返回 0，行为与从前完全一致）。外部字节必须**同时**并入 `DOWNLOAD` 与 `ALL`：
+只并入前者会让 `ALL - 命名合计` 的残差算出负数被 `coerceAtLeast(0)` 吞掉，
+饼图其余分母跟着失真——`CacheFilesTest` 已钉住这条。
+
+授权失效必须**报错而不是静默返回 0**：`cachePathSize` 把查询失败吞成 0（迁移时单本漫画读不到
+不该中断整趟迁移，这个宽容要保留），所以 `DocumentTreeDownloadSize` 先用 `inspectCachePath`
+探一次可访问性再取值；VM 侧 `rebuildItems`/`scheduleBudgetRescan` 统一走 `scanIntoState`
+把失败原因透出。早期两处后台重扫用 `runCatching` 静默吞异常，切一下豁免开关就能把
+「数不到」变成看起来正常的旧数字——这条不许回退。
+
+**已知缺口**：`DownloadManager.clearDownloadedCache` 只删 DB 行（`deleteDownloads` 未调用
+`DownloadFileRemoval`），文件删除实际靠 `files.remove(DOWNLOAD)`，而它只作用于 `cacheDir`
+内的目录。**自定义路径下的下载文件目前清不掉**，统计已追索、删除尚未对齐。
 
 ### 阅读器链路
 
@@ -402,10 +445,12 @@ Reader 的 L3 不得依赖 UI 或 Worker，L4 不得反向依赖 L3。磁盘缓�
     JMComic3 v2.1.8 的 Token 密钥、版本和 `md5(timestamp + secret)` 算法。
     SDK 请求保留其原始请求时间戳以匹配内部响应解密时间戳；Retrofit 沿用进程固定时间戳。
     内置 API 的表单 POST 改用官方 multipart FormData，JSON POST 保持原类型。
-13. **缓存相册屏蔽**（`cache/CacheMediaPrivacy`）：下载与迁移在应用创建的 `JM{编号}` 漫画目录
-    先设 `.nomedia`，再写页面和封面；**不在用户选定父目录设置**。SAF 必须确认文件名没有被提供器改写。
-    启动后补齐已保存和未完成下载的漫画目录；失败提示检查授权或换目录，下次启动重试。
-    文件管理器仍可访问图片，旧相册索引可能需要刷新。
+13. **下载目录不做相册屏蔽**（曾经的 `cache/CacheMediaPrivacy` 已删除）：下载与迁移曾为每个
+    `JM{编号}` 漫画目录写入 `.nomedia`，并在启动时补齐。**这是误判，已整体移除。**
+    `.nomedia` 会让 MediaStore 剪掉整棵目录树，代价是用户在文件管理器里打开自定义缓存目录时
+    看不到自己的漫画——「文件管理器仍可访问图片」这个假设并不成立（本条原有描述即为该假设）。
+    若日后要恢复相册屏蔽，只能在**应用私有目录**（`cacheDir`）内做，绝不能碰用户选定目录；
+    SAF 写入还必须确认文件名没有被提供器改写（如 `MyApp.provider` 会重命名 `.nomedia`）。
 14. **诊断和系统备份隐私**：登录响应经严格 JSON 解析，递归替换敏感键值及协议加密的 `data` 字符串；
     畸形或非 JSON 正文只记省略标记。系统云备份和设备迁移排除 Room 数据库、导出日志、
     加密 preferences 与未携带授权的下载目录 URI；应用内手动备份流程仍可使用。
