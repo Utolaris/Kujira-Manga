@@ -14,6 +14,34 @@ import org.junit.Test
 
 class CoverImageHostResolverTest {
     @Test
+    fun articleImagesShareMirrorHealthAndKeepTheirPathAndQuery() {
+        val resolver = resolver()
+        val source = "https://cdn-msp3.jmapiproxy3.cc/static/resources/images/article.png?v=2"
+        val urls = resolver.articleUrls(source, "https://a.example")
+        assertEquals("https://a.example/static/resources/images/article.png?v=2", urls.first())
+        assertTrue(source in urls)
+        resolver.recordHostFailure(urls.first())
+        assertEquals("https://b.example/static/resources/images/article.png?v=2",
+            resolver.articleUrls(source, "https://a.example").first())
+        assertEquals("b.example", resolver.candidateHosts("a.example").first())
+    }
+
+    @Test
+    fun externalArticleImagesNeverGetRewrittenToComicMirrors() {
+        val url = "https://external.example/static/resources/images/article.png?v=2"
+        assertEquals(listOf(url), resolver().articleUrls(url, "https://a.example"))
+    }
+
+    @Test
+    fun comicCoversEmbeddedInArticlesReuseTheAppsLogicalCoverCache() {
+        val resolver = resolver()
+        assertEquals(jmCoverCacheKey(123), resolver.articleCacheKey(
+            "https://cdn-msp3.jmapiproxy3.cc/media/albums/123_3x4.jpg?v=2", "a.example"))
+        val external = "https://external.example/media/albums/123_3x4.jpg"
+        assertEquals("jm-article-$external", resolver.articleCacheKey(external, "a.example"))
+    }
+
+    @Test
     fun emptyRemoteHostStillUsesKnownCandidates() {
         val resolver = resolver()
 

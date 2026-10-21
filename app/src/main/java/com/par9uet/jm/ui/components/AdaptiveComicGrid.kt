@@ -1,6 +1,7 @@
 package com.par9uet.jm.ui.components
 
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.unit.Dp
@@ -37,6 +38,10 @@ fun adaptiveComicGridCells(
         GridCells.Adaptive(minSize = minSize)
     }
 }
+
+/** Waterfall articles share the same explicit-column / adaptive-width policy as comic grids. */
+fun adaptiveComicStaggeredGridCells(columns: Int = 0, minSize: Dp = 118.dp): StaggeredGridCells =
+    if (columns > 0) StaggeredGridCells.Fixed(columns) else StaggeredGridCells.Adaptive(minSize)
 
 /** 平板自适应网格的默认最小单元格。 */
 val TabletComicGridMinCellSize: Dp = 160.dp

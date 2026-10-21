@@ -13,21 +13,30 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import com.par9uet.jm.ui.models.LocalDetailMotion
 import com.par9uet.jm.ui.navigation.returnToHome
 import com.par9uet.jm.ui.navigation.LocalMainNavController
 
 @Composable
 internal fun BackIconButton(onClick: (() -> Unit)? = null) {
     val navController = LocalMainNavController.current
+    val detailMotion = LocalDetailMotion.current
     Box(
         modifier = Modifier
             .size(48.dp)
             .clip(CircleShape)
             .combinedClickable(
                 role = Role.Button,
-                onClick = { onClick?.invoke() ?: navController.popBackStack() },
+                onClick = {
+                    if (onClick != null) onClick()
+                    else if (detailMotion != null) detailMotion.dismiss { navController.popBackStack() }
+                    else navController.popBackStack()
+                },
                 onLongClickLabel = "返回首页",
-                onLongClick = { navController.returnToHome() },
+                onLongClick = {
+                    if (detailMotion != null) detailMotion.dismiss { navController.returnToHome() }
+                    else navController.returnToHome()
+                },
             ),
         contentAlignment = Alignment.Center,
     ) {

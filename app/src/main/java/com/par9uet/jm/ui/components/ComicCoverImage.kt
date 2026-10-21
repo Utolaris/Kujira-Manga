@@ -23,7 +23,6 @@ import androidx.compose.ui.unit.dp
 import coil.ImageLoader
 import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.ui.models.ComicDetailLoader
-import com.par9uet.jm.ui.models.LocalComicDetailLoader
 import com.par9uet.jm.ui.models.LocalRemoteImageHost
 import com.par9uet.jm.core.ToastManager
 import kotlinx.coroutines.Dispatchers
@@ -45,6 +44,7 @@ fun ComicCoverImage(
     imageLoader: ImageLoader? = null,
     toastManager: ToastManager = getKoin().get(),
     onShowDetail: (() -> Unit)? = null,
+    onReady: ((Boolean) -> Unit)? = null,
 ) {
     val remoteImageHost = LocalRemoteImageHost.current
     val clipboard = LocalClipboard.current
@@ -52,12 +52,13 @@ fun ComicCoverImage(
 
     Box(modifier = modifier) {
         JmCoverImage(
-            comicId = comic.id,
+            comicId = comic.seriesId.toIntOrNull()?.takeIf { it > 0 } ?: comic.id,
             remoteHost = remoteImageHost,
             imageLoader = imageLoader,
             contentDescription = "${comic.name}的封面",
             contentScale = ContentScale.Crop,
             isScrolling = isScrolling,
+            onReady = onReady,
             modifier = Modifier
                 .aspectRatio(3f / 4f)
                 .fillMaxWidth()
@@ -112,8 +113,8 @@ internal suspend fun buildComicDetailText(
                 appendLine("名称: ${detail.name}")
                 appendLine("作者: ${detail.authorList.joinToString(", ")}")
                 appendLine("简介: ${detail.description.ifBlank { "无" }}")
-                appendLine("阅读次数: ${detail.readCount}")
-                appendLine("喜欢数: ${detail.likeCount}")
+                appendLine("阅读次数: ${comicMetricText(detail.readCount, detail.readCount)}")
+                appendLine("喜欢数: ${comicMetricText(detail.readCount, detail.likeCount)}")
                 appendLine("评论数: ${detail.commentCount}")
                 appendLine("标签: ${detail.tagList.joinToString(", ").ifBlank { "无" }}")
                 appendLine("角色: ${detail.roleList.joinToString(", ").ifBlank { "无" }}")

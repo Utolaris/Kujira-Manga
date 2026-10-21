@@ -7,6 +7,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -18,8 +19,6 @@ import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
 import coil.ImageLoader
 import coil.compose.AsyncImagePainter
 import coil.compose.rememberAsyncImagePainter
@@ -53,6 +52,11 @@ internal fun CoverCrossfadeImage(
     durationMillis: Int = 300,
     skipAnimation: Boolean = false,
 ) {
+    // A memory hit / detail handoff must draw in this frame, not after a LaunchedEffect.
+    if (skipAnimation && painter != null) {
+        Image(painter, contentDescription, modifier, contentScale = contentScale)
+        return
+    }
     var underPainter by remember { mutableStateOf<Painter?>(null) }
     var currentPainter by remember { mutableStateOf<Painter?>(null) }
     val fadeIn = remember { Animatable(1f) }
@@ -64,12 +68,7 @@ internal fun CoverCrossfadeImage(
                 currentPainter = null
             }
             // 同一 painter 重复上屏（如 CDN 回退后的重发布）：不打断进行中的淡入
-            currentPainter == painter && !skipAnimation -> Unit
-            skipAnimation -> {
-                underPainter = null
-                currentPainter = painter
-                fadeIn.snapTo(1f)
-            }
+            currentPainter == painter -> Unit
             else -> {
                 underPainter = currentPainter
                 currentPainter = painter
@@ -125,6 +124,7 @@ internal fun LocalCoverImage(
     contentScale: ContentScale = ContentScale.Crop,
     modifier: Modifier = Modifier,
     imageLoader: ImageLoader? = null,
+    onReady: ((Boolean) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val sizeResolver = remember { CoverSizeResolver() }
@@ -147,9 +147,10 @@ internal fun LocalCoverImage(
             }
         },
     )
+    SideEffect { onReady?.invoke(displayedPainter != null) }
     CoverCrossfadeImage(
         painter = displayedPainter,
-        skipAnimation = skipFadeIn,
+        skipAnimation = onReady != null || skipFadeIn,
         contentDescription = contentDescription,
         contentScale = contentScale,
         // sizeResolver 挂在绘制节点上，测量时把布局约束喂给请求 size

@@ -2,6 +2,7 @@ package com.par9uet.jm.ui.components
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,6 +49,7 @@ internal fun JmCoverImage(
     contentScale: ContentScale = ContentScale.Crop,
     isScrolling: Boolean = false,
     imageLoader: ImageLoader? = null,
+    onReady: ((Boolean) -> Unit)? = null,
     resolver: CoverImageHostResolver = getKoin().get(),
 ) {
     val context = LocalContext.current
@@ -65,7 +67,9 @@ internal fun JmCoverImage(
     val candidateUrl = nextCoverCandidateUrl(candidateUrls, attemptedUrls)
     val cacheKey = remember(comicId) { jmCoverCacheKey(comicId) }
     val displayGate = remember(comicId, candidateUrl) { CoverImageDisplayGate() }
-    var displayedCover by remember(comicId, candidateUrl) { mutableStateOf<DisplayedCover?>(null) }
+    // 网络恢复或 CDN 切换仍是同一本漫画：保留已显示封面，等新结果就绪再过渡。
+    // 只有漫画身份变化才清空，避免回前台换候选地址时闪回透明占位。
+    var displayedCover by remember(comicId) { mutableStateOf<DisplayedCover?>(null) }
     val sizeResolver = remember { CoverSizeResolver() }
     val request = remember(context, candidateUrl, cacheKey, sizeResolver) {
         candidateUrl?.let { url ->
@@ -156,9 +160,10 @@ internal fun JmCoverImage(
         }
     }
 
+    SideEffect { onReady?.invoke(displayedCover != null) }
     CoverCrossfadeImage(
         painter = displayedCover?.painter,
-        skipAnimation = displayedCover?.animate == false,
+        skipAnimation = onReady != null || displayedCover?.animate == false,
         contentDescription = contentDescription,
         contentScale = contentScale,
         modifier = modifier.then(sizeResolver),
