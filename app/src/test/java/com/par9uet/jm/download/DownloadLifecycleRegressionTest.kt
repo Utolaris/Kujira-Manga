@@ -80,7 +80,7 @@ class DownloadLifecycleRegressionTest {
     @Test fun `page deadline uses retry policy and final attempt becomes error`() = runTest {
         val dao = RecordingDownloadDao().apply { tasks[1] = downloadTask() }
         val coordinator = testDownloadCoordinator(dao) {
-            downloadPageWithinTimeout(10) { delay(20); Unit }
+            downloadPageWithinTimeout(10) { delay(20) }
         }
         assertEquals(DownloadOutcome.RETRY, coordinator.download(1, "", 1, 0))
         assertTrue(currentCoroutineContext().isActive)

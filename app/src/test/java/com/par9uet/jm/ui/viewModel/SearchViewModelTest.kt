@@ -14,8 +14,8 @@ import com.par9uet.jm.storage.HistorySearchManager
 import com.par9uet.jm.storage.HistorySearchStore
 import com.par9uet.jm.storage.MiscSettingsPreferences
 import com.par9uet.jm.storage.MiscSettingsState
-import com.par9uet.jm.ui.interaction.ListPositionMemory
-import com.par9uet.jm.ui.interaction.searchListPositionKey
+import com.par9uet.jm.ui.models.ListPositionMemory
+import com.par9uet.jm.ui.models.searchListPositionKey
 import java.lang.reflect.Proxy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -49,6 +49,7 @@ class SearchViewModelTest {
 
     private class FakeSettings : ContentPreferences, BlockedTagTemplatePreferences, MiscSettingsPreferences {
         override val blockedTags = MutableStateFlow(emptyList<String>())
+        override val blockedCommentKeywords = kotlinx.coroutines.flow.MutableStateFlow(emptyList<String>())
         override val blockedTagTemplates =
             MutableStateFlow(emptyList<com.par9uet.jm.data.models.BlockedTagTemplate>())
         override val misc = MutableStateFlow(MiscSettingsState())

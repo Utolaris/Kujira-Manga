@@ -10,7 +10,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.par9uet.jm.cache.cachePathExists
 import com.par9uet.jm.cache.cachePathHasContent
 import com.par9uet.jm.cache.getCacheParentPath
-import com.par9uet.jm.cache.deleteCachePath
 import com.par9uet.jm.cache.findCacheChildPath
 import com.par9uet.jm.cache.getChapterCacheName
 import com.par9uet.jm.cache.findOrCreateCacheDocument

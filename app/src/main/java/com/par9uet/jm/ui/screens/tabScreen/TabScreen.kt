@@ -2,6 +2,7 @@ package com.par9uet.jm.ui.screens.tabScreen
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.Box
@@ -18,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Password
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.rounded.Bookmarks
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material3.MaterialTheme
@@ -52,6 +54,8 @@ import com.par9uet.jm.ui.glass.rememberGlassAnchoredMenuState
 import com.par9uet.jm.favorites.model.FavoritesIntent
 import com.par9uet.jm.favorites.presentation.FavoritesViewModel
 import com.par9uet.jm.ui.interaction.ScrollAwareNavigationState
+import com.par9uet.jm.ui.interaction.motionEnabled
+import com.par9uet.jm.ui.screens.TabletLayoutMinWidth
 import com.par9uet.jm.ui.interaction.PullDownSearchIndicator
 import com.par9uet.jm.ui.interaction.rememberPullDownActionState
 import com.par9uet.jm.session.SessionReadiness
@@ -84,6 +88,7 @@ fun TabScreen(
     val isAuthenticated = authState == SessionReadiness.Authenticated
     val canShowAuthenticatedUi = authState != SessionReadiness.Unauthenticated
     val homeState by homeViewModel.homeState.collectAsState()
+    val hasUnreadNotifications by homeViewModel.hasUnreadNotifications.collectAsState()
     val homeTitle = resolveHomeCategoryTitle(homeState.categories, homeState.selectedCategoryId)
     val onHomeSearch = { mainNavController.navigate("comicSearch") }
     val onHomeDownload = { mainNavController.navigate("download") }
@@ -193,6 +198,16 @@ fun TabScreen(
         // 导航按钮（首页/收藏/设置）是否隐藏：未显式设置时跟随平板布局——平板默认隐藏。
         val miscSettings by homeViewModel.misc.collectAsState()
         val hideNavigation = miscSettings.hideNavigationButtons ?: useNavigationRail
+        val wideSettingsLayout = useNavigationRail && maxWidth >= TabletLayoutMinWidth && maxWidth > maxHeight
+        // Portrait uses the available width; only an enabled floating rail needs left clearance.
+        val settingsStartPadding by animateDpAsState(
+            if (useNavigationRail && (wideSettingsLayout || !hideNavigation)) TabletFloatingNavDefaults.settingsHorizontalInset else 16.dp,
+            tween(if (motionEnabled()) 240 else 0), label = "settings-start-padding",
+        )
+        val settingsEndPadding by animateDpAsState(
+            if (wideSettingsLayout) TabletFloatingNavDefaults.settingsHorizontalInset else 16.dp,
+            tween(if (motionEnabled()) 240 else 0), label = "settings-end-padding",
+        )
         val navigationVisibility = remember(useNavigationRail, selectedTab) {
             ScrollAwareNavigationState(coroutineScope)
         }
@@ -232,6 +247,7 @@ fun TabScreen(
             ) { page ->
                 when (MainTab.fromIndex(page)) {
                     MainTab.Home -> HomeScreen(
+                        isActive = selectedTab == MainTab.Home,
                         topContentPadding = homeTopContentPadding,
                         bottomContentPadding = contentBottomPadding,
                         pullDownState = homePullDownState,
@@ -248,6 +264,8 @@ fun TabScreen(
                     MainTab.Settings -> UserScreen(
                         topContentPadding = settingsTopContentPadding,
                         bottomContentPadding = contentBottomPadding,
+                        startContentPadding = settingsStartPadding,
+                        endContentPadding = settingsEndPadding,
                     )
                 }
             }
@@ -265,6 +283,8 @@ fun TabScreen(
                         modifier = Modifier.align(Alignment.TopCenter),
                         onSearch = onHomeSearch,
                         onDownload = onHomeDownload,
+                        onNotifications = { mainNavController.navigate("notifications") },
+                        hasUnreadNotifications = hasUnreadNotifications,
                     )
                     PullDownSearchIndicator(
                         state = homePullDownState,
@@ -335,9 +355,18 @@ fun TabScreen(
                         state = homeMoreMenuState,
                         surfaceId = "home-more-glass-menu",
                         alignment = GlassMenuAlignment.END,
-                        width = 196.dp,
-                        menuMaxHeight = 210.dp,
+                        // 图标 + 两个汉字；大字体时仅增加文字所需宽度。
+                        width = with(LocalDensity.current) { 96.dp + 32.sp.toDp() },
+                        menuMaxHeight = 280.dp,
                     ) {
+                        GlassMenuItem(
+                            text = "食堂",
+                            leadingIcon = Icons.Default.Restaurant,
+                            onClick = {
+                                homeMoreMenuState.dismiss()
+                                mainNavController.navigate("dinner")
+                            },
+                        )
                         GlassMenuItem(
                             text = "每周",
                             leadingIcon = Icons.Default.Star,

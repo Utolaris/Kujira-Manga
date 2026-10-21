@@ -2,7 +2,6 @@ package com.par9uet.jm.cache
 
 import android.content.Context
 import android.provider.DocumentsContract
-import androidx.core.net.toUri
 import com.par9uet.jm.cache.atom.ExternalDownloadSize
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

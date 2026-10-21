@@ -11,6 +11,8 @@ import com.par9uet.jm.data.models.APP_LOCK_UNLOCK_MODE_PATTERN
 import com.par9uet.jm.data.models.COLOR_PALETTE_PRESET_DEFAULT
 import com.par9uet.jm.data.models.LauncherDisguise
 import com.par9uet.jm.data.models.LocalSetting
+import com.par9uet.jm.data.models.DEFAULT_COMMENT_FILTER_KEYWORDS
+import com.par9uet.jm.contentfilter.normalizeCommentKeywords
 import com.par9uet.jm.contentfilter.flattenBlockedTagTemplates
 import com.par9uet.jm.contentfilter.normalizeBlockedTagList
 import com.par9uet.jm.contentfilter.normalizeBlockedTagTemplates
@@ -117,6 +119,9 @@ internal fun normalizePersisted(savedJson: String, saved: LocalSetting): LocalSe
             },
             blockedTagList = flattenBlockedTagTemplates(migratedTemplates),
             blockedTagTemplateList = migratedTemplates,
+            blockedCommentKeywordList = normalizeCommentKeywords(
+                saved.blockedCommentKeywordList ?: DEFAULT_COMMENT_FILTER_KEYWORDS,
+            ),
             appLockPassword = appLock.password,
             appLockPasswordLength = appLock.passwordLength,
             appLockPattern = appLock.pattern,

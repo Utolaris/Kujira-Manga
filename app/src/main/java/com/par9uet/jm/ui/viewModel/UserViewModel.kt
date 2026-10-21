@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.cachedIn
+import com.par9uet.jm.contentfilter.filterBlockedComments
 import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.core.model.SignInData
 import com.par9uet.jm.session.CandidateSession
@@ -21,7 +22,7 @@ import com.par9uet.jm.ui.pagingSource.HistoryCommentPagingSource
 import com.par9uet.jm.utils.log
 import com.par9uet.jm.utils.logError
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
@@ -54,13 +55,26 @@ class UserViewModel(
     private val localBrowseHistory: com.par9uet.jm.storage.LocalBrowseHistoryManager,
     private val localModeExit: com.par9uet.jm.core.model.LocalModeExit,
     private val favoriteSyncRequester: com.par9uet.jm.favorites.sync.FavoriteSyncRequester,
+    private val readHistoryManager: com.par9uet.jm.storage.ReadHistoryManager,
 ) : ViewModel() {
     val isLocalMode: kotlinx.coroutines.flow.StateFlow<Boolean> = localMode.isLocalModeFlow
     val localHistoryEntries = kotlinx.coroutines.flow.combine(
         localBrowseHistory.entries,
         userManager.userState,
-    ) { entries, user -> entries.filter { it.accountId == user.data?.id } }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+        readHistoryManager.readHistoryState,
+    ) { entries, user, _ ->
+        val accountId = user.data?.id
+        entries.filter { it.accountId == accountId }
+            .map { entry ->
+                val series = readHistoryManager.seriesComicForChapter(entry.id)
+                if (series == null) entry else entry.copy(
+                    id = series.id,
+                    name = series.name,
+                    authorList = series.authorList,
+                )
+            }
+            .distinctBy { it.id }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     /** Screens collect auth/user through the VM instead of service-locating UserManager. */
     val authState = userManager.authState
     val userState = userManager.userState
@@ -139,73 +153,76 @@ class UserViewModel(
         }
     }
 
-    /**
-     * 历史浏览状态：**只有一页**。
-     *
-     * `watch_list` 只请求第 1 页（最新 20 条），往下滑动不再产生任何请求——
-     * 不做预取、不做上拉加载、也没有页尾加载指示器。
-     */
-    data class HistoryPageState(
+    /** API 返回当前可用的全部远端历史，不分页或预取。 */
+    data class HistoryState(
         val items: List<Comic> = emptyList(),
         val loading: Boolean = false,
         val error: String? = null,
     )
 
-    private val _historyPageState = MutableStateFlow(HistoryPageState())
-    val historyPageState = _historyPageState.asStateFlow()
+    private val _historyState = MutableStateFlow(HistoryState())
+    val historyState = _historyState.asStateFlow()
 
-    /**
-     * 在途请求令牌：换号/登出后旧会话的响应不许写进新会话。
-     */
+    /** 换号/登出后旧会话的响应不许写进新会话。 */
     private var historyLoadToken = 0
+    private var historyLoadJob: Job? = null
+    /** 展示的合集 id -> 服务端章节条目；删除/下载仍按原始章节提交。 */
+    private var historySourceIds: Map<Int, Set<Int>> = emptyMap()
+    private var historySourceComics: Map<Int, List<Comic>> = emptyMap()
 
-    /**
-     * 拉取最新一页（或刷新）。刷新期间保留旧列表展示，拉到新数据后整体替换。
-     * 每次进入历史页调用一次，之后再没有任何请求。
-     */
+    /** 每次进入重新请求最新历史，响应须通过请求代次与会话双重检查。 */
     fun refreshHistory() {
-        val current = _historyPageState.value
+        val current = _historyState.value
         if (current.loading || localMode.isLocalMode) return
+        historyLoadJob?.cancel()
         val token = ++historyLoadToken
-        _historyPageState.value = current.copy(loading = true, error = null)
-        viewModelScope.launch { loadLatestHistory(token) }
-    }
-
-    private suspend fun loadLatestHistory(token: Int) {
-        if (token != historyLoadToken) return
-        val blockedTagList = contentPreferences.blockedTags.value
-        val result = try {
-            userRepository.getHistoryComicList(1)
-        } catch (cancelled: kotlinx.coroutines.CancellationException) {
-            throw cancelled
-        } catch (error: Exception) {
-            finishHistoryLoad(token, error.message ?: "加载失败，请重试", null)
-            return
-        }
-        when (result) {
-            is NetWorkResult.Error -> finishHistoryLoad(token, result.message, null)
-            is NetWorkResult.Success -> finishHistoryLoad(token, null, result.data.items, blockedTagList)
-        }
-    }
-
-    private fun finishHistoryLoad(
-        token: Int,
-        error: String?,
-        raw: List<Comic>?,
-        blockedTagList: List<String> = emptyList(),
-    ) {
-        if (token != historyLoadToken) return
-        _historyPageState.update { state ->
-            if (error != null || raw == null) {
-                state.copy(loading = false, error = error ?: "加载失败，请重试")
-            } else {
-                state.copy(
-                    items = raw.filterBlockedTags(blockedTagList),
-                    loading = false,
-                    error = null,
-                )
+        clearHistorySelection()
+        _historyState.value = current.copy(loading = true, error = null)
+        val owner = userManager.currentSessionSnapshot()
+        historyLoadJob = viewModelScope.launch {
+            if (!isCurrentHistoryLoad(token, owner)) return@launch
+            val blockedTagList = contentPreferences.blockedTags.value
+            val result = try {
+                userRepository.getHistoryComicList()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                NetWorkResult.Error(error.message ?: "加载失败，请重试")
+            }
+            if (!isCurrentHistoryLoad(token, owner)) return@launch
+            when (result) {
+                is NetWorkResult.Error -> _historyState.update {
+                    it.copy(loading = false, error = result.message)
+                }
+                is NetWorkResult.Success -> {
+                    clearHistorySelection()
+                    val items = resolveHistoryItems(
+                        result.data.distinctBy { it.id }.filterBlockedTags(blockedTagList)
+                    )
+                    log("History", "received=${result.data.size} displayed=${items.size}")
+                    _historyState.value = HistoryState(items = items)
+                }
             }
         }
+    }
+
+    private fun isCurrentHistoryLoad(token: Int, owner: UserSessionSnapshot): Boolean =
+        token == historyLoadToken && owner == userManager.currentSessionSnapshot()
+
+    private fun resolveHistoryItems(items: List<Comic>): List<Comic> {
+        val sources = linkedMapOf<Int, MutableList<Comic>>()
+        val display = ArrayList<Comic>(items.size)
+        items.forEach { comic ->
+            val series = readHistoryManager.seriesComicForChapter(comic.id)
+            val resolved = series ?: readHistoryManager.seriesIdForChapter(comic.id)?.let {
+                comic.copy(seriesId = it.toString())
+            } ?: comic
+            sources.getOrPut(resolved.id) { mutableListOf() }.add(comic)
+            if (display.none { it.id == resolved.id }) display.add(resolved)
+        }
+        historySourceComics = sources.mapValues { it.value.distinctBy(Comic::id) }
+        historySourceIds = historySourceComics.mapValues { (_, comics) -> comics.map(Comic::id).toSet() }
+        return display
     }
 
     private val _historyEditState = MutableStateFlow(HistoryEditState())
@@ -221,10 +238,13 @@ class UserViewModel(
                 ) {
                     _historyEditState.value = HistoryEditState()
                 }
-                // 会话变化重置历史分页：A 的列表绝不带给 B（登出则清空，等下次进入再拉）。
+                // 会话变化重置历史列表：A 的列表绝不带给 B（登出则清空，等下次进入再拉）。
                 // 同时作废在途请求，旧会话的响应不许写进新会话。
                 historyLoadToken++
-                _historyPageState.value = HistoryPageState()
+                historyLoadJob?.cancel()
+                historySourceIds = emptyMap()
+                historySourceComics = emptyMap()
+                _historyState.value = HistoryState()
             }
         }
     }
@@ -282,7 +302,13 @@ class UserViewModel(
                 clearHistorySelection()
                 return
             }
-            val saved = localBrowseHistory.delete(session.accountId, comics.map { it.id })
+            val ids = comics.flatMap { comic ->
+                buildSet {
+                    add(comic.id)
+                    addAll(readHistoryManager.readChapterIds(comic.id))
+                }
+            }
+            val saved = localBrowseHistory.delete(session.accountId, ids)
             toastManager.showAsync(if (saved) "已删除 ${comics.size} 条历史记录" else "本地历史删除失败，请重试")
             clearHistorySelection()
             return
@@ -316,26 +342,40 @@ class UserViewModel(
                     log("UserViewModel", "deleteHistoryComics: 会话已切换，中止剩余删除")
                     break
                 }
-                log("UserViewModel", "deleteHistoryComics: 正在删除 comic.id=${comic.id}")
-                val result = userManager.withBoundRemoteSession(session.accountId, session.generation) {
-                    userRepository.deleteHistoryComic(comic.id)
-                }
-                when {
-                    result == null -> {
+                val sourceIds = historySourceIds[comic.id] ?: setOf(comic.id)
+                var deleted = true
+                for (sourceId in sourceIds) {
+                    if (userManager.currentSessionSnapshot() != session) {
                         cancelled = true
-                        log("UserViewModel", "deleteHistoryComics: 会话失效，中止剩余删除")
+                        deleted = false
+                        log("UserViewModel", "deleteHistoryComics: 会话已切换，中止剩余删除")
                         break
                     }
-                    result is NetWorkResult.Error -> {
-                        logError(
-                            "UserViewModel",
-                            "deleteHistoryComics: 删除 comic.id=${comic.id} 失败: ${result.message}"
-                        )
-                        errors += result.message
-                        fail++
+                    log("UserViewModel", "deleteHistoryComics: 正在删除 comic.id=$sourceId")
+                    val result = userManager.withBoundRemoteSession(session.accountId, session.generation) {
+                        userRepository.deleteHistoryComic(sourceId)
                     }
-                    result is NetWorkResult.Success -> success++
+                    when {
+                        result == null -> {
+                            cancelled = true
+                            deleted = false
+                            log("UserViewModel", "deleteHistoryComics: 会话失效，中止剩余删除")
+                            break
+                        }
+                        result is NetWorkResult.Error -> {
+                            logError(
+                                "UserViewModel",
+                                "deleteHistoryComics: 删除 comic.id=$sourceId 失败: ${result.message}"
+                            )
+                            errors += result.message
+                            deleted = false
+                            break
+                        }
+                        result is NetWorkResult.Success -> Unit
+                    }
                 }
+                if (cancelled) break
+                if (deleted) success++ else fail++
             }
             log("UserViewModel", "deleteHistoryComics: 完成, 成功=$success, 失败=$fail, cancelled=$cancelled")
             val message = when {
@@ -347,7 +387,7 @@ class UserViewModel(
             }
             toastManager.showAsync(message)
             if (success > 0) {
-                com.par9uet.jm.ui.haptics.AppHaptics.deleteMulti()
+                com.par9uet.jm.core.AppHaptics.deleteMulti()
                 // 删除后重拉首页，顺序与远端保持一致
                 refreshHistory()
             }
@@ -364,7 +404,17 @@ class UserViewModel(
             clearHistorySelection()
             return
         }
-        downloadManager.downloadComics(comics)
+        // 历史卡片已归位到合集；下载仍按服务端/本机的章节条目提交。
+        val downloads = if (localMode.isLocalMode) {
+            comics.flatMap { comic ->
+                readHistoryManager.readChapterIds(comic.id)
+                    .ifEmpty { setOf(comic.id) }
+                    .map { chapterId -> Comic.create(chapterId, comic.name, comic.authorList) }
+            }
+        } else {
+            comics.flatMap { comic -> historySourceComics[comic.id] ?: listOf(comic) }
+        }.distinctBy(Comic::id)
+        downloadManager.downloadComics(downloads)
         clearHistorySelection()
     }
 
@@ -384,6 +434,8 @@ class UserViewModel(
                     HistoryCommentPagingSource(userRepository, snapshot.accountId)
                 }
             ).flow.cachedIn(viewModelScope)
+        }.combine(contentPreferences.blockedCommentKeywords) { pages, keywords ->
+            pages.filterBlockedComments(keywords)
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.Eagerly,

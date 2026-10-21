@@ -71,21 +71,19 @@ object CacheBudget {
 
     fun totalBytes(totalMb: Int): Long = technicalTotalMb(totalMb).toLong() * MB
 
+    /** Same accounting for Settings and cold-start enforcement, including unnamed residuals. */
+    fun controlledUsedBytes(scanned: List<CacheSize>, downloadExempt: Boolean): Long {
+        val sizes = scanned.associate { it.area to it.sizeBytes }
+        val named = listOf(CacheArea.COMMON, CacheArea.READER, CacheArea.DOWNLOAD).sumOf { sizes[it] ?: 0L }
+        val total = sizes[CacheArea.ALL]?.takeIf { it > 0L } ?: named
+        return if (downloadExempt) (total - (sizes[CacheArea.DOWNLOAD] ?: 0L)).coerceAtLeast(0L) else total
+    }
+
     fun coverDiskCacheMb(totalMb: Int = DEFAULT_TOTAL_MB, downloadExempt: Boolean = true): Int =
         (technicalTotalMb(totalMb) * shareOf(COVER_SHARE, downloadExempt)).toInt().coerceAtLeast(64)
 
     fun readerDiskCacheMb(totalMb: Int = DEFAULT_TOTAL_MB, downloadExempt: Boolean = true): Int =
         (technicalTotalMb(totalMb) * shareOf(READER_SHARE, downloadExempt)).toInt().coerceAtLeast(64)
-
-    fun downloadCacheMb(totalMb: Int = DEFAULT_TOTAL_MB, downloadExempt: Boolean = false): Int =
-        if (downloadExempt) {
-            0
-        } else {
-            (technicalTotalMb(totalMb) * DOWNLOAD_SHARE).toInt().coerceAtLeast(64)
-        }
-
-    fun coverDiskCacheBytes(totalMb: Int = DEFAULT_TOTAL_MB, downloadExempt: Boolean = true): Long =
-        coverDiskCacheMb(totalMb, downloadExempt).toLong() * MB
 
     /** 组件配额 MB → 字节。入参已是份额结果，禁止再按总额度二次分享额。 */
     fun componentMbToBytes(componentMb: Int): Long =
@@ -93,7 +91,4 @@ object CacheBudget {
 
     fun readerDiskCacheBytes(totalMb: Int = DEFAULT_TOTAL_MB, downloadExempt: Boolean = true): Long =
         readerDiskCacheMb(totalMb, downloadExempt).toLong() * MB
-
-    fun downloadCacheBytes(totalMb: Int = DEFAULT_TOTAL_MB, downloadExempt: Boolean = false): Long =
-        downloadCacheMb(totalMb, downloadExempt).toLong() * MB
 }

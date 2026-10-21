@@ -38,6 +38,10 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import com.par9uet.jm.core.AppHaptics
+import com.par9uet.jm.core.model.ConnectionModeStatus
+import com.par9uet.jm.core.model.LocalModeExitScheduler
+import com.par9uet.jm.favorites.usecase.LocalFavoriteOperationGate
 
 private data class FavoritesPagerKey(
     val accountId: Int,
@@ -59,10 +63,10 @@ class FavoritesViewModel(
     private val renameFavoriteFolder: RenameFavoriteFolder,
     private val downloadSelectedFavorites: DownloadSelectedFavorites,
     private val syncController: FavoriteSyncRequester,
-    private val localMode: com.par9uet.jm.core.model.ConnectionModeStatus,
-    private val localModeExitScheduler: com.par9uet.jm.core.model.LocalModeExitScheduler,
-    private val localFavoriteOperationGate: com.par9uet.jm.favorites.usecase.LocalFavoriteOperationGate,
-    private val listPositionMemory: com.par9uet.jm.ui.interaction.ListPositionMemory,
+    private val localMode: ConnectionModeStatus,
+    private val localModeExitScheduler: LocalModeExitScheduler,
+    private val localFavoriteOperationGate: LocalFavoriteOperationGate,
+    private val listPositionMemory: com.par9uet.jm.ui.models.ListPositionMemory,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(FavoritesUiState())
     val uiState = _uiState.asStateFlow()
@@ -88,7 +92,7 @@ class FavoritesViewModel(
             accountIdFlow.distinctUntilChanged().collect {
                 // 账号（或会话代际）变化：所有文件夹的保存位置一起作废，
                 // 新的列表从顶部开始——位置本身由全局记录维护。
-                listPositionMemory.clearPrefix("${com.par9uet.jm.ui.interaction.ListPositionKeyFavorites}|")
+                listPositionMemory.clearPrefix("${com.par9uet.jm.ui.models.ListPositionKeyFavorites}|")
                 _uiState.update { state ->
                     state.copy(
                         selectedFolderId = 0,
@@ -383,7 +387,7 @@ class FavoritesViewModel(
         viewModelScope.launch {
             val result = uncollectFavorites(sessionSnapshot, ids)
             if (result.succeeded > 0) {
-                com.par9uet.jm.ui.haptics.AppHaptics.deleteMulti()
+                AppHaptics.deleteMulti()
             }
             toastManager.showAsync(result.message ?: favoriteBatchMessage(result.succeeded, result.failed, "取消收藏"))
             clearSelection()

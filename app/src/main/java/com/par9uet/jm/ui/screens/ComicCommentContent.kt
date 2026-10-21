@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -36,8 +38,8 @@ import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
+import com.par9uet.jm.ui.components.MotionButton as Button
+import com.par9uet.jm.ui.components.MotionCard as Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -45,7 +47,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.par9uet.jm.ui.components.MotionTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -229,6 +231,7 @@ internal fun ComicCommentContent(
     topContentPadding: Dp = 0.dp,
     bottomContentPadding: Dp = 0.dp,
     publishDateText: String = "",
+    gridState: LazyGridState = rememberLazyGridState(),
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(
@@ -261,6 +264,7 @@ internal fun ComicCommentContent(
             onReply = onReply,
             bottomContentPadding = listBottomPadding + bottomContentPadding,
             topContentPadding = topContentPadding,
+            gridState = gridState,
         )
     }
 }
@@ -274,6 +278,7 @@ private fun CommentList(
     onReply: (Comment) -> Unit,
     bottomContentPadding: Dp,
     topContentPadding: Dp = 0.dp,
+    gridState: LazyGridState = rememberLazyGridState(),
 ) {
     when (val refreshState = commentLazyPagingItems.loadState.refresh) {
         is LoadState.Loading -> {
@@ -307,6 +312,7 @@ private fun CommentList(
         // Lazy 列表需要有限最大高度才能只组合可见项；外层 heightIn 已经封顶。
         modifier = modifier,
         lazyPagingItems = commentLazyPagingItems,
+        gridState = gridState,
         key = { it.identityKey },
         columns = GridCells.Fixed(1),
         contentPadding = PaddingValues(

@@ -5,7 +5,7 @@ import com.par9uet.jm.core.model.SignInData
 import com.par9uet.jm.core.model.User
 import com.par9uet.jm.core.network.NetWorkResult
 import com.par9uet.jm.data.models.ActionResult
-import com.par9uet.jm.data.models.ComicPage
+import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.data.models.CommentPage
 import com.par9uet.jm.di.UserManagerFavoriteSession
 import com.par9uet.jm.favorites.FakeConnectionMode
@@ -68,7 +68,7 @@ class LocalModeCoordinatorTest {
         override suspend fun probeActiveSession() = NetWorkResult.Success(Unit)
         override fun activateVerifiedSession(verified: CandidateSession, identity: com.par9uet.jm.core.model.User) = true
         override fun clearSession() = Unit
-        override suspend fun getHistoryComicList(page: Int): NetWorkResult<ComicPage> = NetWorkResult.Error("unused")
+        override suspend fun getHistoryComicList(): NetWorkResult<List<Comic>> = NetWorkResult.Error("unused")
         override suspend fun deleteHistoryComic(id: Int): NetWorkResult<Unit> = NetWorkResult.Error("unused")
         override suspend fun getHistoryCommentList(page: Int, userId: Int): NetWorkResult<CommentPage> = NetWorkResult.Error("unused")
         override suspend fun getSignData(userId: Int): NetWorkResult<SignInData> = NetWorkResult.Error("unused")

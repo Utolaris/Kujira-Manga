@@ -13,17 +13,17 @@ class FormatAlbumAddTimeDisplayTest {
 
     @Test
     fun isoDate() {
-        assertEquals("2024年3月15日上架", formatAlbumAddTimeDisplay("2024-03-15"))
+        assertEquals("2024年3月15日更新", formatAlbumAddTimeDisplay("2024-03-15"))
     }
 
     @Test
     fun isoDateTime() {
-        assertEquals("2024年12月1日上架", formatAlbumAddTimeDisplay("2024-12-01 08:30:00"))
+        assertEquals("2024年12月1日更新", formatAlbumAddTimeDisplay("2024-12-01 08:30:00"))
     }
 
     @Test
     fun slashDate() {
-        assertEquals("2023年7月9日上架", formatAlbumAddTimeDisplay("2023/07/09"))
+        assertEquals("2023年7月9日更新", formatAlbumAddTimeDisplay("2023/07/09"))
     }
 
     @Test
@@ -31,7 +31,7 @@ class FormatAlbumAddTimeDisplayTest {
         // 1772762965 = 2026-03-06 10:09:25 Asia/Shanghai
         java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Asia/Shanghai"))
         try {
-            assertEquals("2026年3月6日上架", formatAlbumAddTimeDisplay("1772762965"))
+            assertEquals("2026年3月6日更新", formatAlbumAddTimeDisplay("1772762965"))
         } finally {
             java.util.TimeZone.setDefault(null)
         }
@@ -41,7 +41,7 @@ class FormatAlbumAddTimeDisplayTest {
     fun unixMillisTimestamp() {
         java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Asia/Shanghai"))
         try {
-            assertEquals("2026年3月6日上架", formatAlbumAddTimeDisplay("1772762965000"))
+            assertEquals("2026年3月6日更新", formatAlbumAddTimeDisplay("1772762965000"))
         } finally {
             java.util.TimeZone.setDefault(null)
         }
@@ -49,6 +49,6 @@ class FormatAlbumAddTimeDisplayTest {
 
     @Test
     fun unknownShapeKeepsRawPlusSuffix() {
-        assertEquals("未知时间上架", formatAlbumAddTimeDisplay("未知时间"))
+        assertEquals("未知时间更新", formatAlbumAddTimeDisplay("未知时间"))
     }
 }

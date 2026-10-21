@@ -11,88 +11,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.withFrameNanos
+import com.par9uet.jm.ui.models.ListPositionMemory
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterIsInstance
-
-/**
- * 全局列表位置记录。
- *
- * 官方 App 用的是同一套模型（`Hooks/useScrollRestoration`）：每个可滚动页面按自己的
- * key 记下滚动位置，离开再回来维持原位置；详情类页面不记。
- *
- * 这里把 key 收敛成「目的地标识」，首页 / 收藏夹 / 历史浏览 / 搜索结果共用一份：
- * 用户从这些列表里点开一本漫画，返回时一定还在原来的位置，
- * 不会再出现「搜索页进了详情、点了作者、返回就回到顶部」这种丢位置的情况。
- *
- * 位置只在内存里（Activity 生命周期内），与官方把位置放 sessionStorage 的语义一致：
- * 进程重建后回到顶部是符合预期的。
- */
-class ListPositionMemory {
-    data class Position(val index: Int, val offset: Int)
-
-    private val positions = HashMap<String, Position>()
-
-    @Synchronized
-    fun position(key: String): Position? = positions[key]
-
-    @Synchronized
-    fun save(key: String, index: Int, offset: Int) {
-        positions[key] = Position(index.coerceAtLeast(0), offset.coerceAtLeast(0))
-    }
-
-    @Synchronized
-    fun clear(key: String) {
-        positions.remove(key)
-    }
-
-    /** 清掉某一类列表的全部位置（例如账号切换后收藏夹的所有文件夹位置都作废）。 */
-    @Synchronized
-    fun clearPrefix(prefix: String) {
-        positions.keys.removeAll { it.startsWith(prefix) }
-    }
-
-    @Synchronized
-    fun clearAll() = positions.clear()
-}
 
 /** 未显式提供时用的兜底实例：预览 / 独立组合也能正常读写。 */
 private val fallbackListPositionMemory = ListPositionMemory()
 
 val LocalListPositionMemory = staticCompositionLocalOf { fallbackListPositionMemory }
-
-/** 历史列表位置：`history`。 */
-const val ListPositionKeyHome: String = "home"
-const val ListPositionKeyHistory: String = "history"
-const val ListPositionKeyFavorites: String = "favorites"
-const val ListPositionKeyWeek: String = "week"
-
-/**
- * 搜索结果页的位置 key。
- *
- * 直接用分页源的查询键（排序 / 关键词 / 排除标签 / 年月），与 `matchesQuery` 同一相等语义：
- * 换查询或换排序 = 新 key（没有记忆 → 从顶部开始），同一查询返回则命中记忆。
- * 这样完全不需要 generation 归零那种「换代」逻辑——之前正是它在
- * 「搜索 → 详情 → 点作者 → 返回 → 返回」时被误判成换代，把列表滚回了顶部。
- */
-fun searchListPositionKey(queryKey: String): String = "search|$queryKey"
-
-/**
- * 收藏夹列表位置 key。只有「数据集真的换了」才应该换 key：
- * 文件夹、搜索词、筛选条件变化算换了；进入/退出搜索但没输入关键词不算。
- */
-fun favoritesListPositionKey(
-    folderId: Int,
-    searchText: String,
-    tags: Collection<String>,
-    authors: Collection<String>,
-    tagLogic: String,
-): String = buildString {
-    append("favorites|").append(folderId)
-    append('|').append(searchText)
-    append('|').append(tags.sorted().joinToString(","))
-    append('|').append(authors.sorted().joinToString(","))
-    append('|').append(tagLogic)
-}
 
 /**
  * 记住 [key] 对应列表的滚动位置。

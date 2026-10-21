@@ -8,19 +8,8 @@ import com.par9uet.jm.favorites.sync.FavoriteSyncRequester
 import com.par9uet.jm.storage.LocalSettingLoadResult
 import com.par9uet.jm.storage.LocalSettingPersistence
 import com.par9uet.jm.storage.StorageWriteResult
-import com.par9uet.jm.storage.ApiEndpointPreference
-import com.par9uet.jm.storage.AppLockState
-import com.par9uet.jm.storage.AppSecurityPreferences
-import com.par9uet.jm.storage.AppearancePreferences
-import com.par9uet.jm.storage.CacheNotificationPreferences
-import com.par9uet.jm.storage.ColorPaletteState
-import com.par9uet.jm.storage.ContentPreferences
-import com.par9uet.jm.storage.DohPreferences
-import com.par9uet.jm.storage.DohSettingsState
 import com.par9uet.jm.storage.LocalSettingManager
-import com.par9uet.jm.storage.MiscSettingsState
-import com.par9uet.jm.storage.ReaderPreferences
-import com.par9uet.jm.storage.RecommendationPreferences
+import com.par9uet.jm.session.LocalModeTransition
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -69,6 +58,16 @@ class SettingsViewModelTest {
     }
     }
 
+    private class FakeLocalModeSettings : LocalModeSettings {
+        override val isLocalMode = MutableStateFlow(false)
+        override val transition = MutableStateFlow<LocalModeTransition>(LocalModeTransition.Idle)
+        override val isTransitioning = MutableStateFlow(false)
+
+        override fun enter() = Unit
+
+        override fun requestExit() = true
+    }
+
     private class FakeSyncRequester : FavoriteSyncRequester {
         val requests = mutableListOf<FavoriteSyncRequestKind>()
         private val _state = MutableStateFlow(FavoriteSyncUiState())
@@ -80,14 +79,12 @@ class SettingsViewModelTest {
         override suspend fun initializeForLogin() = Unit
     }
 
-    private fun buildViewModel(recommendEnabled: Boolean): Pair<SettingsViewModel, InMemoryPersistence> {
+    private fun buildViewModel(): Pair<SettingsViewModel, InMemoryPersistence> {
         val persistence = InMemoryPersistence()
         val manager = LocalSettingManager(persistence, RecordingLauncherApplier())
-        manager.setPreferenceRecommendEnabled(recommendEnabled)
 
         // All contract params are backed by the same real manager instance, mirroring DI.
         val vm = SettingsViewModel(
-            recommendationPreferences = manager,
             readerPreferences = manager,
             cacheNotificationPreferences = manager,
             appearancePreferences = manager,
@@ -99,17 +96,18 @@ class SettingsViewModelTest {
             localSettingManager = manager,
             favoriteSyncRequester = FakeSyncRequester(),
             favoriteForceAlign = com.par9uet.jm.core.model.FavoriteForceAlign { },
+            localModeSettings = FakeLocalModeSettings(),
+            toastManager = com.par9uet.jm.core.ToastManager(),
         )
         return vm to persistence
     }
 
     @Test
     fun `uiState composes from narrow preferences`() {
-        val (vm, _) = buildViewModel(recommendEnabled = true)
+        val (vm, _) = buildViewModel()
         scheduler.runCurrent()
 
         val state = subscribedValue(vm)
-        org.junit.Assert.assertTrue(state.recommendationEnabled)
         assertEquals("auto", state.theme)
         assertEquals(3, state.prefetchCount)
         // 默认简体 CN，对应官方 lang 参数；请求层据此给 GET 补 lang。
@@ -118,7 +116,7 @@ class SettingsViewModelTest {
 
     @Test
     fun `selectAppLanguage publishes traditional through settings ui state`() {
-        val (vm, _) = buildViewModel(recommendEnabled = true)
+        val (vm, _) = buildViewModel()
 
         vm.selectAppLanguage(APP_LANGUAGE_TRADITIONAL)
         scheduler.runCurrent()
@@ -128,7 +126,7 @@ class SettingsViewModelTest {
 
     @Test
     fun `catalog validation rejects unknown api`() {
-        val (vm, _) = buildViewModel(recommendEnabled = false)
+        val (vm, _) = buildViewModel()
         try {
             vm.selectApi("https://unknown.example")
             throw AssertionError("expected require to fail")
@@ -138,7 +136,7 @@ class SettingsViewModelTest {
 
     @Test
     fun `selectTheme validates catalog and applies`() {
-        val (vm, _) = buildViewModel(recommendEnabled = false)
+        val (vm, _) = buildViewModel()
 
         vm.selectTheme("dark")
         scheduler.runCurrent()
@@ -153,7 +151,7 @@ class SettingsViewModelTest {
 
     @Test
     fun `grid columns apply atomically through one intent`() {
-        val (vm, persistence) = buildViewModel(recommendEnabled = false)
+        val (vm, persistence) = buildViewModel()
 
         vm.applyGridColumns(2, 3, 4, 5, 6)
 
@@ -172,7 +170,6 @@ class SettingsViewModelTest {
         val manager = LocalSettingManager(persistence, RecordingLauncherApplier())
         var aligned = 0
         val vm = SettingsViewModel(
-            recommendationPreferences = manager,
             readerPreferences = manager,
             cacheNotificationPreferences = manager,
             appearancePreferences = manager,
@@ -183,6 +180,8 @@ class SettingsViewModelTest {
             miscSettings = manager,
             localSettingManager = manager, favoriteSyncRequester = FakeSyncRequester(),
             favoriteForceAlign = com.par9uet.jm.core.model.FavoriteForceAlign { aligned++ },
+            localModeSettings = FakeLocalModeSettings(),
+            toastManager = com.par9uet.jm.core.ToastManager(),
         )
 
         vm.requestFavoriteForceRefresh()

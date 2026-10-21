@@ -43,6 +43,11 @@ class ReadHistoryManager(
             readChapterIds = readIds,
             lastPageIndex = old?.takeIf { it.lastChapterId == chapterId }?.lastPageIndex ?: 0,
             lastChapterPageCount = old?.takeIf { it.lastChapterId == chapterId }?.lastChapterPageCount ?: 0,
+            seriesName = old?.seriesName.orEmpty(),
+            seriesAuthorList = old?.seriesAuthorList.orEmpty(),
+            seriesTagList = old?.seriesTagList.orEmpty(),
+            seriesDescription = old?.seriesDescription.orEmpty(),
+            seriesChapterIds = old?.seriesChapterIds.orEmpty(),
         )
         _readHistoryState.update { current }
         if (ready) schedulePersist(current)
@@ -60,9 +65,69 @@ class ReadHistoryManager(
             readChapterIds = readIds,
             lastPageIndex = pageIndex,
             lastChapterPageCount = pageCount,
+            seriesName = old?.seriesName.orEmpty(),
+            seriesAuthorList = old?.seriesAuthorList.orEmpty(),
+            seriesTagList = old?.seriesTagList.orEmpty(),
+            seriesDescription = old?.seriesDescription.orEmpty(),
+            seriesChapterIds = old?.seriesChapterIds.orEmpty(),
         )
         _readHistoryState.update { current }
         if (ready) schedulePersist(current)
+    }
+
+    /**
+     * 记录合集自身的卡片元数据。只接受合集条目：`seriesId` 指向别的作品时它是章节，
+     * 不能把章节标题写成合集标题。已有阅读进度原样保留。
+     */
+    @Synchronized
+    fun recordSeries(comic: Comic) {
+        val seriesId = comic.seriesId.toIntOrNull()?.takeIf { it > 0 }
+        if (seriesId != null && seriesId != comic.id) return
+        if (comic.id <= 0 || comic.name.isBlank()) return
+        val ready = ensureLoaded()
+        val current = _readHistoryState.value.toMutableMap()
+        val old = current[comic.id] ?: ComicReadHistory()
+        current[comic.id] = old.copy(
+            seriesName = comic.name,
+            seriesAuthorList = comic.authorList,
+            seriesTagList = comic.tagList,
+            seriesDescription = comic.description,
+            seriesChapterIds = (old.seriesChapterIds + comic.comicChapterList.map { it.id })
+                .filter { it > 0 }.distinct(),
+        )
+        _readHistoryState.update { current }
+        if (ready) schedulePersist(current)
+    }
+
+    /** 合集卡片元数据；没有记录时返回 null（调用方保留原章节条目）。 */
+    fun seriesComic(comicKey: Int): Comic? {
+        if (!ensureLoaded()) return null
+        val entry = _readHistoryState.value[comicKey] ?: return null
+        return entry.toSeriesComic(comicKey)
+    }
+
+    /**
+     * 历史条目可能是章节；从本机阅读进度或已保存的目录查找它所属的合集卡片。
+     * 只在合集元数据存在时替换，避免把章节标题冒充合集。
+     */
+    fun seriesComicForChapter(chapterId: Int): Comic? {
+        if (chapterId <= 0 || !ensureLoaded()) return null
+        val parent = _readHistoryState.value.entries.firstOrNull { (key, entry) ->
+            key != chapterId && entry.seriesName.isNotBlank() &&
+                (entry.lastChapterId == chapterId || chapterId in entry.readChapterIds ||
+                    chapterId in entry.seriesChapterIds)
+        } ?: return null
+        return parent.value.toSeriesComic(parent.key)
+    }
+
+    /** 旧进度可能只有父子 id、没有合集标题；仍可用父 id 请求封面。 */
+    fun seriesIdForChapter(chapterId: Int): Int? {
+        if (chapterId <= 0 || !ensureLoaded()) return null
+        return _readHistoryState.value.entries.firstOrNull { (key, entry) ->
+            key != chapterId &&
+                (entry.lastChapterId == chapterId || chapterId in entry.readChapterIds ||
+                    chapterId in entry.seriesChapterIds)
+        }?.key
     }
 
     fun readChapterIds(
@@ -151,8 +216,25 @@ internal fun mergeHistories(
                 readChapterIds = (base.readChapterIds + mem.readChapterIds).distinct(),
                 lastPageIndex = mem.lastPageIndex,
                 lastChapterPageCount = mem.lastChapterPageCount,
+                seriesName = mem.seriesName.ifBlank { base.seriesName },
+                seriesAuthorList = mem.seriesAuthorList.ifEmpty { base.seriesAuthorList },
+                seriesTagList = mem.seriesTagList.ifEmpty { base.seriesTagList },
+                seriesDescription = mem.seriesDescription.ifBlank { base.seriesDescription },
+                seriesChapterIds = (base.seriesChapterIds + mem.seriesChapterIds).distinct(),
             )
         }
     }
     return merged
+}
+
+private fun ComicReadHistory.toSeriesComic(comicKey: Int): Comic? {
+    if (seriesName.isBlank()) return null
+    return Comic.create(
+        id = comicKey,
+        name = seriesName,
+        authorList = seriesAuthorList,
+    ).copy(
+        description = seriesDescription,
+        tagList = seriesTagList,
+    )
 }

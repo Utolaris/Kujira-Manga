@@ -110,11 +110,4 @@ class WeekViewModel(
         }
     }
 
-    fun changeWeekTypeFilter(typeId: String?) {
-        _weekFilterState.update {
-            it.copy(
-                typeId = typeId
-            )
-        }
-    }
 }

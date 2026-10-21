@@ -3,9 +3,9 @@ package com.par9uet.jm.ui.viewModel
 import com.par9uet.jm.download.downloadTask
 import com.par9uet.jm.download.export.DownloadCacheSummary
 import com.par9uet.jm.download.export.DownloadExportOperations
-import com.par9uet.jm.download.export.PdfExportMode
 import com.par9uet.jm.download.molecule.toDomain
 import com.par9uet.jm.download.model.DownloadItem
+import com.par9uet.jm.download.model.PdfExportMode
 import com.par9uet.jm.core.ToastManager
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.*

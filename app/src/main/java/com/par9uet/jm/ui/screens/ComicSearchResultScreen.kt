@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -18,10 +17,10 @@ import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.par9uet.jm.ui.components.MotionIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.par9uet.jm.ui.components.MotionTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -53,7 +52,7 @@ import com.par9uet.jm.ui.glass.GlassMenuItem
 import com.par9uet.jm.ui.glass.glassMenuAnchor
 import com.par9uet.jm.ui.glass.rememberGlassAnchoredMenuState
 import com.par9uet.jm.ui.interaction.rememberRestoringGridState
-import com.par9uet.jm.ui.interaction.searchListPositionKey
+import com.par9uet.jm.ui.models.searchListPositionKey
 import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.ComicDetailViewModel
 import com.par9uet.jm.ui.viewModel.SearchViewModel

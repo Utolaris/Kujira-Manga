@@ -20,18 +20,25 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.HourglassEmpty
 import androidx.compose.material.icons.rounded.PauseCircleOutline
-import androidx.compose.material3.Card
+import com.par9uet.jm.ui.components.MotionCard as Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.par9uet.jm.ui.components.MotionIconButton as IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProgressIndicatorDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Rect
+import com.par9uet.jm.ui.interaction.coverSourceBounds
+import com.par9uet.jm.ui.models.LocalCoverNavigator
+import com.par9uet.jm.data.models.Comic
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -77,9 +84,15 @@ fun DownloadCoverGridItem(
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
+    val navigator = LocalCoverNavigator.current
+    var coverBounds by remember(group.id) { mutableStateOf<Rect?>(null) }
     Card(
         modifier = modifier.combinedClickable(
-            onClick = onClick,
+            onClick = {
+                if (!editing && navigator != null) {
+                    navigator.open(Comic.create(group.id, group.name, group.authorList), coverBounds, onClick)
+                } else onClick()
+            },
             onLongClick = onLongClick
         ),
         shape = RoundedCornerShape(20.dp),
@@ -101,6 +114,7 @@ fun DownloadCoverGridItem(
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(14.dp))
                         .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                        .coverSourceBounds(group.id) { coverBounds = it }
                 )
                 Text(
                     text = group.name,
@@ -146,9 +160,15 @@ fun DownloadRowItem(
     onLongClick: () -> Unit,
     onCancel: () -> Unit
 ) {
+    val navigator = LocalCoverNavigator.current
+    var coverBounds by remember(group.id) { mutableStateOf<Rect?>(null) }
     Card(
         modifier = modifier.combinedClickable(
-            onClick = onClick,
+            onClick = {
+                if (!editing && navigator != null) {
+                    navigator.open(Comic.create(group.id, group.name, group.authorList), coverBounds, onClick)
+                } else onClick()
+            },
             onLongClick = onLongClick
         ),
         shape = RoundedCornerShape(18.dp),
@@ -175,6 +195,7 @@ fun DownloadRowItem(
                     .aspectRatio(3f / 4f)
                     .clip(RoundedCornerShape(10.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                        .coverSourceBounds(group.id) { coverBounds = it }
             )
             Column(
                 modifier = Modifier.weight(1f),

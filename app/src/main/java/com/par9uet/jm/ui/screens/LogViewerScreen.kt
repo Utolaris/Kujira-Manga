@@ -23,10 +23,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material3.Card
+import com.par9uet.jm.ui.components.MotionCard as Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.par9uet.jm.ui.components.MotionIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -49,7 +49,7 @@ import androidx.compose.ui.unit.dp
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.glass.GlassSurface
 import com.par9uet.jm.ui.glass.GlassSurfaceStyle
-import com.par9uet.jm.ui.haptics.AppHaptics
+import com.par9uet.jm.core.AppHaptics
 import com.par9uet.jm.utils.LogBuffer
 import com.par9uet.jm.utils.LogEntry
 import com.par9uet.jm.utils.LogExporter

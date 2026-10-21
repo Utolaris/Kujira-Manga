@@ -1,6 +1,5 @@
 package com.par9uet.jm.cache
 
-import android.content.Context
 import android.content.ContextWrapper
 import android.graphics.Bitmap
 import android.provider.DocumentsContract

@@ -92,19 +92,16 @@ val darkScheme = darkColorScheme(
 val extendedLight = ExtendedColorScheme(
     contentTag = ColorFamily(
         contentTagLight,
-        onContentTagLight,
         contentTagContainerLight,
         onContentTagContainerLight,
     ),
     roleTag = ColorFamily(
         roleTagLight,
-        onRoleTagLight,
         roleTagContainerLight,
         onRoleTagContainerLight,
     ),
     workTag = ColorFamily(
         workTagLight,
-        onWorkTagLight,
         workTagContainerLight,
         onWorkTagContainerLight,
     ),
@@ -113,19 +110,16 @@ val extendedLight = ExtendedColorScheme(
 val extendedDark = ExtendedColorScheme(
     contentTag = ColorFamily(
         contentTagDark,
-        onContentTagDark,
         contentTagContainerDark,
         onContentTagContainerDark,
     ),
     roleTag = ColorFamily(
         roleTagDark,
-        onRoleTagDark,
         roleTagContainerDark,
         onRoleTagContainerDark,
     ),
     workTag = ColorFamily(
         workTagDark,
-        onWorkTagDark,
         workTagContainerDark,
         onWorkTagContainerDark,
     ),
@@ -155,7 +149,6 @@ fun extendedColorSchemeFor(colorScheme: ColorScheme, isDark: Boolean): ExtendedC
 @Immutable
 data class ColorFamily(
     val color: Color,
-    val onColor: Color,
     val colorContainer: Color,
     val onColorContainer: Color
 )

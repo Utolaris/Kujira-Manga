@@ -29,6 +29,15 @@ import com.par9uet.jm.storage.StorageWriteResult
 import com.par9uet.jm.storage.UserStorage
 import java.lang.reflect.Proxy
 import java.lang.reflect.Type
+import com.par9uet.jm.cache.CacheSize
+import com.par9uet.jm.cache.atom.CacheFiles
+import com.par9uet.jm.cache.molecule.CacheCleanupOperations
+import com.par9uet.jm.notification.NotificationSource
+import com.par9uet.jm.notification.NotificationUnreadCoordinator
+import com.par9uet.jm.notification.model.NotificationUnreadCounts
+import com.par9uet.jm.session.AccountRequestScope
+import com.par9uet.jm.session.UserSessionSnapshot
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -99,6 +108,28 @@ class ColdStartFavoriteSyncTest {
         } finally { environment.application.close() }
     }
 
+    @Test fun `unread request is last after authentication cache and asynchronous favorite sync and runs once`() = runTest {
+        val syncReady = CompletableDeferred<Unit>()
+        val cacheReady = CompletableDeferred<Unit>()
+        val homeReady = CompletableDeferred<Unit>()
+        val environment = environment(syncReady = syncReady, cacheReady = cacheReady, homeReady = homeReady)
+        try {
+            environment.startup.start(); runCurrent()
+            assertEquals(0, environment.unreadRequests[0])
+            environment.probeReady.complete(Unit); runCurrent()
+            assertEquals(listOf(0), environment.requests)
+            assertEquals(0, environment.unreadRequests[0])
+            cacheReady.complete(Unit); runCurrent()
+            assertEquals(0, environment.unreadRequests[0])
+            syncReady.complete(Unit); runCurrent()
+            assertEquals(0, environment.unreadRequests[0])
+            homeReady.complete(Unit); runCurrent()
+            assertEquals(1, environment.unreadRequests[0])
+            environment.startup.start(); runCurrent()
+            assertEquals(1, environment.unreadRequests[0])
+        } finally { environment.application.close() }
+    }
+
     private data class Environment(
         val application: org.koin.core.KoinApplication,
         val startup: PostStartupCoordinator,
@@ -106,14 +137,18 @@ class ColdStartFavoriteSyncTest {
         val probeReady: CompletableDeferred<Unit>,
         val probes: IntArray,
         val requests: MutableList<Int>,
+        val unreadRequests: IntArray,
     )
 
     private fun TestScope.environment(
         local: Boolean = false, hasUser: Boolean = true, lastCompletedAt: Long? = null,
+        syncReady: CompletableDeferred<Unit> = CompletableDeferred(Unit),
+        cacheReady: CompletableDeferred<Unit> = CompletableDeferred(Unit),
+        homeReady: CompletableDeferred<Unit> = CompletableDeferred(Unit),
     ): Environment {
         val settings = LocalSettingManager(object : LocalSettingPersistence {
             override fun load() = LocalSettingLoadResult.Success(LocalSetting(
-                dohEnabled = false, dohAutoSelectFastest = false, autoSignInEnabled = false,
+                dohEnabled = false, dohAutoSelectFastest = false, cacheBudgetMb = 512,
             ))
             override fun persist(localSetting: LocalSetting) = StorageWriteResult.Success
         }, object : LauncherIdentityApplier {
@@ -139,6 +174,8 @@ class ColdStartFavoriteSyncTest {
         val probes = intArrayOf(0)
         val probeReady = CompletableDeferred<Unit>()
         val repository = object : UserRepository by unused {
+            override suspend fun getSignData(userId: Int): NetWorkResult<com.par9uet.jm.core.model.SignInData> =
+                NetWorkResult.Error("No sign-in data in this fixture")
             override suspend fun probeActiveSession(): NetWorkResult<Unit> {
                 probes[0]++
                 probeReady.await()
@@ -151,7 +188,7 @@ class ColdStartFavoriteSyncTest {
         val requests = mutableListOf<Int>()
         val controller = FavoriteSyncController(
             UserManagerFavoriteSession(manager),
-            { _, folder, _, _ -> requests += folder; NetWorkResult.Success(FavoriteSyncReport(0, 0, 0, 0, 0)) },
+            { _, folder, _, _ -> requests += folder; syncReady.await(); NetWorkResult.Success(FavoriteSyncReport(0, 0, 0, 0, 0)) },
             backgroundScope, modeGate,
             autoSyncCoordinator = FavoriteAutoSyncCoordinator(
                 timeSource = { testScheduler.currentTime }, wallTimeSource = { 1_000_000L + testScheduler.currentTime },
@@ -162,9 +199,30 @@ class ColdStartFavoriteSyncTest {
             override fun <T> get(key: String, type: Type): T? = null
             override fun <T> set(key: String, value: T) = Unit
         })
+        val home = StartupHomeLoad().apply { track(backgroundScope.launch { homeReady.await() }) }
+        val unreadRequests = intArrayOf(0)
+        val source = Proxy.newProxyInstance(NotificationSource::class.java.classLoader, arrayOf(NotificationSource::class.java)) {
+            _, method, _ ->
+            check(method.name == "unreadCounts")
+            unreadRequests[0]++
+            NotificationUnreadCounts(1, 0)
+        } as NotificationSource
+        val account = object : AccountRequestScope {
+            override val sessions = MutableStateFlow(UserSessionSnapshot(if (hasUser) 7 else 0, 1))
+            override suspend fun <T> run(owner: UserSessionSnapshot, block: suspend () -> T): T = block()
+        }
+        val unread = NotificationUnreadCoordinator(source, account, modeGate, backgroundScope)
+        val files = object : CacheFiles {
+            override suspend fun scan(): List<CacheSize> { cacheReady.await(); return emptyList() }
+            override suspend fun remove(areas: Set<com.par9uet.jm.cache.CacheArea>) = Unit
+        }
+        val cache = StartupCacheCleanup(files, settings, CacheCleanupOperations(files, {}, {}, {}))
         val application = koinApplication {
             modules(module {
                 single { settings }
+                single { unread }
+                single { cache }
+                single { home }
                 single { manager }
                 single { modeGate }
                 single { DohManager(settings, settings) }
@@ -173,6 +231,6 @@ class ColdStartFavoriteSyncTest {
                 single<FavoriteSyncRequester> { controller }
             })
         }
-        return Environment(application, PostStartupCoordinator(backgroundScope, application.koin), controller, probeReady, probes, requests)
+        return Environment(application, PostStartupCoordinator(backgroundScope, application.koin), controller, probeReady, probes, requests, unreadRequests)
     }
 }

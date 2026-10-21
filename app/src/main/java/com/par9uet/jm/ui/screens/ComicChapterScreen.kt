@@ -90,7 +90,12 @@ fun ComicChapterScreen(
                         else -> AssistChipDefaults.assistChipColors()
                     },
                     onClick = {
-                        mainNavController.navigate("comicRead/${item.id}")
+                        val historyId = comic?.let { collection ->
+                            collection.seriesId.toIntOrNull()
+                                ?.takeIf { it > 0 && it != collection.id }
+                                ?: collection.id
+                        } ?: -1
+                        mainNavController.navigate("comicRead/${item.id}?historyId=$historyId")
                     },
                     label = {
                         Text(

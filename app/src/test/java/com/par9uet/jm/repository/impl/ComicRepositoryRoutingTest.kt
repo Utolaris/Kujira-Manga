@@ -22,10 +22,11 @@ private fun <T> routingStub(): NetWorkResult<T> = NetWorkResult.Error("stub")
 class ComicRepositoryRoutingTest {
     private class NetworkFake : NetworkHomeDataSource {
         var homeCalls = 0
+        var result: NetWorkResult<List<HomeSwiperComicListItemResponse>> = NetWorkResult.Error("network")
 
         override suspend fun getHomePage(): NetWorkResult<List<HomeSwiperComicListItemResponse>> {
             homeCalls++
-            return NetWorkResult.Error("network")
+            return result
         }
     }
 
@@ -87,6 +88,22 @@ class ComicRepositoryRoutingTest {
         override suspend fun moveComicToFolder(comicId: Int, folderId: String): NetWorkResult<Unit> = routingStub()
         override suspend fun getComicIdsByTag(tagName: String, maxPages: Int): Set<Int> = emptySet()
         override suspend fun downloadImageBytes(comicId: Int, imageIndex: Int): ByteArray? = null
+    }
+
+    @Test
+    fun libraryAndNovelsAreHiddenBeforeTheirNonComicPayloadIsMapped() = runTest {
+        val rows = com.google.gson.Gson().fromJson("""[
+            {"id":"26","title":"連載更新","type":"promote","content":[{"id":"123","name":"测试漫画","author":"作者"}]},
+            {"id":1001,"title":"禁漫書庫","type":"library","content":[{"id":"not-an-album"}]},
+            {"id":1002,"title":"禁漫小說","type":"novels","content":[{"id":"also-not-an-album"}]},
+            {"id":"29","title":"推薦本本","type":"promote","content":[]}
+        ]""", Array<HomeSwiperComicListItemResponse>::class.java).toList()
+        val network = NetworkFake().apply { result = NetWorkResult.Success(rows) }
+        val result = ComicRepositoryImpl(network, EmbeddedFake()).getNetworkHomePage()
+        org.junit.Assert.assertTrue(result is NetWorkResult.Success)
+        val sections = (result as NetWorkResult.Success).data
+        assertEquals(listOf("26", "29"), sections.map { it.id })
+        assertEquals(listOf(123), sections.first().list.map { it.id })
     }
 
     @Test

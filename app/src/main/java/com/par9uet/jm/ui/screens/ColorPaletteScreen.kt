@@ -22,9 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,17 +31,17 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Colorize
 import androidx.compose.material.icons.rounded.RestartAlt
-import androidx.compose.material3.Card
+import com.par9uet.jm.ui.components.MotionCard as Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalIconButton
+import com.par9uet.jm.ui.components.MotionFilledTonalIconButton as FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.par9uet.jm.ui.components.MotionTextButton as TextButton
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -67,13 +65,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.par9uet.jm.data.models.COLOR_PALETTE_PRESET_CUSTOM
 import com.par9uet.jm.data.models.COLOR_PALETTE_PRESET_DEFAULT
-import com.par9uet.jm.data.models.COLOR_PALETTE_PRESET_FOREST
-import com.par9uet.jm.data.models.COLOR_PALETTE_PRESET_LAVENDER
 import com.par9uet.jm.data.models.COLOR_PALETTE_PRESET_MONET
-import com.par9uet.jm.data.models.COLOR_PALETTE_PRESET_OCEAN
-import com.par9uet.jm.data.models.COLOR_PALETTE_PRESET_SUNSET
 import com.par9uet.jm.ui.theme.ColorPreset
 import com.par9uet.jm.ui.theme.toColorOrNull
 import com.par9uet.jm.ui.theme.colorPresets
@@ -544,7 +537,7 @@ private fun ColorPickerDialog(
         }
     }
 
-    val screenHeight = LocalWindowInfo.current.containerSize.height.dp
+    val screenHeight = with(androidx.compose.ui.platform.LocalDensity.current) { LocalWindowInfo.current.containerSize.height.toDp() }
     GlassModal(
         visible = visible,
         onDismissRequest = onDismiss,

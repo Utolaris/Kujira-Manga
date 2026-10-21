@@ -25,12 +25,6 @@ enum class MainTab(
         topBarTitle = "设置",
     );
 
-    fun directionTo(target: MainTab): MainTabDirection = when {
-        target.index > index -> MainTabDirection.FORWARD
-        target.index < index -> MainTabDirection.BACKWARD
-        else -> MainTabDirection.NONE
-    }
-
     companion object {
         val ordered: List<MainTab> = entries.sortedBy(MainTab::index)
 
@@ -38,10 +32,4 @@ enum class MainTab(
 
         fun fromRoute(route: String?): MainTab? = entries.firstOrNull { it.route == route }
     }
-}
-
-enum class MainTabDirection {
-    FORWARD,
-    BACKWARD,
-    NONE,
 }

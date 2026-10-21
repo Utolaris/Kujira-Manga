@@ -1,16 +1,15 @@
 package com.par9uet.jm.ui.screens
 
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -18,21 +17,16 @@ import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.Password
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.IconButton
+import com.par9uet.jm.ui.components.MotionIconButton as IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.par9uet.jm.ui.components.MotionTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -44,14 +38,13 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.LifecycleStartEffect
 import com.par9uet.jm.ui.components.Comic
 import com.par9uet.jm.ui.components.ComicSkeleton
 import com.par9uet.jm.ui.components.adaptiveComicGridCells
@@ -61,7 +54,7 @@ import com.par9uet.jm.ui.glass.GlassAnchoredMenuState
 import com.par9uet.jm.ui.glass.glassMenuAnchor
 import com.par9uet.jm.ui.interaction.pullDownToAction
 import com.par9uet.jm.ui.interaction.PullDownActionState
-import com.par9uet.jm.ui.interaction.ListPositionKeyHome
+import com.par9uet.jm.ui.models.ListPositionKeyHome
 import com.par9uet.jm.ui.interaction.rememberPullDownActionState
 import com.par9uet.jm.ui.interaction.rememberRestoringGridState
 import com.par9uet.jm.ui.viewModel.HomeViewModel
@@ -70,10 +63,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import org.koin.compose.viewmodel.koinActivityViewModel
 
 private const val TEXT_SEARCH = "\u641c\u7d22"
-private const val TEXT_WEEKLY = "\u6bcf\u5468"
 private const val TEXT_DOWNLOAD = "\u4e0b\u8f7d"
-private const val TEXT_SIGN = "\u7b7e\u5230"
-private const val TEXT_EXTRACT = "\u63d0\u53d6"
 private const val CATEGORY_LOADING_SKELETON_COUNT = 18
 
 internal fun resolveHomeCategoryTitle(
@@ -121,6 +111,7 @@ internal fun HomeScreen(
     bottomContentPadding: Dp = 0.dp,
     pullDownState: PullDownActionState = rememberPullDownActionState(),
     onPullDownSearch: () -> Unit = {},
+    isActive: Boolean = true,
 ) {
     val homeState by homeViewModel.homeState.collectAsState()
     val preferenceRecommendEnabled by homeViewModel.preferenceRecommendEnabled.collectAsState()
@@ -156,6 +147,10 @@ internal fun HomeScreen(
 
     LaunchedEffect(preferenceRecommendEnabled) {
         homeViewModel.refreshHome()
+    }
+    LifecycleStartEffect(homeViewModel, isActive) {
+        homeViewModel.setHomeActive(isActive)
+        onStopOrDispose { homeViewModel.setHomeActive(false) }
     }
 
     if (showSkeleton) {
@@ -264,6 +259,8 @@ internal fun HomeGlassTopBar(
     modifier: Modifier = Modifier,
     onSearch: () -> Unit,
     onDownload: () -> Unit,
+    onNotifications: () -> Unit,
+    hasUnreadNotifications: Boolean = false,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
     AppGlassTopBar(
@@ -275,14 +272,11 @@ internal fun HomeGlassTopBar(
                 modifier = Modifier
                     .fillMaxSize()
                     .glassMenuAnchor(categoryMenuState)
-                    .combinedClickable(
-                        onClick = {},
-                        onLongClick = {
-                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                            moreMenuState.dismiss()
-                            categoryMenuState.open()
-                        },
-                    ),
+                    .clickable {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                        moreMenuState.dismiss()
+                        categoryMenuState.open()
+                    },
                 contentAlignment = Alignment.CenterStart,
             ) {
                 Text(
@@ -297,6 +291,11 @@ internal fun HomeGlassTopBar(
             }
         },
         actions = {
+            IconButton(onClick = onNotifications) {
+                Icon(Icons.Rounded.Notifications, contentDescription = "通知",
+                    tint = if (hasUnreadNotifications) Color(0xFFE53935) else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.semantics { stateDescription = if (hasUnreadNotifications) "有未读通知" else "无未读通知" })
+            }
             IconButton(onClick = onSearch) {
                 Icon(Icons.Rounded.Search, contentDescription = TEXT_SEARCH)
             }

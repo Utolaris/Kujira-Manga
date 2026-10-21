@@ -50,7 +50,6 @@ class DohManagerTest {
 
         manager.selectServer(DOH_SERVER_ALIDNS)
         assertEquals(DOH_SERVER_ALIDNS, editor.serverId)
-        assertEquals("阿里 DNS", manager.selectedServer().name)
 
         manager.saveCustomServer("测试", "https://dns.example/dns-query")
         assertEquals(DOH_SERVER_CUSTOM, editor.serverId)

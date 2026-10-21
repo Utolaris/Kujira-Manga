@@ -9,7 +9,6 @@ import androidx.paging.PagingSource
 import androidx.paging.cachedIn
 import com.par9uet.jm.core.network.NetWorkResult
 import com.par9uet.jm.data.models.Comic
-import com.par9uet.jm.data.models.ComicPage
 import com.par9uet.jm.data.models.ComicSearchOrderFilter
 import com.par9uet.jm.data.models.ComicSearchPage
 import com.par9uet.jm.data.models.Comment
@@ -38,7 +37,7 @@ import org.junit.runners.Parameterized
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(Parameterized::class)
 class PagingNetworkFailureTest(private val endpoint: Endpoint) {
-    enum class Endpoint { SEARCH, HISTORY_COMICS, HISTORY_COMMENTS }
+    enum class Endpoint { SEARCH, HISTORY_COMMENTS }
 
     companion object {
         @JvmStatic
@@ -166,11 +165,6 @@ class PagingNetworkFailureTest(private val endpoint: Endpoint) {
                     ) = respond(page, ComicSearchPage(comics, 20, null))
                 },
                 SearchComicFilter(searchContent = "漫画"),
-            )
-            Endpoint.HISTORY_COMICS -> HistoryComicPagingSource(
-                object : UserRepository by unusedRepository<UserRepository>() {
-                    override suspend fun getHistoryComicList(page: Int) = respond(page, ComicPage(comics))
-                },
             )
             Endpoint.HISTORY_COMMENTS -> HistoryCommentPagingSource(
                 object : UserRepository by unusedRepository<UserRepository>() {

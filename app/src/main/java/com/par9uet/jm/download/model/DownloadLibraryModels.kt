@@ -1,5 +1,8 @@
 package com.par9uet.jm.download.model
 
+/** Export granularity chosen on the download detail screen. */
+enum class PdfExportMode { Merge, SplitByChapter }
+
 /** UI-facing download status. Persistence values stay in `database.model.DownloadStatus`. */
 enum class DownloadItemStatus {
     PENDING,

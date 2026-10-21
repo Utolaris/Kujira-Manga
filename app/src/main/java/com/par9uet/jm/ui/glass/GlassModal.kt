@@ -7,8 +7,13 @@ import androidx.compose.animation.core.rememberTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,12 +23,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.par9uet.jm.ui.components.MotionTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -99,6 +102,9 @@ fun GlassModal(
     val isTabletLayout = LocalTabletLayoutEnabled.current
     val windowWidthPx = LocalWindowInfo.current.containerSize.width
     val density = LocalDensity.current
+    val topClearance = with(density) { WindowInsets.statusBars.getTop(this).toDp() } +
+        AppGlassTopBarDefaults.ContentHeight + 16.dp
+    val bottomClearance = with(density) { WindowInsets.navigationBars.getBottom(this).toDp() } + 16.dp
     if (dismissOnBack) {
         HierarchicalBackHandler(enabled = visible && active) {
             onDismissRequest()
@@ -121,40 +127,44 @@ fun GlassModal(
                     Modifier
                 }
             ),
-        contentAlignment = alignment,
     ) {
-        // 平板：按整屏宽的 3/4（悬浮导航不占布局位，仍用窗口宽）；
-        // 手机：固定收口，避免大对话框。
-        val defaultMaxWidth = if (isTabletLayout && windowWidthPx > 0) {
-            with(density) { windowWidthPx.toDp() } * GlassModalDefaults.TabletWidthFraction
-        } else {
-            GlassModalDefaults.MaxSurfaceWidth
-        }
-        AnimatedVisibility(
-            visibleState = visibleState,
-            enter = fadeIn(tween(200)),
-            exit = fadeOut(tween(160)),
-        ) {
-            GlassSurface(
-                surfaceId = surfaceId,
-                modifier = modifier
-                    .widthIn(max = defaultMaxWidth)
-                    .then(
-                        if (dismissOnOutsideClick) {
-                            Modifier.clickable(
-                                interactionSource = surfaceInteraction,
-                                indication = null,
-                                onClick = {},
-                            )
-                        } else {
-                            Modifier
-                        }
-                    ),
-                style = style,
-                surfaceAlpha = surfaceAlpha,
-                surfaceScale = surfaceScale,
+        // The full-window scrim still blocks the toolbar. Only the panel is constrained to
+        // the safe viewport, so short landscape windows keep chrome and actions accessible.
+        Box(Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp, top = topClearance, bottom = bottomClearance),
+            contentAlignment = alignment) {
+            // 平板：按整屏宽的 3/4（悬浮导航不占布局位，仍用窗口宽）；
+            // 手机：固定收口，避免大对话框。
+            val defaultMaxWidth = if (isTabletLayout && windowWidthPx > 0) {
+                with(density) { windowWidthPx.toDp() } * GlassModalDefaults.TabletWidthFraction
+            } else {
+                GlassModalDefaults.MaxSurfaceWidth
+            }
+            AnimatedVisibility(
+                visibleState = visibleState,
+                enter = fadeIn(tween(200)),
+                exit = fadeOut(tween(160)),
             ) {
-                surface()
+                GlassSurface(
+                    surfaceId = surfaceId,
+                    modifier = modifier
+                        .widthIn(max = defaultMaxWidth)
+                        .then(
+                            if (dismissOnOutsideClick) {
+                                Modifier.clickable(
+                                    interactionSource = surfaceInteraction,
+                                    indication = null,
+                                    onClick = {},
+                                )
+                            } else {
+                                Modifier
+                            }
+                        ),
+                    style = style,
+                    surfaceAlpha = surfaceAlpha,
+                    surfaceScale = surfaceScale,
+                ) {
+                    surface()
+                }
             }
         }
     }
@@ -190,6 +200,7 @@ fun GlassConfirmDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {

@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.par9uet.jm.cache.CacheArea
 import com.par9uet.jm.cache.CacheBudget
 import com.par9uet.jm.cache.atom.CacheFiles
+import com.par9uet.jm.cache.molecule.CacheCleanupOperations
 import com.par9uet.jm.cache.CacheSize
 import com.par9uet.jm.core.ToastManager
 import com.par9uet.jm.storage.LocalSettingManager
@@ -60,13 +61,6 @@ data class CacheControlState(
     val displayUsedBytes: Long
         get() = controlledUsedBytes
 
-    val usageRatio: Float
-        get() = if (!budgetUnlimited && budgetBytes > 0L) {
-            (controlledUsedBytes.toFloat() / budgetBytes).coerceIn(0f, 1.5f)
-        } else {
-            0f
-        }
-
     val overBudget: Boolean
         get() = !budgetUnlimited && controlledUsedBytes > budgetBytes
 }
@@ -89,8 +83,7 @@ internal fun defaultBudgetStops(): List<CacheBudgetStop> {
 class CacheCleanupViewModel(
     private val files: CacheFiles,
     private val localSettingManager: LocalSettingManager,
-    private val clearReaderCache: suspend () -> Unit,
-    private val clearDownloads: suspend (suspend () -> Unit) -> Unit,
+    private val cleanup: CacheCleanupOperations,
     private val toastManager: ToastManager,
 ) : ViewModel() {
     private val _state = MutableStateFlow(CacheControlState(budgetStops = defaultBudgetStops()))
@@ -230,7 +223,6 @@ class CacheCleanupViewModel(
             CacheArea.DOWNLOAD,
         )
         val namedSum = ordered.sumOf { byArea[it]?.sizeBytes ?: 0L }
-        val downloadBytes = byArea[CacheArea.DOWNLOAD]?.sizeBytes ?: 0L
         val allBytes = byArea[CacheArea.ALL]?.sizeBytes?.takeIf { it > 0L } ?: namedSum
         val residual = (allBytes - namedSum).coerceAtLeast(0L)
 
@@ -256,11 +248,7 @@ class CacheCleanupViewModel(
                 compareByDescending<CachePieSlice> { it.sizeBytes }.thenBy { it.title },
             )
 
-        val controlled = if (exempt) {
-            (allBytes - downloadBytes).coerceAtLeast(0L)
-        } else {
-            allBytes
-        }
+        val controlled = CacheBudget.controlledUsedBytes(scanned, exempt)
 
         _state.update {
             it.copy(
@@ -284,21 +272,7 @@ class CacheCleanupViewModel(
     private suspend fun runClean(snapshot: CacheControlState) {
         try {
             val before = snapshot.controlledUsedBytes
-            val exempt = snapshot.downloadExempt
-            suspend fun deleteFiles() {
-                clearReaderCache()
-                val areas = buildSet {
-                    add(CacheArea.COMMON)
-                    add(CacheArea.READER)
-                    if (!exempt) add(CacheArea.DOWNLOAD)
-                }
-                files.remove(areas)
-            }
-            if (!exempt) {
-                clearDownloads { deleteFiles() }
-            } else {
-                deleteFiles()
-            }
+            cleanup.clean(snapshot.downloadExempt)
             applyScanned(files.scan())
             val cleanedBytes = before - _state.value.controlledUsedBytes
             toastManager.showAsync("已清理约 ${formatBytes(cleanedBytes)}")

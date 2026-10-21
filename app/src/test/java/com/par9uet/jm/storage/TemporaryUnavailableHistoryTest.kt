@@ -1,5 +1,6 @@
 package com.par9uet.jm.storage
 
+import com.par9uet.jm.data.models.Comic
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -110,6 +111,75 @@ class TemporaryUnavailableHistoryTest {
         repeat(HistorySearchManager.MAX_ITEMS + 10) { manager.addItem("q$it") }
         assertEquals(HistorySearchManager.MAX_ITEMS, manager.historySearchState.value.size)
         assertEquals("q${HistorySearchManager.MAX_ITEMS + 9}", manager.historySearchState.value.first())
+    }
+
+    @Test
+    fun `chapter read is mapped back to the recorded collection metadata`() {
+        val storage = FakeReadHistoryStore()
+        val manager = ReadHistoryManager(storage, testScope())
+        val collection = Comic(
+            id = 255485,
+            name = "原漫画合集",
+            authorList = listOf("合集作者"),
+            description = "合集简介",
+            readCount = 0,
+            likeCount = 0,
+            commentCount = 0,
+            tagList = listOf("合集标签"),
+            roleList = listOf(),
+            workList = listOf(),
+            price = 0,
+        )
+        manager.recordSeries(collection)
+        manager.markRead(collection.id, 266898)
+
+        val mapped = manager.seriesComicForChapter(266898)
+
+        assertEquals(255485, mapped?.id)
+        assertEquals("原漫画合集", mapped?.name)
+        assertEquals(listOf("合集作者"), mapped?.authorList)
+        assertEquals(listOf("合集标签"), mapped?.tagList)
+        // The real server history item is still the chapter id.
+        assertTrue(manager.seriesComicForChapter(255485) == null)
+    }
+
+    @Test
+    fun `collection directory resolves old chapter entries without marking them all read`() {
+        val store = FakeReadHistoryStore()
+        val manager = ReadHistoryManager(store, testScope())
+        manager.recordSeries(Comic.create(100, "合集", emptyList()).copy(
+            comicChapterList = listOf(
+                com.par9uet.jm.data.models.ComicChapter(101, "一"),
+                com.par9uet.jm.data.models.ComicChapter(102, "二"),
+            ),
+        ))
+        assertEquals(100, manager.seriesComicForChapter(102)?.id)
+        assertTrue(manager.readChapterIds(100).isEmpty())
+
+        manager.markRead(100, 101)
+        manager.saveReadProgress(100, 101, 3, 10)
+        val reloaded = ReadHistoryManager(store, testScope())
+        assertEquals(100, reloaded.seriesComicForChapter(102)?.id)
+        assertEquals(setOf(101), reloaded.readChapterIds(100))
+        assertEquals(3, reloaded.lastReadPageIndex(100, 101))
+    }
+
+    @Test
+    fun `old progress without collection title still resolves the cover parent id`() {
+        val store = FakeReadHistoryStore()
+        store.seed(mapOf(100 to ComicReadHistory(lastChapterId = 102, readChapterIds = listOf(101, 102))))
+        val manager = ReadHistoryManager(store, testScope())
+        assertEquals(100, manager.seriesIdForChapter(102))
+        assertTrue(manager.seriesComicForChapter(102) == null)
+        assertTrue(manager.seriesIdForChapter(100) == null)
+    }
+
+    @Test
+    fun `chapter without collection metadata is not rewritten`() {
+        val manager = ReadHistoryManager(FakeReadHistoryStore(), testScope())
+        manager.markRead(266898, 266898)
+
+        assertTrue(manager.seriesComicForChapter(266898) == null)
     }
 
     @Test

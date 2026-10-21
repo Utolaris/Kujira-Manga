@@ -11,17 +11,4 @@ class MainTabTest {
             MainTab.ordered,
         )
     }
-
-    @Test
-    fun `direction follows source and target indices`() {
-        assertEquals(MainTabDirection.FORWARD, MainTab.Home.directionTo(MainTab.Collect))
-        assertEquals(MainTabDirection.BACKWARD, MainTab.Collect.directionTo(MainTab.Home))
-        assertEquals(MainTabDirection.FORWARD, MainTab.Collect.directionTo(MainTab.Settings))
-        assertEquals(MainTabDirection.BACKWARD, MainTab.Settings.directionTo(MainTab.Collect))
-        assertEquals(MainTabDirection.FORWARD, MainTab.Home.directionTo(MainTab.Settings))
-        assertEquals(MainTabDirection.BACKWARD, MainTab.Settings.directionTo(MainTab.Home))
-        assertEquals(MainTabDirection.NONE, MainTab.Home.directionTo(MainTab.Home))
-        assertEquals(MainTabDirection.NONE, MainTab.Collect.directionTo(MainTab.Collect))
-        assertEquals(MainTabDirection.NONE, MainTab.Settings.directionTo(MainTab.Settings))
-    }
 }

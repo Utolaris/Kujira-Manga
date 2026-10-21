@@ -5,7 +5,6 @@ import com.par9uet.jm.session.SessionReadiness
 import com.par9uet.jm.session.SessionReadinessHolder
 import com.par9uet.jm.core.SessionRecoveryException
 import com.par9uet.jm.session.UserManager
-import com.par9uet.jm.session.UserSessionSnapshot
 import com.par9uet.jm.session.withAuthenticationRecovery
 import com.par9uet.jm.favorites.sync.FavoriteSyncReport
 
@@ -19,11 +18,10 @@ import com.par9uet.jm.core.model.SignInData
 import com.par9uet.jm.core.network.NetWorkResult
 import com.par9uet.jm.core.network.NetworkErrorKind
 import com.par9uet.jm.data.models.ActionResult
-import com.par9uet.jm.data.models.ComicPage
+import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.data.models.CommentPage
 import com.par9uet.jm.storage.CookieStorage
 import com.par9uet.jm.storage.UserStorage
-import com.par9uet.jm.core.ToastManager
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -706,9 +704,7 @@ class UserManagerSessionTest {
 
         override fun clearSession() = Unit
 
-        override suspend fun getHistoryComicList(
-            page: Int
-        ): NetWorkResult<ComicPage> = NetWorkResult.Error("stub")
+        override suspend fun getHistoryComicList(): NetWorkResult<List<Comic>> = NetWorkResult.Error("stub")
 
         override suspend fun deleteHistoryComic(id: Int): NetWorkResult<Unit> =
             NetWorkResult.Error("stub")

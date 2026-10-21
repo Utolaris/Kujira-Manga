@@ -7,7 +7,6 @@ import com.par9uet.jm.data.models.AVAILABLE_APP_LANGUAGES
 import com.par9uet.jm.data.models.AVAILABLE_THEMES
 import com.par9uet.jm.data.models.LauncherDisguise
 import com.par9uet.jm.favorites.model.FavoriteSyncUiState
-import com.par9uet.jm.favorites.sync.FavoriteSyncRequestKind
 import com.par9uet.jm.favorites.sync.FavoriteSyncRequester
 import com.par9uet.jm.storage.ApiEndpointPreference
 import com.par9uet.jm.storage.AppSecurityPreferences
@@ -21,10 +20,10 @@ import com.par9uet.jm.storage.DohSettingsState
 import com.par9uet.jm.storage.LocalSettingManager
 import com.par9uet.jm.storage.MiscSettingsState
 import com.par9uet.jm.storage.ReaderPreferences
-import com.par9uet.jm.storage.RecommendationPreferences
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -35,9 +34,7 @@ data class SettingsUiState(
     val launcherDisguiseId: String = LauncherDisguise.Default.id,
     val apiEndpoint: String = AVAILABLE_APIS.first(),
     val appLanguage: String = AVAILABLE_APP_LANGUAGES.first(),
-    val recommendationEnabled: Boolean = true,
     val clipboardAutoDetectEnabled: Boolean = false,
-    val autoSignInEnabled: Boolean = true,
     val prefetchCount: Int = 3,
     val readMode: String = "scroll",
     val notification: CacheNotificationSetting = CacheNotificationSetting(show = true, showName = true),
@@ -75,7 +72,6 @@ private data class AppearanceSnapshot(
     val theme: String,
     val colorPalette: ColorPaletteState,
     val launcherDisguiseId: String,
-    val recommendationEnabled: Boolean,
 )
 
 private data class ReaderSnapshot(
@@ -97,7 +93,6 @@ private data class CombinedMiscSnapshot(
  * actions; catalog validation lives here, compound invariants live in LocalSettingManager.
  */
 class SettingsViewModel(
-    recommendationPreferences: RecommendationPreferences,
     readerPreferences: ReaderPreferences,
     cacheNotificationPreferences: CacheNotificationPreferences,
     private val appearancePreferences: AppearancePreferences,
@@ -109,16 +104,49 @@ class SettingsViewModel(
     private val localSettingManager: LocalSettingManager,
     private val favoriteSyncRequester: FavoriteSyncRequester,
     private val favoriteForceAlign: com.par9uet.jm.core.model.FavoriteForceAlign,
+    private val localModeSettings: LocalModeSettings,
+    private val toastManager: com.par9uet.jm.core.ToastManager,
 ) : ViewModel() {
+
+    val isLocalMode = localModeSettings.isLocalMode
+    val isSyncingLocalFavorites = localModeSettings.isTransitioning
+    val localModeExitStage: StateFlow<String?> = localModeSettings.transition
+        .map { (it as? com.par9uet.jm.session.LocalModeTransition.Exiting)?.stage }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    val localModeExitFailed: StateFlow<Boolean> = localModeSettings.transition
+        .map { it is com.par9uet.jm.session.LocalModeTransition.Failed }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    fun enterLocalMode() = localModeSettings.enter()
+
+    fun requestLocalModeExit() {
+        if (!localModeSettings.requestExit()) {
+            toastManager.showAsync("无法启动收藏同步，请重试")
+        }
+    }
 
     /** Narrow prefs facades for settings-adjacent screens (palette / templates / grids). */
     val misc: StateFlow<MiscSettingsState> = localSettingManager.misc
     val blockedTagTemplates = localSettingManager.blockedTagTemplates
+    val commentFilterKeywords = localSettingManager.blockedCommentKeywords
     val colorPalette: StateFlow<ColorPaletteState> = appearancePreferences.colorPalette
     val glassBlurLevel: StateFlow<Int> = appearancePreferences.glassBlurLevel
     val localModeHelpDismissed: StateFlow<Boolean> = localSettingManager.localModeHelpDismissed
 
     fun dismissLocalModeHelp() = localSettingManager.dismissLocalModeHelp()
+
+    fun addCommentFilterKeyword(keyword: String): Boolean {
+        if (keyword.isBlank()) return false
+        val saved = localSettingManager.addCommentFilterKeyword(keyword)
+        if (!saved) toastManager.showAsync("评论过滤设置保存失败，请重试")
+        return saved
+    }
+
+    fun removeCommentFilterKeyword(keyword: String) {
+        if (!localSettingManager.removeCommentFilterKeyword(keyword)) {
+            toastManager.showAsync("评论过滤设置保存失败，请重试")
+        }
+    }
 
     fun saveBlockedTagTemplate(index: Int?, name: String, tags: List<String>) =
         localSettingManager.saveBlockedTagTemplate(index, name, tags)
@@ -145,9 +173,8 @@ class SettingsViewModel(
         appearancePreferences.theme,
         appearancePreferences.colorPalette,
         appearancePreferences.launcherDisguiseId,
-        recommendationPreferences.preferenceRecommendEnabled,
-    ) { theme, palette, disguiseId, recommend ->
-        AppearanceSnapshot(theme, palette, disguiseId, recommend)
+    ) { theme, palette, disguiseId ->
+        AppearanceSnapshot(theme, palette, disguiseId)
     }
 
     private val readerState = combine(
@@ -176,7 +203,6 @@ class SettingsViewModel(
             theme = appearance.theme,
             colorPalette = appearance.colorPalette,
             launcherDisguiseId = appearance.launcherDisguiseId,
-            recommendationEnabled = appearance.recommendationEnabled,
             apiEndpoint = misc.apiEndpoint,
             appLanguage = misc.appLanguage,
             prefetchCount = reader.prefetchCount,
@@ -187,7 +213,6 @@ class SettingsViewModel(
             appLockHasPattern = misc.appLock.hasPattern,
             doh = misc.doh,
             clipboardAutoDetectEnabled = misc.misc.clipboardAutoDetectEnabled,
-            autoSignInEnabled = misc.misc.autoSignInEnabled,
             gridColumns = GridColumnsSnapshot(
                 home = misc.misc.gridColumns.home,
                 collect = misc.misc.gridColumns.collect,
@@ -213,12 +238,6 @@ class SettingsViewModel(
     }
 
     // ---- simple settings intents ----
-
-    fun setPreferenceRecommendEnabled(enabled: Boolean) =
-        localSettingManager.setPreferenceRecommendEnabled(enabled)
-
-    fun setAutoSignInEnabled(enabled: Boolean) =
-        localSettingManager.updateAutoSignInEnabled(enabled)
 
     /** @return true only when the preference write confirmed; UI can then toast on false. */
     fun setClipboardAutoDetectEnabled(enabled: Boolean): Boolean =

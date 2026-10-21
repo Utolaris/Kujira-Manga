@@ -54,10 +54,6 @@ class DownloadManager(
         submit { operations.retryGroup(groupId) }
     }
 
-    fun redownloadGroup(groupId: Int) {
-        submit { redownloadGroupTasks(groupId) }
-    }
-
     fun redownloadDownloads(comicIds: Collection<Int>) {
         scope.launch(Dispatchers.IO) {
             mutations.withLock {

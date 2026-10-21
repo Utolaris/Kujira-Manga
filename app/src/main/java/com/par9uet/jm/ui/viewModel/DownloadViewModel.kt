@@ -57,18 +57,10 @@ class DownloadViewModel(
         .map { items -> withCoverResolution(DownloadLibraryQueries.groupItems(items), items) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    fun enterEdit(id: Int) {
-        enterEdit(setOf(id))
-    }
-
     fun enterEdit(ids: Set<Int>) {
         _editState.update {
             it.copy(editing = true, selectedIds = it.selectedIds + ids)
         }
-    }
-
-    fun toggleSelected(id: Int) {
-        toggleSelected(setOf(id))
     }
 
     fun toggleSelected(ids: Set<Int>) {
@@ -83,37 +75,15 @@ class DownloadViewModel(
         }
     }
 
-    fun setSelected(ids: Set<Int>) {
-        _editState.update {
-            it.copy(
-                editing = ids.isNotEmpty(),
-                selectedIds = ids
-            )
-        }
-    }
-
     fun clearSelection() {
         _editState.update { DownloadEditState() }
-    }
-
-    fun deleteSelected() {
-        val ids = _editState.value.selectedIds.toList()
-        if (ids.isEmpty()) return
-        viewModelScope.launch {
-            downloadManager.deleteDownloads(ids)
-            clearSelection()
-        }
-    }
-
-    fun deleteOne(id: Int) {
-        deleteMany(setOf(id))
     }
 
     fun deleteMany(ids: Set<Int>) {
         if (ids.isEmpty()) return
         viewModelScope.launch {
             downloadManager.deleteDownloads(ids)
-            com.par9uet.jm.ui.haptics.AppHaptics.deleteMulti()
+            com.par9uet.jm.core.AppHaptics.deleteMulti()
             _editState.update {
                 val selected = it.selectedIds - ids
                 it.copy(editing = selected.isNotEmpty(), selectedIds = selected)
@@ -142,10 +112,6 @@ class DownloadViewModel(
         if (ids.isEmpty()) return
         downloadManager.redownloadDownloads(ids)
         clearSelection()
-    }
-
-    fun redownloadOne(groupId: Int) {
-        downloadManager.redownloadGroup(groupId)
     }
 
     private fun withCoverResolution(

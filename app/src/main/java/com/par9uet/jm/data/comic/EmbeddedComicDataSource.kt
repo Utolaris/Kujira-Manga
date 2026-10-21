@@ -3,7 +3,6 @@ package com.par9uet.jm.data.comic
 import com.par9uet.jm.data.comic.mapper.toCommentListItem
 import com.par9uet.jm.data.comic.mapper.toComicDetailResponse
 import com.par9uet.jm.data.comic.mapper.toComicListResponse
-import com.par9uet.jm.data.comic.mapper.toContentListItem
 import com.par9uet.jm.data.comic.mapper.toHomeListItem
 import com.par9uet.jm.data.models.ComicSearchOrderFilter
 import com.par9uet.jm.core.BaseRepository

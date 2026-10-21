@@ -1,6 +1,7 @@
 package com.par9uet.jm.di
 
 import com.google.gson.Gson
+import com.par9uet.jm.session.ClipboardDetectionSession
 import com.google.gson.GsonBuilder
 import com.google.gson.Strictness
 import com.par9uet.jm.repository.RemoteSettingRepository
@@ -36,7 +37,6 @@ import com.par9uet.jm.storage.RecommendationPreferences
 import com.par9uet.jm.storage.ConnectionModePreferences
 import com.par9uet.jm.storage.ConnectionModeEditor
 import com.par9uet.jm.storage.RemoteConfigPreferences
-import com.par9uet.jm.core.network.NetWorkResult
 import com.par9uet.jm.network.RemoteConfigManager
 import com.par9uet.jm.download.coordinator.DownloadToastAggregator
 import com.par9uet.jm.storage.HistorySearchManager
@@ -56,9 +56,6 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.map
-import okhttp3.CookieJar
-import okhttp3.Dns
 import okhttp3.OkHttpClient
 import org.koin.core.context.GlobalContext
 import org.koin.core.module.dsl.viewModel
@@ -114,6 +111,7 @@ val LOCAL_SETTING_MANAGER_ALIASES = arrayOf(
  * System DNS is therefore only used by the DoH bootstrap path listed above.
  */
 val appModule = module {
+    single { ClipboardDetectionSession() }
     single { DohManager(get(), get()) }
     single { com.par9uet.jm.network.createCdnConnectionPool() }
     single {
@@ -164,14 +162,7 @@ val appModule = module {
     single {
         val remoteSettingRepository = get<RemoteSettingRepository>()
         RemoteConfigManager(
-            remoteSettingFetch = com.par9uet.jm.network.RemoteSettingFetch {
-                // Map on this side of the port so network never imports retrofit.
-                when (val result = remoteSettingRepository.getRemoteSetting()) {
-                    is NetWorkResult.Success ->
-                        NetWorkResult.Success(result.data.toRemoteSetting())
-                    is NetWorkResult.Error -> result
-                }
-            },
+            remoteSettingFetch = com.par9uet.jm.network.RemoteSettingFetch(remoteSettingRepository::getRemoteSetting),
             store = get(),
         )
     } bind RemoteConfigPreferences::class
@@ -212,7 +203,7 @@ val appModule = module {
     single { ReaderResumeManager(secureStorage = get()) }
     single { ToastManager() }
     // 全局列表位置记录：首页 / 收藏夹 / 历史 / 搜索共用一份，进入漫画再返回维持原位置。
-    single { com.par9uet.jm.ui.interaction.ListPositionMemory() }
+    single { com.par9uet.jm.ui.models.ListPositionMemory() }
     single<com.par9uet.jm.cache.atom.ExternalDownloadSize> {
         com.par9uet.jm.cache.DocumentTreeDownloadSize(get<android.content.Context>())
     }
@@ -222,18 +213,22 @@ val appModule = module {
             get<com.par9uet.jm.cache.atom.ExternalDownloadSize>(),
         )
     }
-    viewModel {
-        val reader = get<com.par9uet.jm.reader.ReaderImagePipeline>()
-        val downloads = get<com.par9uet.jm.download.coordinator.DownloadManager>()
-        com.par9uet.jm.ui.viewModel.CacheCleanupViewModel(
+    single {
+        com.par9uet.jm.cache.molecule.CacheCleanupOperations(
             get(),
-            get(),
-            reader::clearDiskCache,
-            downloads::clearDownloadedCache,
-            get(),
+            clearCoverCache = {
+                kotlinx.coroutines.withContext(Dispatchers.IO) {
+                    get<com.par9uet.jm.coil.CoverImageLoaderHolder>().clearDiskCache()
+                }
+            },
+            clearReaderCache = { get<com.par9uet.jm.reader.ReaderImagePipeline>().clearDiskCache() },
+            clearDownloads = { deleteFiles -> get<com.par9uet.jm.download.coordinator.DownloadManager>().clearDownloadedCache(deleteFiles) },
         )
     }
+    single { com.par9uet.jm.startup.StartupCacheCleanup(get(), get(), get()) }
+    viewModel { com.par9uet.jm.ui.viewModel.CacheCleanupViewModel(get(), get(), get(), get()) }
     single { DownloadToastAggregator(get()) }
+    single { com.par9uet.jm.startup.StartupHomeLoad() }
     single { PostStartupCoordinator(get(), GlobalContext.get()) }
     single { AppUpdateDownloadManager(get(), get(), get(), get(), get()) } bind com.par9uet.jm.update.AppUpdateDownloads::class
     single {
@@ -267,7 +262,16 @@ val appModule = module {
     viewModel { com.par9uet.jm.ui.viewModel.BackupRestoreViewModel(get(), get(), get()) }
     // SettingsViewModel 依赖多且全是同包同类型的窄偏好接口，靠位置传参容易错位 ——
     // 增删依赖时务必同步这里，并跑 SettingsViewModelTest / CatalogViewModelWiringTest。
-    viewModel { com.par9uet.jm.ui.viewModel.SettingsViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    viewModel {
+        com.par9uet.jm.ui.viewModel.SettingsViewModel(
+            readerPreferences = get(), cacheNotificationPreferences = get(), appearancePreferences = get(),
+            securityPreferences = get(), dohPreferences = get(), apiEndpointPreference = get(),
+            contentLanguagePreferences = get(), miscSettings = get(), localSettingManager = get(),
+            favoriteSyncRequester = get(), favoriteForceAlign = get(),
+            localModeSettings = com.par9uet.jm.di.LocalModeSettingsAdapter(get(), get(), get(), get()),
+            toastManager = get(),
+        )
+    }
 
     single<Gson> { GsonBuilder().setStrictness(Strictness.LENIENT).serializeNulls().create() }
 }

@@ -6,6 +6,8 @@ import com.par9uet.jm.data.models.BlockedTagTemplate
 import com.par9uet.jm.data.models.COLOR_PALETTE_PRESET_CUSTOM
 import com.par9uet.jm.data.models.LauncherDisguise
 import com.par9uet.jm.data.models.LocalSetting
+import com.par9uet.jm.data.models.DEFAULT_COMMENT_FILTER_KEYWORDS
+import com.par9uet.jm.contentfilter.normalizeCommentKeywords
 import com.par9uet.jm.data.models.coerceAppLanguage
 import com.par9uet.jm.storage.LocalSettingPersistence
 import com.par9uet.jm.contentfilter.flattenBlockedTagTemplates
@@ -49,6 +51,9 @@ class LocalSettingManager(
     private val updateListeners = mutableListOf<(LocalSetting) -> Unit>()
 
     override val blockedTags = _projectingState { it.blockedTagList }
+    override val blockedCommentKeywords = _projectingState {
+        normalizeCommentKeywords(it.blockedCommentKeywordList ?: DEFAULT_COMMENT_FILTER_KEYWORDS)
+    }
     override val blockedTagTemplates = _projectingState { it.blockedTagTemplateList }
     override val preferenceRecommendEnabled = _projectingState { it.preferenceRecommendEnabled }
     override val readMode = _projectingState { it.readMode }
@@ -96,9 +101,6 @@ class LocalSettingManager(
     fun updateClipboardAutoDetectEnabled(enabled: Boolean) =
         updateSetting { it.copy(clipboardAutoDetectEnabled = enabled) }
 
-    fun updateAutoSignInEnabled(enabled: Boolean) =
-        updateSetting { it.copy(autoSignInEnabled = enabled) }
-
     override fun setLocalModeEnabled(accountId: Int, enabled: Boolean): Boolean {
         if (accountId <= 0) return false
         return updateSetting { current ->
@@ -130,8 +132,6 @@ class LocalSettingManager(
     fun currentAutoCheckUpdateEnabled(): Boolean =
         _localSettingState.value.autoCheckUpdateEnabled
 
-    fun setPreferenceRecommendEnabled(enabled: Boolean) =
-        updateSetting { it.copy(preferenceRecommendEnabled = enabled) }
     fun setApiEndpoint(url: String) = updateSetting { it.copy(api = url) }
 
     /**
@@ -214,8 +214,20 @@ class LocalSettingManager(
 
     // ---- Content preferences (blocked tags / templates / home exclusions) ----
 
-    fun replaceBlockedTags(tags: List<String>) =
-        updateSetting { it.copy(blockedTagList = normalizeBlockedTagList(tags)) }
+    fun addCommentFilterKeyword(keyword: String): Boolean {
+        if (keyword.isBlank()) return false
+        return updateSetting { setting ->
+            setting.copy(blockedCommentKeywordList = normalizeCommentKeywords(
+                (setting.blockedCommentKeywordList ?: DEFAULT_COMMENT_FILTER_KEYWORDS) + keyword,
+            ))
+        }
+    }
+
+    fun removeCommentFilterKeyword(keyword: String): Boolean = updateSetting { setting ->
+        setting.copy(blockedCommentKeywordList =
+            normalizeCommentKeywords(setting.blockedCommentKeywordList ?: DEFAULT_COMMENT_FILTER_KEYWORDS)
+                .filterNot { it.equals(keyword.trim(), ignoreCase = true) })
+    }
 
     fun saveBlockedTagTemplate(index: Int?, name: String, tags: List<String>) {
         val normalizedTags = normalizeBlockedTagList(tags)
@@ -245,9 +257,6 @@ class LocalSettingManager(
                 )
             }
         }
-
-    fun replaceBlockedTagTemplates(templates: List<BlockedTagTemplate>) =
-        updateSetting { it.withBlockedTagTemplates(templates) }
 
     // ---- Appearance / palette: compound transitions ----
 
@@ -491,9 +500,14 @@ class LocalSettingManager(
         updateSetting { it.copy(dohPreferIpv6 = enabled) }
 
 
+    // Retain the legacy JSON fields for backup compatibility; both features are now always on.
+    private fun enabledDefaults(setting: LocalSetting) =
+        setting.copy(autoSignInEnabled = true, preferenceRecommendEnabled = true)
+
     private fun publish(setting: LocalSetting) {
-        _localSettingState.value = setting
-        updateListeners.forEach { listener -> listener(setting) }
+        val active = enabledDefaults(setting)
+        _localSettingState.value = active
+        updateListeners.forEach { listener -> listener(active) }
     }
 
     /**
@@ -503,7 +517,7 @@ class LocalSettingManager(
      */
     @Synchronized
     private fun updateSetting(update: (LocalSetting) -> LocalSetting): Boolean {
-        val next = update(_localSettingState.value)
+        val next = enabledDefaults(update(_localSettingState.value))
         return when (persistence.persist(next)) {
             StorageWriteResult.Success -> {
                 publish(next)

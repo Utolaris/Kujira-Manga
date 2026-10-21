@@ -13,7 +13,7 @@ import com.par9uet.jm.di.favoriteModule
 import com.par9uet.jm.di.retrofitModule
 import com.par9uet.jm.di.userModule
 import com.par9uet.jm.network.DeviceWebViewUserAgent
-import com.par9uet.jm.ui.haptics.AppHaptics
+import com.par9uet.jm.core.AppHaptics
 import org.koin.android.ext.koin.androidContext
 import org.koin.androidx.workmanager.koin.workManagerFactory
 import org.koin.core.context.startKoin
@@ -24,6 +24,8 @@ private val moduleList = listOf(
     comicModule,
     retrofitModule,
     userModule,
+    com.par9uet.jm.di.dinnerModule,
+    com.par9uet.jm.di.notificationModule,
     databaseModule,
     favoriteModule,
     cacheModule,

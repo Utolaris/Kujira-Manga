@@ -5,7 +5,7 @@
   模块 = 一二级包目录，下列二级包单列，其余二级目录并入一级包：
     ui/screens  ui/viewModel  ui/components  ui/navigation  ui/glass  ui/theme
     ui/pagingSource  ui/composable  ui/interaction  ui/models  ui/state
-    cache/migration  cache/atom
+    cache/migration  cache/atom  cache/molecule
     database/model  database/dao  database/converter
     retrofit/model  retrofit/service  retrofit/converter  retrofit/interceptor
     download/{coordinator,molecule,atom,export,model}
@@ -34,7 +34,7 @@ SINGLE = {
     ("ui", "screens"), ("ui", "viewModel"), ("ui", "components"), ("ui", "navigation"),
     ("ui", "glass"), ("ui", "theme"), ("ui", "pagingSource"), ("ui", "composable"),
     ("ui", "interaction"), ("ui", "models"), ("ui", "state"),
-    ("cache", "migration"), ("cache", "atom"),
+    ("cache", "migration"), ("cache", "atom"), ("cache", "molecule"),
     ("database", "model"), ("database", "dao"), ("database", "converter"),
     ("retrofit", "model"), ("retrofit", "service"), ("retrofit", "converter"),
     ("retrofit", "interceptor"),

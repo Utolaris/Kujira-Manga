@@ -62,9 +62,6 @@ interface DownloadComicDao {
     @Query("SELECT id FROM download_comics WHERE id IN (:ids)")
     suspend fun getExistingIds(ids: List<Int>): List<Int>
 
-    @Query("SELECT EXISTS(SELECT 1 FROM download_comics WHERE id = :comicId)")
-    fun isExist(comicId: Int): Flow<Boolean>
-
     @Update(entity = DownloadComic::class)
     suspend fun updateCover(updateComicCover: UpdateComicCover)
 

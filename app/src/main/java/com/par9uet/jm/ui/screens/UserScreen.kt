@@ -26,7 +26,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material3.FilledTonalButton
+import com.par9uet.jm.ui.components.MotionFilledTonalButton as FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -52,12 +52,9 @@ import coil.compose.AsyncImage
 import com.par9uet.jm.R
 import com.par9uet.jm.core.model.User
 import com.par9uet.jm.ui.models.LocalRemoteImageHost
-import com.par9uet.jm.ui.screens.tabScreen.TabletFloatingNavDefaults
-import com.par9uet.jm.ui.models.LocalTabletLayoutEnabled
 import com.par9uet.jm.session.SessionReadiness
 import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.UserViewModel
-import kotlinx.coroutines.launch
 import org.koin.compose.viewmodel.koinActivityViewModel
 
 @Composable
@@ -318,6 +315,8 @@ fun UserScreen(
     userViewModel: UserViewModel = koinActivityViewModel(),
     topContentPadding: Dp = 0.dp,
     bottomContentPadding: Dp = 0.dp,
+    startContentPadding: Dp = 16.dp,
+    endContentPadding: Dp = 16.dp,
 ) {
     val userState by userViewModel.userState.collectAsState()
     val authState by userViewModel.authState.collectAsState()
@@ -342,17 +341,9 @@ fun UserScreen(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(
-                start = if (LocalTabletLayoutEnabled.current) {
-                    TabletFloatingNavDefaults.settingsHorizontalInset
-                } else {
-                    16.dp
-                },
+                start = startContentPadding,
                 top = 16.dp + topContentPadding,
-                end = if (LocalTabletLayoutEnabled.current) {
-                    TabletFloatingNavDefaults.settingsHorizontalInset
-                } else {
-                    16.dp
-                },
+                end = endContentPadding,
                 bottom = 16.dp + bottomContentPadding,
             ),
         verticalArrangement = Arrangement.spacedBy(16.dp)

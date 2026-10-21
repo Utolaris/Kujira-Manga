@@ -5,18 +5,18 @@
 
 > 本文描述**当前代码的真实状态**。与代码不符的措辞视为文档缺陷，应直接修正。
 > 统计口径：`app/src/main/java/com/par9uet/jm` 下 `*.kt`，`find | wc -l` 汇总。
-> 最近核对 **2026-10-16**（canary）：**390** 文件 / **50,688** 行。
-> 耦合表用 `python3 scripts/check-coupling.py` 复现（细分口径，见脚本头）。
+> 最近核对 **2026-10-20**（canary）：**432** 文件 / **54,461** 行。
+> 耦合表用 `uv run scripts/check-coupling.py` 复现（细分口径，见脚本头）。
 
 ## 层级
 
 | 层 | 职责 | 主要落点 |
 | --- | --- | --- |
-| L1 Entry | 只接收事件并交给 L2，不做业务判断 | `ui/screens`（`*Screen.kt`）、`ui/navigation`（含 `LocalMainNavController`）、`ui/components`（只收参数、只读 `ui/models` 环境值）、`ui/haptics`、`ui/interaction`、`MainActivity`、`App`（UI 组合根：提供环境值）、`worker/DownloadComicWorker`、`worker/CacheMigrationWorker`；平板布局 CompositionLocal 定义在 `ui/models/TabletLayout.kt`，由 `App` 调用的 `ui/screens/TabletLayout.kt` 的 `ProvideTabletLayout` 注入 |
-| L2 Coordinator | 集中保存流程顺序、分支和跨边界协调 | `ui/viewModel`（**18** 个）、`reader/ReaderImagePipeline`、`reader/coordinator`、`download/coordinator`（含 `DownloadManager`）、`cache/migration` 的协调器与通知适配、`favorites/sync`、`favorites/presentation/FavoritesViewModel`、`session`（`UserManager`、`UserRepository`、`AuthenticatedRequestRecovery`、`SessionReadinessHolder`）、`startup/PostStartupCoordinator` |
-| L3 Molecule | 组合多个原子能力，完成一个完整业务动作 | `reader/molecule`、`download/molecule`（含 `DownloadLibraryQueries`）、`cache/migration` 的操作端口与实现、`favorites/usecase`、`backup/BackupRestoreOperations`、`download/export/DownloadExportOperations`、`repository/impl` |
-| L4 Atom | 每个原子只负责一个底层契约 | `database`、`storage`、`retrofit`、`data`、`network`（含内置 API 客户端三件套）、`image`、`coil`、`cache/atom`、`cache/CacheBudget`、`reader/atom`、`download/atom`、`download/export/PdfExport`、`favorites/data`（含 `FavoriteStore`）、`update`（含 `AppUpdateDownloadManager`）、`contentfilter`、`launcher`、`utils` |
-| Shared Contract | 不含行为的稳定 DTO，可被各层依赖 | `core/model`（`CommonUIState`、`User`、`RemoteSetting`、`SignInData`）、`core/network`（`NetWorkResult` / `ResponseWrapper` / `AuthFailure` / `AuthenticatedSessionRequiredException` / `AuthAttemptOrigin` / `FormBodyNullParameter`）、`data/models`（`Comic` / `Comment` / `WeekData` / `ComicPage` / `CommentPage` / `ComicSearchPage` / `ComicPageList` / `ActionResult` / `HomeComicSwiperItem`；零出度）、`favorites/model/FavoritesModels`、`reader/ReaderImageModels`、`download/model/DownloadLibraryModels` |
+| L1 Entry | 只接收事件并交给 L2，不做业务判断 | `ui/screens`（`*Screen.kt`）、`ui/navigation`（含 `LocalMainNavController`）、`ui/components`（以参数与 `ui/models` 环境值为主，封面 loader/resolver 等单例由 Koin 默认值兜底）、`ui/interaction`（`rememberRestoringGridState` 等组合函数）、`MainActivity`、`App`（UI 组合根：提供环境值）、`worker/DownloadComicWorker`、`worker/CacheMigrationWorker`；平板布局 CompositionLocal 定义在 `ui/models/TabletLayout.kt`，由 `App` 调用的 `ui/screens/TabletLayout.kt` 的 `ProvideTabletLayout` 注入 |
+| L2 Coordinator | 集中保存流程顺序、分支和跨边界协调 | `ui/viewModel`（**22** 个）、`reader/ReaderImagePipeline`、`reader/coordinator`、`download/coordinator`（含 `DownloadManager`）、`cache/migration` 的协调器与通知适配、`favorites/sync`、`favorites/presentation/FavoritesViewModel`、`session`（`UserManager`、`UserRepository`、`AuthenticatedRequestRecovery`、`SessionReadinessHolder`）、`startup`（启动任务与冷启动额度检查）、`notification/NotificationUnreadCoordinator` |
+| L3 Molecule | 组合多个原子能力，完成一个完整业务动作 | `reader/molecule`、`download/molecule`（含 `DownloadLibraryQueries`）、`cache/molecule`（共享缓存清理）、`cache/migration` 的操作端口与实现、`favorites/usecase`、`backup/BackupRestoreOperations`、`download/export/DownloadExportOperations`、`repository/impl`、`dinner/DinnerRepository`、`notification/NotificationRepository` |
+| L4 Atom | 每个原子只负责一个底层契约 | `database`、`storage`、`retrofit`、`data`、`network`（含内置 API 客户端与文章请求）、`image`、`coil`、`cache/atom`、`cache/CacheBudget`、`reader/atom`、`download/atom`、`download/export/PdfExport`、`favorites/data`（含 `FavoriteStore`）、`update`（含 `AppUpdateDownloadManager`）、`contentfilter`、`launcher`、`utils` |
+| Shared Contract | 不含行为的稳定 DTO，可被各层依赖 | `core/model`（`CommonUIState`、`User`、`RemoteSetting`、`SignInData`）、`core/network`（`NetWorkResult` / `ResponseWrapper` / `AuthFailure` / `AuthenticatedSessionRequiredException` / `AuthAttemptOrigin` / `FormBodyNullParameter`）、`data/models`（`Comic` / `Comment` / `WeekData` / `ComicPage` / `CommentPage` / `ComicSearchPage` / `ComicPageList` / `ActionResult` / `HomeComicSwiperItem`；零出度）、`dinner/model`、`notification/model`、`favorites/model/FavoritesModels`、`reader/ReaderImageModels`、`download/model/DownloadLibraryModels` |
 
 依赖方向 `L1 -> L2 -> L3 -> L4`。L3 之间、L4 之间不得为方便横向调用；
 需要组合提升到 L3，需要决定顺序提升到 L2。`di` 是组合根，可引用所有层但不得承载业务判断。
@@ -31,11 +31,12 @@
 reader/                      L2 ReaderImagePipeline + coordinator/ molecule/ atom/
 download/                    L2 coordinator/、L3 molecule/、L4 atom/、export/（L3 操作 + L4 PDF）
 favorites/                   model/ 共享契约、presentation/ L2、sync/ L2、usecase/ L3、data/ L4
-cache/                       atom/ L4、CacheBudget L4、migration/ L2+L3，另有未归位的 L4
-ui/                          screens/ 之外：components、glass、navigation、theme、models、
-                             haptics、interaction、pagingSource、viewModel
+cache/                       atom/ L4、molecule/ L3、CacheBudget L4、migration/ L2+L3，另有未归位的 L4
+ui/                          screens/ 之外：components、glass、navigation、theme、models（纯数据 +
+                             环境值）、interaction（组合函数）、pagingSource、viewModel
 session/ network/ storage/   L2 会话协调 / L4 网络设施 / L4 偏好与持久化
 update/ backup/ contentfilter/ launcher/ startup/   扁平包，按类判断层级
+core/                        共享契约与无依赖设施（含 AppHaptics 震动词表）
 data/ repository/ retrofit/   历史命名保留
 ```
 
@@ -55,10 +56,12 @@ data/ repository/ retrofit/   历史命名保留
 | --- | --- |
 | `ui`（整体） | `database.`、`retrofit.model.`、`favorites.data.` |
 | `App.kt` | `retrofit.model.` |
+| `repository/ComicRepository.kt`、`RemoteSettingRepository.kt` | `retrofit.`；仓库公开契约只返回领域模型 |
+| `retrofit/model/RemoteSettingResponse.kt` | `core.model.`；响应映射归 `repository/impl` |
 | `core` | `ui.` |
 | `ui/components` | `storage.`、`repository.`、`database.`、`session.`、`cache.`、`download.`、`backup.`、`update.`、`network.`、`reader.`、`favorites.`、`ui.viewModel.` |
 | `ui/components`、`ui/glass` | `ui.screens.` |
-| `ui/screens`（整体） | `com.par9uet.jm.cache.`；**`org.koin.compose.getKoin` / `org.koin.androidx.compose.getKoin`**——依赖只能来自 Feature ViewModel 或 App 组合根参数 |
+| `ui/screens`（整体） | `com.par9uet.jm.cache.`、`com.par9uet.jm.download.export.`；**`getKoin` / `koinInject`**——依赖只能来自 Feature ViewModel 或 App 组合根参数 |
 | `ui/viewModel/ComicReadViewModel.kt` | `java.io.`、`java.util.zip.`、`database.`、`cache.` |
 | `ui/screens/CacheCleanupScreen.kt`、`DownloadComicDetailScreen.kt` | `java.io.`、`kotlinx.coroutines.`、`download.coordinator.DownloadManager`、`reader.ReaderImagePipeline`、`database.`、`download.export.*`、`cache.atom.` |
 | `ui/screens/ComicDetailScreen.kt`、`readScreen/ComicReadScreen.kt` | `download.coordinator.DownloadManager` |
@@ -85,52 +88,65 @@ data/ repository/ retrofit/   历史命名保留
 | `download/atom` | `download.molecule.`、`store`、`download.coordinator.`、`reader.`、`ui.`、`worker.`、`database.dao.`、`database.AppDatabase` |
 | `download/coordinator/DownloadManager.kt` | `download.coordinator.DownloadComicCoordinator`、`database.`、`download.atom.`、`java.io.` |
 | `store`（已删除，断言保留防复活） | `ui.`、`worker.` |
-| `utils` | `cache.`、`data.` |
+| `utils` | 领域包（`session`/`storage`/`download`/`reader`/`favorites`/`notification`/`cache`/`backup`/`update`/`repository`/`startup`/`dinner`）、`cache.`、`data.` |
+| `image`、`contentfilter`、`launcher`、`database` | 同上领域包，外加 `network.`、`retrofit.`、`coil.`、`ui.` |
+| `ui/viewModel`、`favorites/presentation`、`favorites/sync`、`session` | `ui.interaction.`、`ui.haptics.`、`ui.components.`、`ui.glass.`、`ui.screens.`（L2 不得反向依赖 L1 组合层） |
+| `core` | 领域包与 `network.`（通用设施不横向引用；`ui.` 已另行禁止） |
+
+`ui/models` 是 L1 里的**纯数据 + 环境值**子包（`ListPositionMemory` 与位置 key、平板布局
+CompositionLocal、封面导航端口模型），不含业务判断，因此 `ui/viewModel` 可以依赖它清位置；
+组合函数（`rememberRestoringGridState` 等）留在 `ui/interaction`，只有 L1 使用。
 
 ## 耦合现状
 
-`python3 scripts/check-coupling.py`（**2026-10-16 / canary**）。
+`uv run scripts/check-coupling.py`（**2026-10-20 / canary**）。
 口径：模块 = 一二级包目录，**细分模块单列**（`core/model` 与 `core` 根目录分开、
 `reader/atom` 与 `reader` 根包分开）；Ce = import 到的模块数，Ca = 依赖它的模块数，
 I = Ce/(Ce+Ca)。下表只保留决策相关行，完整列表以脚本输出为准。
 
-⚠️ **脚本口径 ≠ 递归总数**：`core` 行只算根目录 3 文件/122 行（`core/model`、
-`core/network` 另列）；`reader` 行只算根包 16 文件/2387 行。要总数得自己 `find -name '*.kt'`。
+⚠️ **脚本口径 ≠ 递归总数**：`core` 行只算根目录 4 文件/210 行（`core/model`、
+`core/network` 另列）；`reader` 行只算根包 15 文件/2100 行。要总数得自己 `find -name '*.kt'`。
 
 | 模块 | 文件 | 行数 | Ce | Ca | I | 判断 |
 | --- | --- | --- | --- | --- | --- | --- |
-| `di` | 9 | 805 | 32 | 1 | 0.97 | 组合根，合法 |
-| `ui/screens` | 48 | 17,158 | 22 | 1 | 0.96 | 最大一块；直连已清零，见「表现层直连」 |
-| `ui/viewModel` | 18 | 4,027 | 29 | 3 | 0.91 | L2；扇出最高但多为契约与偏好 |
-| `ui/components` | 24 | 2,488 | 10 | 2 | 0.83 | 已收窄，无 L3/L4 领域依赖 |
-| `favorites/presentation` | 2 | 533 | 7 | 2 | 0.78 | L2 |
+| `di` | 12 | 890 | 35 | 1 | 0.97 | 组合根，合法 |
+| `ui/screens` | 52 | 18,092 | 23 | 1 | 0.96 | 最大一块；直连已清零，见「表现层直连」 |
+| `ui/viewModel` | 22 | 4,479 | 32 | 3 | 0.91 | L2；扇出最高但多为契约与偏好 |
+| `ui/components` | 28 | 2,948 | 13 | 2 | 0.87 | 已收窄，无 L3/L4 领域依赖 |
+| `favorites/presentation` | 2 | 537 | 8 | 2 | 0.80 | L2（对 `ui.models` 的依赖见下） |
 | `favorites/data` | 14 | 1,261 | 10 | 3 | 0.77 | Room + 窄端口 |
-| `reader`（**仅根包**） | 16 | 2,406 | 9 | 6 | 0.60 | 根包说明见「阅读器链路」 |
-| `network` | 17 | 2,008 | 5 | 11 | 0.31 | DoH / RemoteConfig / 内置客户端 |
-| `storage` | 17 | 2,304 | 5 | 15 | 0.25 | 偏好与持久化收口 |
-| `core`（**仅根目录**） | 3 | 122 | 2 | 15 | 0.12 | `BaseRepository`、`ToastManager` |
-| `core/model` | 5 | 101 | 0 | 9 | 0.00 | 共享 DTO，**真正的零出度** |
-| `utils` | 14 | 848 | 1 | 28 | 0.03 | 稳定，不要动 |
-| `data`（= `data/models`） | 16 | 422 | 0 | 24 | 0.00 | 零出度契约，不要动（`data/comic` 另列） |
-| 根包（`App` / `MainActivity` / `JmApplication`） | 3 | 739 | 1–12 | 0 | 1.00 | 入口 |
+| `reader`（**仅根包**） | 15 | 2,100 | 8 | 6 | 0.57 | 根包说明见「阅读器链路」 |
+| `network` | 19 | 2,073 | 5 | 11 | 0.31 | DoH / RemoteConfig / 内置客户端 |
+| `storage` | 17 | 2,427 | 5 | 15 | 0.25 | 偏好与持久化收口 |
+| `core`（**仅根目录**） | 4 | 210 | 2 | 17 | 0.11 | `BaseRepository`、`ToastManager`、`AppHaptics`（只依赖 Android 震动 API） |
+| `core/model` | 5 | 101 | 0 | 13 | 0.00 | 共享 DTO，**真正的零出度** |
+| `ui/models` | 6 | 199 | 1 | 7 | 0.12 | L1 纯数据 + 环境值，L2 仅引用其中的位置数据 |
+| `utils` | 14 | 839 | 1 | 28 | 0.03 | 稳定，不要动 |
+| `data`（= `data/models`） | 16 | 416 | 0 | 24 | 0.00 | 零出度契约，不要动（`data/comic` 另列） |
+| 根包（`App` / `MainActivity` / `JmApplication`） | 3 | 760 | 1–12 | 0 | 1.00 | 入口 |
 
-`ui/screens` 内最大文件：`ComicDetailScreen` 1,300、`LocalSettingScreen` 851、
-`ComicReadScreen` 788、`BackupRestoreScreen` 781、`FavoritesModalHost` 734、
+`ui/screens` 内最大文件：`ComicDetailScreen` 1,397、`LocalSettingScreen` 830、
+`ComicReadScreen` 795、`BackupRestoreScreen` 781、`FavoritesModalHost` 734、
 `CheckUpdateScreen` 694。**这些是可读性问题，不是跨层耦合**——不再按行数机械拆分。
-真要动手优先 `DownloadComicDetailScreen`（跨 4 层），而不是 `LocalSettingScreen`（纯设置项渲染）。
+`DownloadComicDetailScreen` 已经由 ViewModel 取得下载与导出状态，不再列为跨四层的待迁移页面。
 
 ### 不建议动
 
 - **`data` / `utils` / `database/model` / `retrofit/model` / `core`**：Ca 高但 Ce 极低，
   是被依赖的稳定契约，拆分只会制造转发层。
 - **`reader` 根包文件**：粒度已足够小且可独立测试，下沉只增加目录层级。
-- **`di`**：I=1.00 是组合根的应有形态。
+- **`di`**：高扇出是组合根的应有形态。
 - **`ui/viewModel` 读 `storage` 偏好**、读 `cache.atom` 1 处（`CacheCleanupViewModel`）
   与 `cache/migration` 2 处：属 L2 选定适配器与既有偏好惯例，**不算待修范围**。
+- **`network` / `retrofit` / `coil` 读 `storage` 的窄偏好端口**（`DohPreferences`、`CookieStorage`、
+  `ApiEndpointPreference`、`RemoteConfigPreferences`）**与 `cache.CacheBudget`**：同为纯数据/额度契约的同层设施，
+  不构成反向依赖；它们仍不得 import 任何领域包（由边界测试钉住）。
+- **`favorites/sync` 经 `session.withAuthenticationRecovery` 复用认证恢复**：与 `favorites/usecase`
+  同一处调用，属 L4→跨域 L2 的有意复用，不再单列待办。
 
 ### 表现层直连：已清
 
-`python3 scripts/check-coupling.py <模块>` 可复现。「违规」指跨过 L2 直读 L4 设施，
+`uv run scripts/check-coupling.py <模块>` 可复现。「违规」指跨过 L2 直读 L4 设施，
 或反向依赖上层；`data.models` 是共享契约，不算违规。
 
 - **`ui/components`**：出边只有 `ui/*` 同层设施、`coil`、`image`、`utils`、`BuildConfig`
@@ -142,9 +158,8 @@ I = Ce/(Ce+Ca)。下表只保留决策相关行，完整列表以脚本输出为
   （全部为 `SessionReadiness` 枚举，**无 `UserManager`**）、`favorites/presentation`、
   `download/model`、`update`、`reader` 契约类型。
 
-**下一阶段收口目标**：Screen 里散落的 `session.UserManager` 鉴权分支，
-改为经 ViewModel 暴露状态，而非 Screen 直读。`favorites/presentation.FavoritesViewModel`
-是 L2，Screen 直接持有属合法 L1→L2。
+Screen 的 `session.UserManager` 直读已经清零，并由边界测试固定；鉴权状态经 ViewModel 暴露。
+`favorites/presentation.FavoritesViewModel` 是 L2，Screen 直接持有属合法 L1→L2。
 
 ## 已收工的迁移（结论，勿重复劳动）
 
@@ -155,6 +170,13 @@ I = Ce/(Ce+Ca)。下表只保留决策相关行，完整列表以脚本输出为
   `FavoriteStore` 及其 SQL 侧 → `favorites/data`；`RemoteConfigManager` → `network`；
   `LocalSettingManager` 及各种偏好 → `storage`；`BackupManager` → `backup`；
   `ToastManager` → `core`；共享 DTO → `core/model`。
+- **L2 反向依赖 L1 清零**（2026-10-20）：`ui/interaction/ListPositionMemory` 一拆为二——
+  纯数据与位置 key（`home` / `search|<queryKey>` 等约定）下沉 `ui/models/ListPositionMemory.kt`，
+  只留 `LocalListPositionMemory` 与 `rememberRestoringGridState` 在 `ui/interaction`；
+  `ui/haptics/AppHaptics` 移到 `core/Haptics.kt`（只依赖 Android 震动 API，除 `core.model` 外零出度）。
+  修掉的是 `ui/viewModel/SearchViewModel`、`favorites/presentation/FavoritesViewModel`
+  为「清位置」「删除震动」反向 import L1 组合层的两条边，并由边界测试钉住
+  「L2 不得 import `ui.interaction` / `ui.haptics` / `ui.components` / `ui.glass` / `ui.screens`」。
 - **5 个历史依赖环消除**：`data↔repository`、`data↔retrofit`、`retrofit↔store`、
   `repository↔store`、`data↔reader`，以及评审发现的 `network↔session↔retrofit` 三边环
   （修法：`AuthenticatedSessionRequiredException` 下沉 `core/network`，
@@ -164,14 +186,22 @@ I = Ce/(Ce+Ca)。下表只保留决策相关行，完整列表以脚本输出为
   legacy L4（`storage`/`data`/`network`）仍有待处理 SCC，后续迁移**先抽窄端口再切断反向 import**。
 - **`ComicRepository` domain-only**：`toXxx()` mapper 下沉 `repository/impl`，
   wire DTO 不再渗到表现层。分页元数据用 `data/models` 的 `ComicPage`/`CommentPage`/`ComicSearchPage`
-  表达（`ComicPage.total` 可空，watch_list 不返回总数）。
+  表达（`ComicPage.total` 可空；远端历史直接返回 `List<Comic>`，不使用分页元数据）。
   **剩余 legacy boundary**：`UserRepository` 仍经 `CandidateSession` 暴露
-  `LoginResponse`/`okhttp3.Cookie`；`RemoteSettingRepository` 仍返回 `RemoteSettingResponse`。
+  `LoginResponse`/`okhttp3.Cookie`。
+- **`RemoteSettingRepository` domain-only**：返回 `core/model/RemoteSetting`，wire 响应
+  在 `repository/impl` 就地映射，DI 只绑定取数端口；`RemoteSettingResponse` 只保留实际读取的
+  `img_host`，不再携带未消费的分流数据或领域转换方法。
 - **下载 4 个 UI 文件直连 Room**：`ui` 整体禁 `database`，DAO 观察收敛到
   `download/molecule/DownloadLibraryQueries`，UI 用 `download/model` 契约。
 - **`ui/components` 收窄**：`LocalMainNavController` 归位 `ui/navigation`；
   远端图片主机/详情预置/详情取数改 `ui/models` 环境值 + 组合根提供；
   `ComicPicImage` 移入 `ui/screens/readScreen`；`ComicLazyGrid` 屏蔽标签改为入参。
+- **导出模式归位 `download/model`**：`PdfExportMode` 曾是 `download/export` 的实现细节，
+  Screen 直接 import L3 包；移到共享契约后，边界测试钉住「`ui/screens` 禁 `download.export.`」。
+- **设置页本地模式依赖收口**：`LocalSettingScreen` 不再 `koinInject` 协调器/闸门/调度器；
+  经 `SettingsViewModel` 与 `di/LocalModeSettingsAdapter` 暴露 `LocalModeSettings` 窄端口，
+  Screen 只收集状态、发动作。边界测试同时禁 `getKoin` 与 `koinInject`。
 
 ## 有意保留的例外
 
@@ -180,10 +210,11 @@ I = Ce/(Ce+Ca)。下表只保留决策相关行，完整列表以脚本输出为
 1. 下载协调器直接用 DAO 与反馈适配器——进度与同组任务状态决定通知和终态分支，拆散反而更难读。
 2. 更新协调器直接用下载/安装端口，备份协调器直接用校验/提取能力——结果直接决定流程分支，
    不为它们加只做转发的用例层。
-3. 缓存清理协调器经组合根窄回调（`CacheMigrationDownloadGate`）协调下载与阅读器资源生命周期；
-   导出协调器直接调 PDF 文件端口。L2 的跨功能协调，L4 不得反向调用。
+3. 缓存迁移协调器经 `CacheMigrationDownloadGate` 协调下载；共享清理 `cache/molecule/CacheCleanupOperations`
+   经组合根注入封面/阅读清理与停下载回调，不 import Coil 或阅读/下载协调器。导出协调器直接调 PDF 文件端口。
+   跨功能资源生命周期由显式端口交接，L4 不得反向调用。
 4. `RemoteConfigManager` 经 `network` 包内窄端口 `RemoteSettingFetch` 取数，
-   组合根委托给 `RemoteSettingRepository` 并在 di 侧完成 response 映射——
+   组合根委托给 `RemoteSettingRepository`，response 映射在仓库实现内完成——
    这是 network 不依赖 repository/retrofit 的代价。
 5. 认证请求编排归 `session`：`network/AuthenticatedEmbeddedClient` 只依赖
    `AuthenticatedRequestGate` 端口，组合根绑到 `session/AuthenticatedSessionGate`，
@@ -199,6 +230,9 @@ I = Ce/(Ce+Ca)。下表只保留决策相关行，完整列表以脚本输出为
 8. 下载业务经 `download/DownloadWorkScheduler` 端口提交，不直接构造 Worker；
    实现以 **comicId 为粒度** `enqueueUniqueWork(..., KEEP, ...)`。
    `DownloadComicWorker`（26 行）只解析参数并调 `DownloadComicCoordinator`。
+9. `ui/components` / `ui/theme` 的封面 loader、resolver、Toast 与外观偏好仍以 `getKoin()`
+   默认参数兜底：单例由组合根提供，组件不 import 领域实现；去掉默认值会让独立组合与
+   预览必须手工注入。新增组件默认值前先确认它不引入 L3/L4 领域 import。
 
 ## 领域约定
 
@@ -208,16 +242,67 @@ I = Ce/(Ce+Ca)。下表只保留决策相关行，完整列表以脚本输出为
 才拿得到 `LocalGlassSurfaceRegistry` 并画 native blur；放在 source/页面本体会**静默退化成纯色块**。
 组件内禁止自开 `GlassModal`（`ComicCoverImage` 经 `onShowDetail` 回调上提）。
 自建 host 的页面弹窗必须组合在 topBar **之后**。
+面板在当前窗口的系统栏及顶栏之外布局，全屏遮罩继续拦截背景触摸；章节列表先让标题/底部动作占位，再使用剩余高度。
+调色面板以 `LocalDensity` 转换 window 像素；宽度上限在 fillMaxWidth 之前生效，避免旋转后被固定满屏宽度覆盖。
 
 例外：收藏筛选 `FavoritesModalHost.FilterDialog` 刻意用 Material `ModalBottomSheet`
 （密排 chip 时高斯模糊拉低可读性）；Welcome 引导无 host，走纯色 fallback。
-阅读器 host 显式用 `GlassBackdropMode.Frosted`：半透明渐变磨砂 + 圆角细边框，
-跳过底图录制与 `RenderEffect`，避免漫画大图下模糊失败导致外观切换——
-**这是近似玻璃材质，不对背后的漫画做真实高斯模糊**。其他页面默认 `Blur`。
+阅读器 host 显式用 `GlassBackdropMode.Blur`，与其他页面采用同一真实模糊路径；
+不根据加载/失败/前后台状态切回旧的 `Frosted` 模式。API 30 无 `RenderEffect`，
+玻璃层保留半透明底色，这是平台降级路径。
+
+### 详情页与加载反馈
+
+详情页标签加载骨架统一为 **一行 / 32dp**，完整骨架与列表种子数据补全共用同一组件。
+平板横屏骨架的标签位于右侧元数据列；竖屏/窄分屏和手机位于封面头部下方。真实标签从一行开始逐行展开，
+高度按实际芯片测量结果过渡；标签内容变更即使行数相同也须重启动画，不能留下未显示的行。
+平板骨架与正式封面共用 `ui/screens/TabletLayout.tabletDetailCoverWidth`，以当前窗口宽高和上下操作区
+计算 3:4 封面槽位，宽度最多 392dp，右列使用剩余空间；不用权重覆盖封面上限。
+介绍与标签/评论各自使用既有内容动画层；手机和平板共用封面转场与侧滑确认后的完整退场控制器。
+平板仅在**横向且能同时放下封面与 420dp 阅读列**（`useDetailColumns`，即宽 ≥ 1120dp）时使用双栏；
+其他情况改为最大 840dp 的居中阅读列，紧凑封面最多 240dp，标签/评论完整占据阅读列。
+只看「宽 > 高」会把浏览器式分屏的半屏横窗误判成双栏，右侧内容列被挤窄、页面右缘留整列空白。平板底栏为两组玻璃按钮，横竖屏均分居左右两角，手机仍是单条底栏。
+`ComicDetailAdaptiveLayout` 保留同一份封面/元数据/标签评论，按 320ms 贝塞尔分别过渡真实布局尺寸和位置；
+背景持续可见，不淡出整页、不重建 Glass host。底栏和右上按钮锚定新窗口边缘；封面/内容列的中间帧也受新窗口边界约束，原生玻璃跟随实际布局坐标。
+滚动内层显式满足视口最小高度；普通/下载详情统一顶部对齐，不再根据评论加载状态和内容长度居中整组内容，
+短内容仅在页面下方自然留空。下载详情顶部控件避让后保留 8dp 间隔；平板横竖屏均保留同一份封面/介绍/正文，不切回手机满宽封面。
+平板下载详情仅显示左上角玻璃返回按钮，复用普通详情的按钮尺寸与退场行为；本地/远程回退封面及其转场层采用相同 medium 圆角。
+横屏沿用左封面/右内容，竖屏封面最多 240dp、介绍居右、标签/缓存状态占下方完整阅读列，组件位置和尺寸以 320ms 连续过渡。
+下载详情的模糊背景和左右两组玻璃操作也保持同一组合：横竖屏都为左「阅读」/ 右「章节·导出」，格宽平滑过渡且受当前窗口限制。
+横竖屏共享外层滚动与评论网格状态；连续旋转从当前值接续目标，首次/关闭动画/封面进退场时直接使用目标尺寸。
+MainActivity 自行接收 orientation / screenSize / smallestScreenSize / screenLayout 变更，Compose/View 随新配置重排，
+其他配置变更仍可由系统重建；旧尺寸详情任务和返回覆盖层释放，已提交返回只完成一次。
+平板空白区不能发起直接整页拖动，直接拖动起点须位于真实封面内；滚动容器的触边接管保留。
+详情与阅读器的收藏按钮统一为空心/实心心形，复用 `ui/interaction/FavoritePulse`。
+零观看量时，`ui/components/ComicMetrics` 将观看/喜欢文本同时显示为 `-`，保留原始模型值；详情信息弹窗共用此显示规则。
+食堂原图的 `ui/interaction/ImageViewportTransform` 按 Fit 后图像与视口尺寸限制平移，并在旋转后重新约束。
+动画裁剪以当前外层高度为准，不以完整子内容的高度裁剪。失败后没有标签则移除占位。
+详情响应映射时过滤 tags / actors / works 中的空串与纯空白；`ComicTagSection` 对已有缓存也做同样防护，
+不能把上游占位值画成可点击的空芯片。JM1468134 的 tags 实测含 4 个有效词与 1 个空串，回归测试保留该形状。
+详情（含缓存详情）作者为空、纯空白或仅 `N/A` 时显示灰色「未知作者」，不提供搜索点击；有效作者保持原有搜索。
+
+阅读器章节与单页加载均用 `ReimuLoadingIndicator`（本地 GIF），不存在回退到默认转圈的状态分支。
+首次构建收藏缓存的 GIF、提交操作的转圈、页尾的追加加载指示器分别表示实际任务，保留各自语义。
+
+### 首页推荐恢复
+
+首页右上角「更多」玻璃菜单按图标与两个汉字收紧为默认 128dp，大字体时按文字大小增加宽度；
+手机和平板共用，其他菜单保持各自宽度。
+
+`HomeViewModel` 保留推荐请求的失败状态，初次 `/promote` 失败或没有可用内容时先显示内置分类，
+不把空推荐缓存为本次进程的成功结果。`HomeScreen` 只报告生命周期 STARTED 与首页 Tab 是否可见，
+重试由 ViewModel 按 **2 / 5 / 15 / 30 / 60 秒**退避，此后间隔保持 60 秒，直到取得可用推荐。
+离开首页或进入后台取消待执行重试；重新进入可见首页时，仍缺推荐则立即补取，在途请求不重复启动。
+恢复后补回推荐栏目，保留当前分类及已有内容，不让重试过程重建整页骨架。
+网络推荐与自动签到在生产设置中统一开启，设置页不再提供开关。`LocalSettingManager` 在加载、导入和
+后续写入时归一化旧关闭值，DTO 保留旧 JSON 字段以兼容备份；设置 ViewModel 不再维护对应开关状态/写入口。
+已加载过有效推荐时，暂时空响应保留最后一次可用栏目与内容。
+网络推荐在 `ComicRepositoryImpl` 映射成漫画前排除栏目 ID `1001`（书库）和 `1002`（小说），
+避免非漫画载荷进入详情/阅读链路；其余栏目顺序、标题与前两项换位规则保持不变。
 
 ### 列表 Paging
 
-搜索 / 收藏 / 历史 / 周推荐共用：`cachedIn(viewModelScope)` 必须写在 `flatMapLatest` **内**
+搜索 / 收藏 / 评论历史 / 周推荐共用：`cachedIn(viewModelScope)` 必须写在 `flatMapLatest` **内**
 （单 key 一代缓存，换筛选/文件夹/会话不串列表），外层再
 `stateIn(viewModelScope, SharingStarted.Eagerly, PagingData.empty())` 挂上 VM 生命周期——
 结果页进详情后 UI 取消收集，返回仍复用缓存。
@@ -225,7 +310,136 @@ I = Ce/(Ce+Ca)。下表只保留决策相关行，完整列表以脚本输出为
 搜索另用 `SearchComicFilter.revision` 做 UI `key`：`enterSearchResult` 同查询不换代，
 `submitSearch` 强制 bump。搜索排除标签**只拼进查询串 `-tag` 交给服务端**，
 `SearchComicPagingSource` 返回后不再做本地二次排除（旧实现逐条拉详情是搜索延迟主因）。
-收藏文件夹切换、历史会话变化各自 bump 对应 filter/session 并同步 `resetGeneration` 视口代际。
+收藏文件夹切换、评论历史会话变化各自 bump 对应 filter/session 并同步 `resetGeneration` 视口代际。
+
+`PullRefreshAndLoadMoreGrid` 顶部刷新指示器只响应用户下拉；Paging 首次订阅、页面恢复及
+后台刷新不得自动冒出下拉转圈。已有条目继续展示；刷新结束或失败时清除手势刷新状态。
+
+### 评论过滤
+
+设置入口 `commentFilter` 的 `CommentFilterScreen` 沿用排除模板的说明卡片、输入卡片与关键词芯片样式，
+经 `SettingsViewModel` 增删关键词，不直接访问存储。`LocalSettingManager` 是单一写入者，
+通过 `ContentPreferences.blockedCommentKeywords` 暴露窄状态流，持久化到既有设置 JSON 并随设置备份。
+默认词为「扣群 / 加群 / VIP / 可约 / 一对一」，旧设置缺字段或 null 回填默认；显式空列表保持为空，表示不过滤。
+写入时去首尾空白、忽略大小写去重，失败不发布新状态，界面保留添加草稿供重试。
+
+`contentfilter/CommentKeywordFilter` 是本地纯过滤原子：以 Jsoup 解出可见正文，任意词子串命中即隐藏，
+忽略英文大小写，不匹配用户名或 HTML 属性；干净主评论下的回复递归过滤，主评论命中则整个讨论串隐藏。
+`ComicDetailViewModel` 与 `UserViewModel` 在原始 `cachedIn` 分页流之后 combine 关键词，再过滤主评论与回复。
+关键词变化不重建 API 分页，删词可恢复缓存中的隐藏评论；不修改远端 total/页码，整页被过滤仍能继续取后续页。
+对应测试覆盖默认词/HTML/嵌套回复、持久化和空列表兼容、实时恢复与无额外请求、整页过滤后的续页。
+
+### 历史浏览
+
+经实际核对，官方 App 的远端历史至多显示最新 20 条，接口没有可用的后续翻页。
+`UserRepository.getHistoryComicList()` 只请求一次 SDK `getWatchHistory(1)`，返回 API 的完整列表；
+不按显示条数补齐、不预取、不解析分页总数，也不在客户端额外截断。
+`UserViewModel.HistoryState` 持有列表、加载与错误状态；每次进入历史页或从后台返回，
+`LifecycleStartEffect` 重新获取最新历史。普通网格不提供上拉翻页、下一页按钮或末页提示。
+换号/登出立即清空列表与选择并取消在途请求；响应同时校验请求代次和会话快照，
+阻塞式请求的迟到结果不得覆盖新账号。
+
+`watch_list` 可能包含**章节 id**：读合集里的第 N 话后，服务端历史条目可能是那一话的 id。
+本机 `ReadHistoryManager` 在打开合集详情时记录合集元数据，并在阅读时把章节 id 归到合集 key
+（`seriesId` 优先，缺省用当前页面的合集 id）；同时保存完整目录与合集的关联，目录不计入已读章节。
+历史页展示前用这份本机记录把章节条目换成合集卡片，
+封面/标题/作者/标签因此指向原合集。删除仍按服务端章节 id 提交，下载仍取服务端章节；
+阅读路由带 `historyId`（父合集 id），`ComicReadHistory.lastChapterId` 保留具体章节用于续读。
+旧进度只有父子 id、缺少合集标题时不伪造合集卡片，保留章节条目并通过 `seriesId` 指定合集封面；
+`ComicCoverImage` 对有效的 `seriesId` 优先取合集封面，否则使用条目自身 id。
+
+合集去重只影响展示数量：20 条章节记录合并后可能只显示 19 张卡片；
+删除合并卡片时提交其对应的全部原始章节 id，不用合集 id 替代服务端历史条目。
+
+### 绅夜食堂
+
+L1：`DinnerScreen` / `DinnerArticleScreen` 接收点击并导航；首页右上角二级菜单入口名为「食堂」。
+文章列表用 `LazyVerticalStaggeredGrid` 按真实图片比例交错排布，标题最多三行、页尾状态整行显示。
+列数沿用首页设置，`adaptiveComicStaggeredGridCells` 与普通网格共用固定/自适应判定及
+`comicGridMinCellSize`（手机 118dp / 平板 160dp）；左右留白和列间距同为 12dp。
+下载中心完成列表的非 Lazy 行网格也直接调用共享 GridCells 的像素分配结果，按实际内容区域重算列数，不再用窗口宽度硬分成 2/3/4 列。
+图片比例按 URL 保存在 `DinnerViewModel` 并作为图片初始比例，另保留图片本身的 saveable 状态；painter/位图不写入保存状态。
+列表位置复用 `ListPositionMemory` 的 `dinner` 键，通过框架 Saver 保存各列索引/偏移；
+`GlassCaptureHost` 显式转发记忆容器，避免独立 ComposeView 重建后丢位置，不保存状态/View/布局对象。
+封面（含加载中或失败）与标题共用文章导航。列表触底自动加载，等待新页完成布局再检查；
+加载中防重入，失败停止并显示重试，整页过滤为空可继续取后续页。
+L2：`DinnerViewModel` 保存列表/正文加载、分页重试、连接模式和在途代次，并暴露窄偏好的列数状态，禁止迟到文章覆盖当前选择。
+L3：`dinner/DinnerRepository` 组合原始协议映射、推广过滤、按需详情补查与正文解析，只对 UI 暴露 `dinner/model`。
+L4：`network/EmbeddedDinnerApi` 复用 SDK 网络传输；`dinner/atom/ArticleHtmlParser` / `ArticleLinks`
+将 HTML 和裸 JM 编码、文章链接变成原生图文块及导航目标；`ArticlePromotionFilter` 检查可见推广文案及已确认链接，不执行网页脚本。公共展示组件只依赖模型和
+既有 Coil/图床适配；不访问仓库。推广过滤保留远端原始条数和总量，不能用显示条数误判末页。
+取消作者白名单：无署名、未知作者和缺少列表正文不触发过滤，不将上传者展示为作者，正文原有署名保持原样。
+列表直接检查 `content` / `game_url`；仅存在导流提示但尚未确认的文章补查详情链接（限时 3 秒）。
+成功的判断在仓库内缓存 10 分钟、最多 128 条，正文/入口变化失效；补查失败保留卡片、不缓存失败，取消向上传递。
+详情始终重新校验完整正文，确认推广则移除当前列表条目。按实际 URL host 边界及已确认短链路径匹配，不一律屏蔽外链，不追踪重定向。
+
+文章图片共用 `CoverImageLoaderHolder` 及 `CoverImageHostResolver.articleUrls` 的全局图床排序、DoH、
+健康冷却、缓存预算与串行回退；标准 JM 封面复用 `jm-cover-{id}`，外站图片保留原始地址。
+阅读器 GIF 已提升至 `ui/components/ReimuLoading.kt`，由阅读器、文章和通知统一引用。
+协议字段、推广文案/链接策略和链接行为见 [docs/dinner.md](docs/dinner.md)。
+
+### 漫画追踪与通知
+
+L1：合集详情 JM 编码下的订阅按钮、首页右上角铃铛与 `NotificationScreen`。
+L2：`ComicTrackingViewModel` 判断合集、查询/切换订阅并复查状态；`NotificationViewModel` 管理
+通知分类、分页、展开和已读。SDK 为单本补出的自身章节不视为合集。
+L3：`NotificationRepository` 组合官方协议映射、追踪数组与 HTML 解析，以及全页一键已读。
+L4：`EmbeddedNotificationApi` 通过认证客户端执行带官方签名的 GET/POST；共享网络与账号会话。
+通知模型位于 `notification/model`，正文复用 `dinner/model.ArticleBlock`。
+
+`session/AccountRequestScope` 由 DI 适配到 `UserManager.withBoundRemoteSession`；所有通知与订阅读写
+绑定发起时账号及 generation，切号立即清空，迟到响应不能落入新账号。订阅是服务端切换操作，
+POST 结果不明时只重查状态，不自动重放。通知点击只设为已读，不切换为未读。
+一键已读先获取全部分类/全部页，再逐封提交；重复页中止处理，不猜测未验证的批量 API。
+`NotificationUnreadCoordinator` 通过 `NotificationUnreadStatus/Updates` 向首页暴露未读状态，
+通知成功已读后本地递减/清空；账号变化清空旧状态，迟到数量不能重新点亮已读提示。
+冷启动的 `notifications/unreadCount` 只调用一次，等待其余启动任务、`StartupHomeLoad` 记录的首页首批请求（含失败降级）和异步收藏同步完成后最后执行，
+失败静默；后台返回与首页重组不轮询。首页铃铛有未读时变红；通知分类菜单改由标题点按触发。
+正文使用既有文章渲染、CDN/缓存、GIF 与站内导航；不套用绅夜食堂广告过滤。
+交互及协议细节见 [docs/notifications.md](docs/notifications.md)。
+
+### 交互动效
+
+`ui/models/CoverNavigation` 定义封面入口、分层进场与详情关闭端口；`ui/navigation/CoverNavigationHost`
+在点击时等待来源页面 RESUMED、绘制刷新后重新取得来源矩形和内存背景，以条目生命周期管理。`ui/interaction/CoverDetailTransition`
+包裹远端/缓存详情：封面 GraphicsLayer 从来源矩形移动到真实布局报告的目标矩形，背景/玻璃控件
+按同一 448ms 进度自顶向下铺满，再用 224ms 显示介绍与标签/评论两个内容层。
+`DetailEntryLayers` 只负责绘制记录、目标测量和分层透明度；`GlassCaptureHost` 显式跨 ComposeView
+转发详情端口、封面入口和页面标识/可见封面注册表。进场与退出均独立绘制封面；
+退出先退内容（约 150ms），再将背景/玻璃与封面分层记录为内存位图，交给 NavHost 上方的
+`CoverReturnOverlay` 持有。弹出后依据真实上一页的当前可见封面确定终点，反向收回背景（256ms）；
+没有目的地或目的地中途被移除时，封面从当前位置改走屏幕中心并淡出。位图随退出完成释放，
+不持有已弹出详情的组合或 GraphicsLayer，不请求网络。拖动/440ms 回弹沿用页面变换；
+系统侧滑由 `HierarchicalBackHandler` 消费进度，期间详情不变，取消不触发动画或截图；
+确认后与左上角按钮共用 `DetailMotion.dismiss`，完整执行内容→封面/背景退场，不由侧滑幅度/速度决定阶段。
+仅在内容隐藏后准备一次位图，已删除跟手预览、手势预取与取消恢复状态。进场与竖向拖动回弹使用三次贝塞尔，
+返回退场使用线性进度。`CoverReturnPath` 在落点变化时从上一帧接续，
+保留当前帧位移与原结束时间，忽略不超过 1 个物理像素的落点抖动；
+遮罩与输入派生状态不触发逐帧整页重组，封面使用浮点绘制。若详情封面已滚出屏幕，
+只回收背景并显露上一页原位封面，不复制离屏封面。可见的末段飞行至少保留 160ms。
+导航页面的截图记录位于独立 GraphicsLayer，返回覆盖层为同级绘制，避免其进度变化触发整页重新记录。
+已提交退场保持输入独占：详情控制器忽略新拖动与重复关闭，覆盖层同时消费普通触摸与系统预测返回，
+防止上一页 NavHost 被二次侧滑驱动、移动目标封面并重算路径；完成后释放拦截。
+`BlockDetailDrag` 在页面组合时读取弹窗/评论状态，跨 Glass 子组合变化立即锁住整页拖动并取消已有拖动。阅读与章节导航沿用原流程，
+返回已展开详情时不重播。NavHost 对进入/退出详情不再叠加水平转场。
+无来源矩形/快照的编码或链接入口立即显示详情骨架，不播放展开；有来源时，真实 painter 未就绪前在封面图层内
+保留原缩略图，不把占位图层当成已加载图。原图仍参与滚动、裁剪、模糊和返回快照；目标就绪时直接交接。
+网格列数弹窗将 window 像素转换为 dp 后限高，并避开顶部锐利控件层，防止玻璃背景下的顶部栏文字重叠。
+
+V3 按压由 `PressFeedbackIndication` 与公共 `MotionButtons` 适配既有交互，保留 ripple/点击/热区，
+以 120ms 缩到 0.96、200ms 恢复；这些适配属于 L1，不承担收藏或网络业务。
+`ProvideScrollEdgeFeedback` 在主题层包装系统 `OverscrollFactory`，`GlassCaptureHost` 将其显式转发到
+独立 ComposeView；在实际系统回弹中观察用户拖动/惯性的上下碰撞，通过 `CLOCK_TICK` 轻震。
+保留原节点、滚动消费与绘制，同一次拉伸只震一次，回弹结束后再次外拉可重新触发；程序滚动静默。详情收藏图标的一次放大回弹与真实收藏状态分离。
+具体参数、降级与测试见 [docs/ui-motion.md](docs/ui-motion.md)。
+
+### 剪贴板检测
+
+`App.MainAppContent` 在自动检测开关开启、生命周期回前台时读取剪贴板；仍按数字编码校验和原有仓库加载漫画。
+取消/系统返回/外部关闭有效预览时，App 将请求编码与返回漫画 ID 交给 `session/ClipboardDetectionSession`。
+它由 `di/AppModule` 以进程单例提供，仅保存被取消的编码集合：文本不同、前导零、切后台、应用锁或 Activity 重建不重置，
+新进程冷启动才重新允许提示；不落盘、不屏蔽其他编码，不把失败请求或正常跳转标记为取消。
+检测前过滤可避免再次发起同一编码的网络请求；预览保留对应请求 ID，避免异步结果与当前检测 ID 混淆。
 
 ### 封面加载
 
@@ -233,6 +447,8 @@ I = Ce/(Ce+Ca)。下表只保留决策相关行，完整列表以脚本输出为
 滚动中网络/磁盘结果延迟上屏（`PullRefreshAndLoadMoreGrid` 经 `LocalComicGridScrolling` 写入），
 memory 命中仍立即上屏。封面专用 OkHttp：`Dispatcher` 全局 12 / 每 host 4，
 与下载、阅读连接池隔离。
+同一本漫画的已显示封面不随 CDN 候选地址变化而清空，网络恢复时等替代图片就绪再过渡；
+漫画 id 变化仍清空，避免沿用另一本漫画的封面。
 
 ### 缓存额度语义
 
@@ -261,14 +477,14 @@ API 契约：`*DiskCacheMb/Bytes(totalMb)` 入参是**总额度**；
 额度收紧的执行：**各组件按自己那份技术上限自裁剪**，触发源是 `cacheBudgetMb` /
 `downloadExemptFromCacheLimit` 两条设置流，不依赖下一次写入。
 - READER：`ReaderImagePipeline.observeCacheBudget` → `ReaderImageDiskCache.updateMaxBytes(bytes)`
-  → 立刻按 LRU 回收到上限的 7/8（`requestDiskTrim`）。这是命令行外唯一的 reader_pages 回收触发点。
+  → 立刻按 LRU 回收到上限的 7/8（`requestDiskTrim`）；显式缓存清理则走 `clearDiskCache` 代次协议。
 - COMMON：`CoverImageLoaderHolder` 重建 loader 只换上限；Coil 的 DiskLruCache 在下一次
   写入（`completeEdit` 发现 `size > maxSize`）或日志重写时才会真正裁剪，属**延迟收敛**。
 - `CacheCleanupViewModel` 在额度变更后用 400ms 静默窗口重扫（连续拖档位合并为一次），
   避免把裁剪前的旧占用画进饼图。
 
-自裁剪只压**各组件那一份**，没人替用户删 COMMON 与残差目录；所以额度调低到
-当前受控占用之下时必须由人拍板：`CacheCleanupViewModel.setBudgetMb` 先落盘（组件订阅这条流），
+组件自裁剪只压**各组件那一份**；用户主动把额度调低到当前受控占用之下时，立即清理由用户选择：
+`CacheCleanupViewModel.setBudgetMb` 先落盘（组件订阅这条流），
 再按 `previousMb → newMb` 是否为「调低」且 `controlledUsedBytes > CacheBudget.totalBytes(newMb)`
 挂出 `CacheCleanPrompt`（`usedBytes` / `budgetBytes` / `overflowBytes`），`CacheCleanupScreen`
 弹玻璃确认框。确认走 `confirmCleanPrompt` → 与手动「清理缓存」**同一条** `runClean` 删除路径
@@ -277,9 +493,24 @@ API 契约：`*DiskCacheMb/Bytes(totalMb)` 入参是**总额度**；
 无限制一律清空上一轮询问。`CacheControlState.overBudget` 仍恒算真实占用，拒掉询问后
 `CacheCleanupScreen` 把额度行染成 error 色。
 
+冷启动自动检查：首帧后的 `PostStartupCoordinator` 单次启动任务调用 `StartupCacheCleanup.checkOnce()`。
+设置不可读或无限额度时跳过；有限额度只扫描一次，按扫描结束后的最新设置比较受控已用与额度，
+严格超出时清理一次，不循环追到额度以下。进程内 AtomicBoolean 去重，回前台与 Activity 重建不重扫；
+扫描/清理失败写启动任务日志，不弹清理询问或阻塞首屏，也不在当前进程自动重试。
+用户放弃设置页的本次立即清理，不影响下次冷启动的超额检查。
+
+手动/自动清理共用 `cache/molecule/CacheCleanupOperations`，以同一个 Mutex 串行删除。
+封面通过 `CoverImageLoaderHolder.clearDiskCache` 调 Coil 的日志协议，阅读缓存通过
+`ReaderImagePipeline.clearDiskCache` 管理文件代次，不直接删除两者的活跃目录。
+下载豁免开启时不触碰下载文件/任务；关闭时通过 `DownloadManager.clearDownloadedCache` 先停任务，
+再清文件与任务元数据。原有 HTTP 缓存/未命名残差仍由各自组件管理，不在这条路径直接整目录删除。
+
+额度与网格列数共用 L1 `DiscreteSettingSlider`：可点击档位文案、24dp 圆形游标、8dp 轨道、离散刻度与换档轻震。
+网格保持 0=自适应、1–6=固定列数，仍在弹窗确认后保存；对应下载行统一称为「下载中心」。
+
 统计口径：命名分区 COMMON / READER / DOWNLOAD，`ALL` 扫整个 `cacheDir`。
 残差 = `ALL - 命名合计`（http_cache、cacheDir 根目录的临时文件等）计入「其他」切片与额度已用。
-`controlledUsedBytes` = 豁免时 `ALL - DOWNLOAD`，否则 `ALL`，与 `overBudget` 同口径。
+`CacheBudget.controlledUsedBytes` = 豁免时 `ALL - DOWNLOAD`，否则 `ALL`；界面与冷启动检查共用同一计算。
 `CacheCleanupScreen` **不 import `cache.*`**，档位与明细由 VM 以 `budgetStops`/`pieSlices` 注入。
 
 **自定义下载目录必须进统计**。用户在设置里把下载目录指到 SAF 树后，下载字节不再落在
@@ -316,15 +547,21 @@ Reader 的 L3 不得依赖 UI 或 Worker，L4 不得反向依赖 L3。磁盘缓�
 留在**同一个原子**内，为的是清理时锁顺序和 cache generation 保持原子性；
 拆成两个互相调用的 L4 会重新引入竞态。
 
-**`reader/` 根包 16 个文件尚未归位**（共 22 个文件，仅 6 个在分层目录内），
+**`reader/` 根包 15 个文件尚未归位**（共 21 个文件，仅 6 个在分层目录内），
 绝大多数是 `internal` 的 Pipeline 私有协作对象：并发控制（`ReaderNetworkScheduler`、
 `ReaderDynamicLimiter`、`ReaderConcurrencyPolicy`）、请求合并（`ReaderInFlightRegistry`）、
-来源竞速（`ReaderRemoteFetcher`、`ReaderImageHostManager`、`ReaderHedge`）、
-解码还原（`ReaderImageDecoder`、`ReaderScramble`）、预加载（`ReaderPrefetchPlanner`、
-`ReaderPrefetchPolicy`、`ReaderLruCache`）、观测（`ReaderMetrics`）、
+来源竞速（`ReaderRemoteFetcher`、`ReaderImageHostManager`）、
+解码还原（`ReaderImageDecoder`）、预加载（`ReaderPrefetchPolicy`、`ReaderLruCache`）、
 契约（`ReaderImageModels`）、UI 适配（`ComicPicImageStateReader`）。
 粒度已足够小且可独立测试，**不列为迁移目标**；但它们不是分层目录的一部分，
-读链路时别只看子目录。
+读链路时别只看子目录。根包既被 L2 `ReaderImagePipeline` 向下使用，也向外提供给 `reader/atom`
+（`ReaderImageModels` 的 `ReaderPageKey` / `ReaderDecodeProfile` / `readerCacheKey`、`ReaderLruCache`），
+`reader/atom` 与 `reader/molecule` 的断言只禁止反向 import `reader/coordinator`、`ui`、`worker`，
+所以这几处对根包契约的引用是**有意保留**的，不算越层。
+
+`ReaderMetrics` 及快照入口已删除：原调试计数只有写入方，没有 UI、日志或测试消费者。
+`ReaderRemoteTelemetry` 仅保留参与 CDN 排序的 TTFB 采样与主机故障反馈；
+竞速、取消、许可释放和缓存代次协议保持原有行为，网络事件测试仍观察请求及取消回调。
 
 ### 其他
 

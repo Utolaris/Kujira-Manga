@@ -9,7 +9,6 @@ import com.par9uet.jm.data.models.LocalSetting
 import com.par9uet.jm.database.AppDatabase
 import com.par9uet.jm.launcher.LauncherIdentityApplier
 import com.par9uet.jm.data.models.LauncherDisguise
-import com.par9uet.jm.backup.BACKUP_PROTECTION_NONE
 import com.par9uet.jm.backup.BackupContentOptions
 import com.par9uet.jm.backup.BackupManager
 import com.par9uet.jm.backup.ChapterBackup

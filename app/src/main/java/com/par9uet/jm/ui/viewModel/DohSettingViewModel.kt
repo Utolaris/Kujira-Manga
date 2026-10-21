@@ -3,7 +3,6 @@ package com.par9uet.jm.ui.viewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.par9uet.jm.network.DOH_SERVER_CUSTOM
-import com.par9uet.jm.network.DohLatencyResult
 import com.par9uet.jm.network.DohManager
 import com.par9uet.jm.network.DohRuntimeStatus
 import com.par9uet.jm.network.DohServer
@@ -29,14 +28,6 @@ data class DohServerUi(
 data class DohLatencyUi(
     val elapsedMs: Long?,
     val failed: Boolean,
-)
-
-data class DohSettingUiState(
-    val doh: DohSettingsState = DohSettingsState(),
-    val status: DohRuntimeStatus = DohRuntimeStatus(),
-    val latency: Map<String, DohLatencyUi> = emptyMap(),
-    val servers: List<DohServerUi> = emptyList(),
-    val testingAll: Boolean = false,
 )
 
 /** L2：DoH 设置页业务（线路合并、校验、测速、开关）；Screen 只渲染与提交事件。 */
@@ -71,8 +62,6 @@ class DohSettingViewModel(
         merged.forEach { serversById[it.id] = it }
         return merged.map { DohServerUi(id = it.id, name = it.name, displayUrl = it.displayUrl) }
     }
-
-    fun isCustomUrlValid(url: String): Boolean = isValidDohUrl(url)
 
     fun setEnabled(enabled: Boolean) = dohManager.setEnabled(enabled)
     fun setAutoStart(enabled: Boolean) = dohManager.setAutoStart(enabled)

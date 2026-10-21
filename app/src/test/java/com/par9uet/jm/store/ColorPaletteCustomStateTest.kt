@@ -5,7 +5,6 @@ import com.par9uet.jm.storage.StorageWriteResult
 
 import com.par9uet.jm.data.models.COLOR_PALETTE_PRESET_CUSTOM
 import com.par9uet.jm.data.models.COLOR_PALETTE_PRESET_DEFAULT
-import com.par9uet.jm.data.models.COLOR_PALETTE_PRESET_OCEAN
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Before
@@ -63,10 +62,10 @@ class ColorPaletteCustomStateTest {
     fun `CUSTOM to real preset clears custom values`() {
         manager.applyCustomColors("#FF111111", "#FF222222", null, null)
 
-        manager.selectColorPreset(COLOR_PALETTE_PRESET_OCEAN)
+        manager.selectColorPreset("ocean")
 
         val palette = manager.colorPalette.value
-        assertEquals(COLOR_PALETTE_PRESET_OCEAN, palette.presetId)
+        assertEquals("ocean", palette.presetId)
         assertNull(palette.customPrimary)
         assertNull(palette.customSecondary)
     }

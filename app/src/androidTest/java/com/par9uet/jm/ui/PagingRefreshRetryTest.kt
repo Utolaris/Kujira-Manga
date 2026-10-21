@@ -16,10 +16,12 @@ import androidx.paging.cachedIn
 import androidx.paging.compose.collectAsLazyPagingItems
 import com.par9uet.jm.core.network.NetWorkResult
 import com.par9uet.jm.data.models.Comic
-import com.par9uet.jm.data.models.ComicPage
-import com.par9uet.jm.session.UserRepository
+import com.par9uet.jm.data.models.ComicSearchOrderFilter
+import com.par9uet.jm.data.models.ComicSearchPage
+import com.par9uet.jm.repository.ComicRepository
 import com.par9uet.jm.ui.components.PullRefreshAndLoadMoreGrid
-import com.par9uet.jm.ui.pagingSource.HistoryComicPagingSource
+import com.par9uet.jm.ui.pagingSource.SearchComicFilter
+import com.par9uet.jm.ui.pagingSource.SearchComicPagingSource
 import java.io.IOException
 import java.lang.reflect.Proxy
 import java.util.concurrent.atomic.AtomicReference
@@ -30,56 +32,67 @@ class PagingRefreshRetryTest {
     @get:Rule
     val compose = createAndroidComposeRule<ComponentActivity>()
     private val failure = AtomicReference<Exception?>(null)
-    private lateinit var refreshHistory: () -> Unit
+    private lateinit var refreshItems: () -> Unit
 
     @Test
-    fun refreshFailureKeepsCachedHistoryVisibleAndCanRetry() {
-        showHistory()
-        waitForText("已有历史")
+    fun refreshFailureKeepsCachedItemsVisibleAndCanRetry() {
+        showPagedGrid()
+        waitForText("已有条目")
 
         failure.set(IOException("网络连接失败"))
-        compose.runOnIdle { refreshHistory() }
+        compose.runOnIdle { refreshItems() }
 
         waitForText("网络连接失败")
-        compose.onNodeWithText("已有历史").assertIsDisplayed()
+        compose.onNodeWithText("已有条目").assertIsDisplayed()
         compose.onNodeWithText("没有更多数据了").assertDoesNotExist()
         failure.set(null)
         compose.onNodeWithText("重试").performClick()
         waitForErrorToClear()
-        compose.onNodeWithText("已有历史").assertIsDisplayed()
+        compose.onNodeWithText("已有条目").assertIsDisplayed()
     }
 
     @Test
-    fun firstLoadFailureShowsRetryAndRecoveryDisplaysHistory() {
+    fun firstLoadFailureShowsRetryAndRecoveryDisplaysItems() {
         failure.set(IOException("网络连接失败"))
-        showHistory()
+        showPagedGrid()
 
         waitForText("网络连接失败")
-        compose.onNodeWithText("已有历史").assertDoesNotExist()
+        compose.onNodeWithText("已有条目").assertDoesNotExist()
         failure.set(null)
         compose.onNodeWithText("重试").performClick()
-        waitForText("已有历史")
+        waitForText("已有条目")
         compose.onNodeWithText("网络连接失败").assertDoesNotExist()
     }
 
-    private fun showHistory() {
+    private fun showPagedGrid() {
         val unused = Proxy.newProxyInstance(
-            UserRepository::class.java.classLoader,
-            arrayOf(UserRepository::class.java),
-        ) { _, method, _ -> error("Unexpected request: ${method.name}") } as UserRepository
-        val repository = object : UserRepository by unused {
-            override suspend fun getHistoryComicList(page: Int): NetWorkResult<ComicPage> {
+            ComicRepository::class.java.classLoader,
+            arrayOf(ComicRepository::class.java),
+        ) { _, method, _ -> error("Unexpected request: ${method.name}") } as ComicRepository
+        val repository = object : ComicRepository by unused {
+            override suspend fun getComicList(
+                page: Int,
+                order: ComicSearchOrderFilter,
+                searchContent: String,
+                year: String,
+                month: String,
+            ): NetWorkResult<ComicSearchPage> {
                 failure.get()?.let { throw it }
-                return NetWorkResult.Success(ComicPage(listOf(Comic.create(1, "已有历史", emptyList()))))
+                return NetWorkResult.Success(
+                    ComicSearchPage(
+                        items = listOf(Comic.create(1, "已有条目", emptyList())),
+                        total = 1,
+                    ),
+                )
             }
         }
         val pager = Pager(PagingConfig(pageSize = 20)) {
-            HistoryComicPagingSource(repository)
+            SearchComicPagingSource(repository, SearchComicFilter(searchContent = "关键词"))
         }.flow.cachedIn(compose.activity.lifecycleScope)
         compose.setContent {
             val items = pager.collectAsLazyPagingItems()
             // Tests the production paging grid; app navigation/resume is a separate scope.
-            refreshHistory = items::refresh
+            refreshItems = items::refresh
             MaterialTheme {
                 PullRefreshAndLoadMoreGrid(
                     lazyPagingItems = items,

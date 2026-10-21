@@ -21,7 +21,7 @@ fun translateCommentTime(time: String): String {
 }
 
 /**
- * 上游 `addtime` 原文 →「x年x月x日上架」。空值返回空串，UI 不展示。
+ * 上游 `addtime` 原文 →「x年x月x日更新」。空值返回空串，UI 不展示。
  * 兼容：
  * - Unix 秒 / 毫秒时间戳（如 `1772762965`）
  * - `2024-03-15`、`2024/03/15`、`2024-03-15 12:00:00`
@@ -37,7 +37,7 @@ fun formatAlbumAddTimeDisplay(raw: String): String {
             java.text.SimpleDateFormat("yyyy年M月d日", Locale.CHINA)
                 .format(java.util.Date(millis))
         }.getOrNull()
-        if (formatted != null) return "${formatted}上架"
+        if (formatted != null) return "${formatted}更新"
     }
     val datePart = trimmed.substringBefore(' ').substringBefore('T')
     val parts = datePart.split(Regex("[/.\\-]"))
@@ -45,7 +45,7 @@ fun formatAlbumAddTimeDisplay(raw: String): String {
         val year = parts[0]
         val month = parts[1].toIntOrNull() ?: parts[1]
         val day = parts[2].toIntOrNull() ?: parts[2]
-        return "${year}年${month}月${day}日上架"
+        return "${year}年${month}月${day}日更新"
     }
-    return "${trimmed}上架"
+    return "${trimmed}更新"
 }

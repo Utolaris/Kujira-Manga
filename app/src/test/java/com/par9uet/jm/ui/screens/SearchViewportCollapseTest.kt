@@ -1,6 +1,6 @@
 package com.par9uet.jm.ui.screens
 
-import com.par9uet.jm.ui.interaction.ListPositionMemory
+import com.par9uet.jm.ui.models.ListPositionMemory
 import com.par9uet.jm.ui.interaction.restoreTargetIndex
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull

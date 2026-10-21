@@ -9,8 +9,6 @@ import com.par9uet.jm.favorites.data.FavoriteDownloader
 import com.par9uet.jm.favorites.data.FavoriteLocalMutation
 import com.par9uet.jm.favorites.data.FavoriteRemoteMutation
 import com.par9uet.jm.favorites.model.FavoriteLocalQuery
-import com.par9uet.jm.favorites.model.FavoriteSession
-import com.par9uet.jm.favorites.model.FavoriteSessionSnapshot
 import com.par9uet.jm.favorites.model.FavoriteSyncUiState
 import com.par9uet.jm.favorites.model.FavoritesFilter
 import com.par9uet.jm.favorites.model.FavoritesIntent
@@ -26,8 +24,8 @@ import com.par9uet.jm.favorites.usecase.RenameFavoriteFolder
 import com.par9uet.jm.favorites.usecase.UncollectFavorites
 import com.par9uet.jm.core.network.NetWorkResult
 import com.par9uet.jm.storage.ContentPreferences
-import com.par9uet.jm.ui.interaction.ListPositionMemory
-import com.par9uet.jm.ui.interaction.favoritesListPositionKey
+import com.par9uet.jm.ui.models.ListPositionMemory
+import com.par9uet.jm.ui.models.favoritesListPositionKey
 import com.par9uet.jm.core.ToastManager
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -48,7 +46,6 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -508,6 +505,7 @@ class FavoritesViewModelTest {
     private class FakeLocalSettings : ContentPreferences {
         override val blockedTags: StateFlow<List<String>> =
             MutableStateFlow(emptyList<String>()).asStateFlow()
+        override val blockedCommentKeywords = kotlinx.coroutines.flow.MutableStateFlow(emptyList<String>())
     }
 
     private class RecordingSyncRequester(

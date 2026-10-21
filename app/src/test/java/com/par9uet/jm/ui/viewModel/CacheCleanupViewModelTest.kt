@@ -42,6 +42,14 @@ class CacheCleanupViewModelTest {
 
     private fun manager() = LocalSettingManager(MemPersistence(), Applier())
 
+    private fun viewModel(
+        files: CacheFiles, manager: LocalSettingManager,
+        clearReader: suspend () -> Unit, clearDownloads: suspend (suspend () -> Unit) -> Unit,
+        toast: ToastManager,
+    ) = CacheCleanupViewModel(files, manager,
+        com.par9uet.jm.cache.molecule.CacheCleanupOperations(files, {}, clearReader, clearDownloads), toast)
+
+
     private fun sampleScan() = listOf(
         CacheSize(CacheArea.COMMON, 80L * 1024 * 1024),
         CacheSize(CacheArea.READER, 200L * 1024 * 1024),
@@ -57,7 +65,7 @@ class CacheCleanupViewModelTest {
             override suspend fun scan() = scan
             override suspend fun remove(areas: Set<CacheArea>) { }
         }
-        val vm = CacheCleanupViewModel(files, manager, {}, {}, ToastManager())
+        val vm = viewModel(files, manager, {}, {}, ToastManager())
         runCurrent()
         assertEquals(CacheBudget.DEFAULT_TOTAL_MB, vm.state.value.budgetMb)
         assertEquals(1180L * 1024 * 1024, vm.state.value.compositionTotalBytes)
@@ -98,7 +106,7 @@ class CacheCleanupViewModelTest {
             override suspend fun scan() = scan
             override suspend fun remove(areas: Set<CacheArea>) { }
         }
-        val vm = CacheCleanupViewModel(files, manager, {}, {}, ToastManager())
+        val vm = viewModel(files, manager, {}, {}, ToastManager())
         runCurrent()
         assertEquals(400L, vm.state.value.compositionTotalBytes)
         assertEquals(400L, vm.state.value.pieSlices.sumOf { it.sizeBytes })
@@ -113,14 +121,13 @@ class CacheCleanupViewModelTest {
             override suspend fun scan() = sampleScan()
             override suspend fun remove(areas: Set<CacheArea>) { }
         }
-        val vm = CacheCleanupViewModel(files, manager, {}, {}, ToastManager())
+        val vm = viewModel(files, manager, {}, {}, ToastManager())
         runCurrent()
         vm.setBudgetMb(CacheBudget.UNLIMITED_MB)
         runCurrent()
         assertTrue(vm.state.value.budgetUnlimited)
         assertEquals(CacheBudget.UNLIMITED_MB, vm.state.value.budgetMb)
         assertFalse(vm.state.value.overBudget)
-        assertEquals(0f, vm.state.value.usageRatio, 0f)
     }
 
     @Test
@@ -136,7 +143,7 @@ class CacheCleanupViewModelTest {
             override suspend fun scan() = huge
             override suspend fun remove(areas: Set<CacheArea>) { }
         }
-        val vm = CacheCleanupViewModel(files, manager, {}, {}, ToastManager())
+        val vm = viewModel(files, manager, {}, {}, ToastManager())
         runCurrent()
         vm.setBudgetMb(512)
         runCurrent()
@@ -156,7 +163,7 @@ class CacheCleanupViewModelTest {
             override suspend fun scan() = scanned
             override suspend fun remove(areas: Set<CacheArea>) { }
         }
-        val vm = CacheCleanupViewModel(files, manager, {}, {}, ToastManager())
+        val vm = viewModel(files, manager, {}, {}, ToastManager())
         runCurrent()
         assertEquals(280L * mb, vm.state.value.controlledUsedBytes)
 
@@ -191,7 +198,7 @@ class CacheCleanupViewModelTest {
 
             override suspend fun remove(areas: Set<CacheArea>) { }
         }
-        val vm = CacheCleanupViewModel(files, manager, {}, {}, ToastManager())
+        val vm = viewModel(files, manager, {}, {}, ToastManager())
         runCurrent()
         scans = 0
 
@@ -240,7 +247,7 @@ class CacheCleanupViewModelTest {
             override suspend fun scan() = overQuotaScan()
             override suspend fun remove(areas: Set<CacheArea>) { }
         }
-        val vm = CacheCleanupViewModel(files, manager, { readerCleared = true }, {}, ToastManager())
+        val vm = viewModel(files, manager, { readerCleared = true }, {}, ToastManager())
         runCurrent()
         assertEquals(700L * MB, vm.state.value.controlledUsedBytes)
         assertNull(vm.state.value.cleanPrompt)
@@ -271,7 +278,7 @@ class CacheCleanupViewModelTest {
                 cleared = true
             }
         }
-        val vm = CacheCleanupViewModel(files, manager, { readerCleared = true }, {}, ToastManager())
+        val vm = viewModel(files, manager, { readerCleared = true; cleared = true }, {}, ToastManager())
         runCurrent()
         vm.setBudgetMb(512)
         runCurrent()
@@ -283,10 +290,7 @@ class CacheCleanupViewModelTest {
         assertNull(vm.state.value.cleanPrompt)
         assertTrue(readerCleared)
         // 豁免开启时下载不参与删除。
-        assertEquals(
-            setOf(CacheArea.COMMON, CacheArea.READER),
-            removed,
-        )
+        assertNull(removed) // Owner APIs clear cover/reader; raw deletion must not touch them.
         assertEquals(0L, vm.state.value.controlledUsedBytes)
         assertFalse(vm.state.value.overBudget)
     }
@@ -299,7 +303,7 @@ class CacheCleanupViewModelTest {
             override suspend fun scan() = overQuotaScan()
             override suspend fun remove(areas: Set<CacheArea>) { }
         }
-        val vm = CacheCleanupViewModel(files, manager, { readerCleared = true }, {}, ToastManager())
+        val vm = viewModel(files, manager, { readerCleared = true }, {}, ToastManager())
         runCurrent()
         vm.setBudgetMb(512)
         runCurrent()
@@ -326,7 +330,7 @@ class CacheCleanupViewModelTest {
             override suspend fun scan() = overQuotaScan()
             override suspend fun remove(areas: Set<CacheArea>) { }
         }
-        val vm = CacheCleanupViewModel(files, manager, {}, {}, ToastManager())
+        val vm = viewModel(files, manager, {}, {}, ToastManager())
         runCurrent()
 
         vm.setBudgetMb(2048)
@@ -355,7 +359,7 @@ class CacheCleanupViewModelTest {
             override suspend fun scan() = sampleScan() // 受控仅 280MB
             override suspend fun remove(areas: Set<CacheArea>) { }
         }
-        val vm = CacheCleanupViewModel(files, manager, {}, {}, ToastManager())
+        val vm = viewModel(files, manager, {}, {}, ToastManager())
         runCurrent()
 
         vm.setBudgetMb(512)
@@ -373,7 +377,7 @@ class CacheCleanupViewModelTest {
             override suspend fun scan() = overQuotaScan()
             override suspend fun remove(areas: Set<CacheArea>) { }
         }
-        val vm = CacheCleanupViewModel(files, manager, {}, {}, ToastManager())
+        val vm = viewModel(files, manager, {}, {}, ToastManager())
         runCurrent()
         vm.setBudgetMb(512)
         runCurrent()
@@ -406,7 +410,7 @@ class CacheCleanupViewModelTest {
 
                 override suspend fun remove(areas: Set<CacheArea>) { }
             }
-            val vm = CacheCleanupViewModel(files, manager, {}, {}, toastManager)
+            val vm = viewModel(files, manager, {}, {}, toastManager)
             runCurrent()
             assertEquals(280L * 1024 * 1024, vm.state.value.controlledUsedBytes)
 

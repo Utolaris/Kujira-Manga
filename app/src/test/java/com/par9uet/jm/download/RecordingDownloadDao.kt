@@ -20,7 +20,6 @@ internal class RecordingDownloadDao : DownloadComicDao {
         .sortedBy { it.createTime }
     override suspend fun getCompleteByGroupId(groupId: Int): List<DownloadComic> = error("Unexpected DAO call")
     override suspend fun getExistingIds(ids: List<Int>): List<Int> = ids.filter { it in tasks }
-    override fun isExist(comicId: Int): Flow<Boolean> = error("Unexpected DAO call")
     override suspend fun updateCover(updateComicCover: UpdateComicCover) {
         val task = tasks.getValue(updateComicCover.id)
         tasks[task.id] = task.copy(coverPath = updateComicCover.coverPath)

@@ -6,12 +6,15 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Card
+import com.par9uet.jm.ui.components.MotionCard as Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.ui.geometry.Rect
+import com.par9uet.jm.ui.interaction.coverSourceBounds
+import com.par9uet.jm.ui.models.LocalCoverNavigator
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -35,6 +38,8 @@ fun Comic(
 ) {
     val mainNavController = LocalMainNavController.current
     val detailOpener = LocalComicDetailOpener.current
+    val coverNavigator = LocalCoverNavigator.current
+    var coverBounds by remember(comic.id) { mutableStateOf<Rect?>(null) }
     // 宿主显式传入或 CompositionLocal 均可；任一为真即延迟封面上屏。
     val localGridScrolling = LocalComicGridScrolling.current
     val effectiveScrolling = isScrolling || localGridScrolling
@@ -47,12 +52,11 @@ fun Comic(
                 } else {
                     // 预置详情状态由组合根负责：调用方（App）先 seed 再导航，
                     // 组件本身不认识 ViewModel。未提供时退化为直接导航。
-                    val opener = detailOpener
-                    if (opener != null) {
-                        opener.open(comic)
-                    } else {
-                        mainNavController.navigate("comicDetail/${comic.id}")
+                    val open = {
+                        if (detailOpener != null) detailOpener.open(comic)
+                        else mainNavController.navigate("comicDetail/${comic.id}")
                     }
+                    if (coverNavigator != null) coverNavigator.open(comic, coverBounds, open) else open()
                 }
             },
             onLongClick = {
@@ -72,7 +76,8 @@ fun Comic(
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Box {
-                ComicCoverImage(comic = comic, isScrolling = effectiveScrolling)
+                ComicCoverImage(comic = comic, isScrolling = effectiveScrolling,
+                    modifier = Modifier.coverSourceBounds(comic.id) { coverBounds = it })
                 if (editing && selected) {
                     Checkbox(
                         checked = true,

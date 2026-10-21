@@ -15,11 +15,11 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.NavigateBefore
 import androidx.compose.material.icons.automirrored.filled.NavigateNext
-import androidx.compose.material3.FilledTonalIconButton
+import com.par9uet.jm.ui.components.MotionFilledTonalIconButton as FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.par9uet.jm.ui.components.MotionTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -39,7 +39,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.par9uet.jm.ui.glass.GlassSurface
 import com.par9uet.jm.ui.glass.GlassSurfaceStyle
-import com.par9uet.jm.ui.haptics.AppHaptics
+import com.par9uet.jm.core.AppHaptics
 import kotlin.math.roundToInt
 
 @Composable
@@ -72,8 +72,8 @@ fun ToolsBar(
         GlassSurface(
             surfaceId = "reader-bottom-controls",
             modifier = Modifier
-                .fillMaxWidth()
-                .widthIn(max = 560.dp),
+                .widthIn(max = 560.dp)
+                .fillMaxWidth(),
             style = GlassSurfaceStyle.reader(cornerRadius = 28.dp),
             surfaceAlpha = surfaceAlpha,
         ) {

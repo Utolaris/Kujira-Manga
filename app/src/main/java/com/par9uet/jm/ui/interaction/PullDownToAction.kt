@@ -42,7 +42,6 @@ internal class PullDownActionState(
     var phase by mutableStateOf(PullDownActionPhase.IDLE)
         private set
     val progress: Float get() = (distance / threshold).coerceIn(0f, 1f)
-    val isArmed: Boolean get() = phase == PullDownActionPhase.ARMED
     val isTriggering: Boolean get() = phase == PullDownActionPhase.TRIGGERING
 
     private var triggerClaimed = false

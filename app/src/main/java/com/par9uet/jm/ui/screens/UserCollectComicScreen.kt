@@ -37,7 +37,7 @@ import com.par9uet.jm.ui.components.adaptiveComicGridCells
 import com.par9uet.jm.ui.components.comicGridMinCellSize
 import com.par9uet.jm.ui.interaction.pullDownToAction
 import com.par9uet.jm.ui.interaction.PullDownActionState
-import com.par9uet.jm.ui.interaction.favoritesListPositionKey
+import com.par9uet.jm.ui.models.favoritesListPositionKey
 import com.par9uet.jm.ui.interaction.rememberPullDownActionState
 import com.par9uet.jm.ui.interaction.rememberRestoringGridState
 import com.par9uet.jm.favorites.model.FavoritesIntent

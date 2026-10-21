@@ -3,6 +3,12 @@ package com.par9uet.jm.ui.screens
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import com.par9uet.jm.ui.navigation.CoverNavigationHost
+import com.par9uet.jm.ui.navigation.CoverOrigins
+import com.par9uet.jm.ui.interaction.CoverDetailTransition
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -28,11 +34,11 @@ import org.koin.compose.viewmodel.koinActivityViewModel
 fun AppScreen(
     searchViewModel: SearchViewModel = koinActivityViewModel(),
     externalNavController: NavHostController? = null,
-    listPositionMemory: com.par9uet.jm.ui.interaction.ListPositionMemory =
-        org.koin.compose.koinInject(),
+    listPositionMemory: com.par9uet.jm.ui.models.ListPositionMemory,
 ) {
     val mainNavController = externalNavController ?: rememberNavController()
     val context = LocalContext.current
+    val coverOrigins = remember { CoverOrigins() }
     // 处理从通知点击进入时的目标路由（例如更新下载完成通知）
     LaunchedEffect(Unit) {
         val activity = context.findActivity()
@@ -45,144 +51,175 @@ fun AppScreen(
         LocalMainNavController provides mainNavController,
         LocalListPositionMemory provides listPositionMemory,
     ) {
-        NavHost(
-            modifier = Modifier.fillMaxSize(),
-            navController = mainNavController,
-            startDestination = "tab/home",
-            enterTransition = { NavigationMotion.hierarchicalEnter() },
-            exitTransition = { NavigationMotion.hierarchicalExit() },
-            popEnterTransition = { NavigationMotion.hierarchicalPopEnter() },
-            popExitTransition = { NavigationMotion.hierarchicalPopExit() },
-            predictivePopEnterTransition = { swipeEdge ->
-                NavigationMotion.predictivePopEnter(swipeEdge)
-            },
-            predictivePopExitTransition = { swipeEdge ->
-                NavigationMotion.predictivePopExit(swipeEdge)
-            },
-        ) {
-            composable(
-                route = "tab/{tabName}?",
-                arguments = listOf(
-                    navArgument(name = "tabName") {
-                        type = NavType.StringType; defaultValue = null; nullable = true
-                    }
-                ),
-            ) { backStackEntry ->
-                val tabName = backStackEntry.arguments?.getString("tabName") ?: "home"
-                TabScreen(tabName = tabName)
-            }
-            composable(
-                route = "login?reauthenticate={reauthenticate}",
-                arguments = listOf(navArgument("reauthenticate") {
-                    type = NavType.BoolType
-                    defaultValue = false
-                }),
-            ) { entry ->
-                LoginScreen(reauthenticate = entry.arguments?.getBoolean("reauthenticate") == true)
-            }
-            composable(route = "userHistoryComic") { UserHistoryComicScreen() }
-            composable(route = "userHistoryComment") { UserHistoryCommentScreen() }
-            composable(route = "appLocalSetting") { LocalSettingScreen() }
-            composable(route = "dohSetting") { DohSettingScreen() }
-            composable(route = "appLockSetting") { AppLockSettingScreen() }
-            composable(route = "colorPalette") { ColorPaletteScreen() }
-            composable(route = "blockedTags") { BlockedTagsScreen() }
-            composable(route = "checkUpdate") { CheckUpdateScreen() }
-            composable(route = "logViewer") { LogViewerScreen() }
-            composable(route = "cacheCleanup") { CacheCleanupScreen() }
-            composable(route = "backupRestore") { BackupRestoreScreen() }
-            composable(
-                route = "comicDetail/{id}",
-                arguments = listOf(
-                    navArgument(name = "id") { type = NavType.IntType; defaultValue = -1 }
-                ),
-            ) { backStackEntry ->
-                val id = backStackEntry.arguments?.getInt("id") ?: -1
-                ComicDetailScreen(id = id)
-            }
-            composable(
-                route = "comicChapter?currentChapterId={currentChapterId}",
-                arguments = listOf(
-                    navArgument(name = "currentChapterId") { type = NavType.IntType; defaultValue = -1 }
-                ),
-            ) { backStackEntry ->
-                val currentChapterId = backStackEntry.arguments?.getInt("currentChapterId") ?: -1
-                ComicChapterScreen(currentChapterId = currentChapterId)
-            }
-            composable(
-                route = "comicRelate",
-            ) { ComicRelateListScreen() }
-            composable(
-                route = "comicRead/{id}",
-                arguments = listOf(
-                    navArgument(name = "id") { type = NavType.IntType; defaultValue = -1 }
-                ),
-            ) { backStackEntry ->
-                val id = backStackEntry.arguments?.getInt("id") ?: -1
-                ComicReadScreen(comicId = id)
-            }
-            composable(
-                route = "comicSearch?searchContent={searchContent}&excludedTags={excludedTags}",
-                arguments = listOf(
-                    navArgument(name = "searchContent") {
-                        type = NavType.StringType
-                        defaultValue = ""
-                    },
-                    navArgument(name = "excludedTags") {
-                        type = NavType.StringType
-                        defaultValue = ""
-                    }
-                ),
-            ) { backStackEntry ->
-                val searchContent = backStackEntry.arguments?.getString("searchContent") ?: ""
-                val excludedTags = deserializeExcludedTags(
-                    backStackEntry.arguments?.getString("excludedTags")
-                )
-                ComicSearchScreen(
-                    initialSearchContent = searchContent,
-                    initialExcludedTags = excludedTags
-                )
-            }
-            composable(route = "extractCode") { ExtractCodeScreen() }
-            composable(
-                route = "comicSearchResult/{searchContent}?excludedTags={excludedTags}",
-                arguments = listOf(
-                    navArgument(name = "searchContent") { type = NavType.StringType },
-                    navArgument(name = "excludedTags") {
-                        type = NavType.StringType
-                        defaultValue = ""
-                    }
-                ),
-            ) { backStackEntry ->
-                val searchContent = backStackEntry.arguments?.getString("searchContent") ?: ""
-                val excludedTagsValue = backStackEntry.arguments?.getString("excludedTags") ?: ""
-                val excludedTags = deserializeExcludedTags(excludedTagsValue)
-                LaunchedEffect(searchContent, excludedTagsValue) {
-                    // 路由参数是本次结果的权威查询；查询变化会 bump revision 换新 Pager。
-                    searchViewModel.enterSearchResult(searchContent, excludedTags)
+        CoverNavigationHost(coverOrigins) {
+            NavHost(
+                modifier = Modifier.fillMaxSize(),
+                navController = mainNavController,
+                startDestination = "tab/home",
+                enterTransition = { NavigationMotion.hierarchicalEnter() },
+                exitTransition = {
+                    if (targetState.destination.route in setOf("comicDetail/{id}", "downloadComicDetail/{id}")) ExitTransition.None
+                    else NavigationMotion.hierarchicalExit()
+                },
+                popEnterTransition = {
+                    if (initialState.destination.route in setOf("comicDetail/{id}", "downloadComicDetail/{id}")) EnterTransition.None
+                    else NavigationMotion.hierarchicalPopEnter()
+                },
+                popExitTransition = { NavigationMotion.hierarchicalPopExit() },
+                predictivePopEnterTransition = { swipeEdge ->
+                    NavigationMotion.predictivePopEnter(swipeEdge)
+                },
+                predictivePopExitTransition = { swipeEdge ->
+                    NavigationMotion.predictivePopExit(swipeEdge)
+                },
+            ) {
+                composable(
+                    route = "tab/{tabName}?",
+                    arguments = listOf(
+                        navArgument(name = "tabName") {
+                            type = NavType.StringType; defaultValue = null; nullable = true
+                        }
+                    ),
+                ) { backStackEntry ->
+                    val tabName = backStackEntry.arguments?.getString("tabName") ?: "home"
+                    TabScreen(tabName = tabName)
                 }
-                ComicSearchResultScreen()
-            }
-            composable(route = "comicRecommend") { ComicWeekRecommendScreen() }
-            composable(route = "sign") { SignInScreen() }
-            composable(route = "download") { DownloadScreen() }
-            composable(
-                route = "downloadComicDetail/{id}",
-                arguments = listOf(
-                    navArgument(name = "id") { type = NavType.IntType; defaultValue = -1 }
-                ),
-            ) { backStackEntry ->
-                val id = backStackEntry.arguments?.getInt("id") ?: -1
-                DownloadComicDetailScreen(id = id)
-            }
-            composable(
-                route = "localComicRead/{id}",
-                arguments = listOf(
-                    navArgument(name = "id") { type = NavType.IntType; defaultValue = -1 }
-                ),
-            ) { backStackEntry ->
-                val id = backStackEntry.arguments?.getInt("id") ?: -1
-                ComicReadScreen(comicId = id, localOnly = true)
+                composable(
+                    route = "login?reauthenticate={reauthenticate}",
+                    arguments = listOf(navArgument("reauthenticate") {
+                        type = NavType.BoolType
+                        defaultValue = false
+                    }),
+                ) { entry ->
+                    LoginScreen(reauthenticate = entry.arguments?.getBoolean("reauthenticate") == true)
+                }
+                composable(route = "userHistoryComic") { UserHistoryComicScreen() }
+                composable(route = "notifications") { NotificationScreen() }
+                composable(route = "dinner") { DinnerScreen() }
+                composable(
+                    route = "dinnerArticle/{id}",
+                    arguments = listOf(navArgument("id") { type = NavType.IntType }),
+                ) { entry -> DinnerArticleScreen(entry.arguments?.getInt("id") ?: -1) }
+                composable(route = "userHistoryComment") { UserHistoryCommentScreen() }
+                composable(route = "appLocalSetting") { LocalSettingScreen() }
+                composable(route = "dohSetting") { DohSettingScreen() }
+                composable(route = "appLockSetting") { AppLockSettingScreen() }
+                composable(route = "colorPalette") { ColorPaletteScreen() }
+                composable(route = "blockedTags") { BlockedTagsScreen() }
+                composable(route = "commentFilter") { CommentFilterScreen() }
+                composable(route = "checkUpdate") { CheckUpdateScreen() }
+                composable(route = "logViewer") { LogViewerScreen() }
+                composable(route = "cacheCleanup") { CacheCleanupScreen() }
+                composable(route = "backupRestore") { BackupRestoreScreen() }
+                composable(
+                    route = "comicDetail/{id}",
+                    enterTransition = { EnterTransition.None },
+                    popExitTransition = { ExitTransition.None },
+                    arguments = listOf(
+                        navArgument(name = "id") { type = NavType.IntType; defaultValue = -1 }
+                    ),
+                ) { backStackEntry ->
+                    val id = backStackEntry.arguments?.getInt("id") ?: -1
+                    val origin = remember(backStackEntry.id) { coverOrigins.take(backStackEntry, id) }
+                    val sourcePageKey = remember(backStackEntry.id) { origin?.sourcePageKey ?: mainNavController.previousBackStackEntry?.id }
+                    CoverDetailTransition(backStackEntry.id, origin, onExit = { mainNavController.popBackStack() },
+                        comicId = id, sourcePageKey = sourcePageKey) {
+                        ComicDetailScreen(id = id)
+                    }
+                }
+                composable(
+                    route = "comicChapter?currentChapterId={currentChapterId}",
+                    arguments = listOf(
+                        navArgument(name = "currentChapterId") { type = NavType.IntType; defaultValue = -1 }
+                    ),
+                ) { backStackEntry ->
+                    val currentChapterId = backStackEntry.arguments?.getInt("currentChapterId") ?: -1
+                    ComicChapterScreen(currentChapterId = currentChapterId)
+                }
+                composable(
+                    route = "comicRelate",
+                ) { ComicRelateListScreen() }
+                composable(
+                    route = "comicRead/{id}?historyId={historyId}",
+                    arguments = listOf(
+                        navArgument(name = "id") { type = NavType.IntType; defaultValue = -1 },
+                        navArgument(name = "historyId") { type = NavType.IntType; defaultValue = -1 },
+                    ),
+                ) { backStackEntry ->
+                    val id = backStackEntry.arguments?.getInt("id") ?: -1
+                    val historyId = backStackEntry.arguments?.getInt("historyId") ?: -1
+                    ComicReadScreen(comicId = id, historyId = historyId)
+                }
+                composable(
+                    route = "comicSearch?searchContent={searchContent}&excludedTags={excludedTags}",
+                    arguments = listOf(
+                        navArgument(name = "searchContent") {
+                            type = NavType.StringType
+                            defaultValue = ""
+                        },
+                        navArgument(name = "excludedTags") {
+                            type = NavType.StringType
+                            defaultValue = ""
+                        }
+                    ),
+                ) { backStackEntry ->
+                    val searchContent = backStackEntry.arguments?.getString("searchContent") ?: ""
+                    val excludedTags = deserializeExcludedTags(
+                        backStackEntry.arguments?.getString("excludedTags")
+                    )
+                    ComicSearchScreen(
+                        initialSearchContent = searchContent,
+                        initialExcludedTags = excludedTags
+                    )
+                }
+                composable(route = "extractCode") { ExtractCodeScreen() }
+                composable(
+                    route = "comicSearchResult/{searchContent}?excludedTags={excludedTags}",
+                    arguments = listOf(
+                        navArgument(name = "searchContent") { type = NavType.StringType },
+                        navArgument(name = "excludedTags") {
+                            type = NavType.StringType
+                            defaultValue = ""
+                        }
+                    ),
+                ) { backStackEntry ->
+                    val searchContent = backStackEntry.arguments?.getString("searchContent") ?: ""
+                    val excludedTagsValue = backStackEntry.arguments?.getString("excludedTags") ?: ""
+                    val excludedTags = deserializeExcludedTags(excludedTagsValue)
+                    LaunchedEffect(searchContent, excludedTagsValue) {
+                        // 路由参数是本次结果的权威查询；查询变化会 bump revision 换新 Pager。
+                        searchViewModel.enterSearchResult(searchContent, excludedTags)
+                    }
+                    ComicSearchResultScreen()
+                }
+                composable(route = "comicRecommend") { ComicWeekRecommendScreen() }
+                composable(route = "sign") { SignInScreen() }
+                composable(route = "download") { DownloadScreen() }
+                composable(
+                    route = "downloadComicDetail/{id}",
+                    enterTransition = { EnterTransition.None },
+                    popExitTransition = { ExitTransition.None },
+                    arguments = listOf(
+                        navArgument(name = "id") { type = NavType.IntType; defaultValue = -1 }
+                    ),
+                ) { backStackEntry ->
+                    val id = backStackEntry.arguments?.getInt("id") ?: -1
+                    val origin = remember(backStackEntry.id) { coverOrigins.take(backStackEntry, id) }
+                    val sourcePageKey = remember(backStackEntry.id) { origin?.sourcePageKey ?: mainNavController.previousBackStackEntry?.id }
+                    CoverDetailTransition(backStackEntry.id, origin, onExit = { mainNavController.popBackStack() },
+                        comicId = id, sourcePageKey = sourcePageKey) {
+                        DownloadComicDetailScreen(id = id)
+                    }
+                }
+                composable(
+                    route = "localComicRead/{id}",
+                    arguments = listOf(
+                        navArgument(name = "id") { type = NavType.IntType; defaultValue = -1 }
+                    ),
+                ) { backStackEntry ->
+                    val id = backStackEntry.arguments?.getInt("id") ?: -1
+                    ComicReadScreen(comicId = id, localOnly = true)
+                }
             }
         }
     }

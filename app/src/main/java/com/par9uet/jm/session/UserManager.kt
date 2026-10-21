@@ -326,7 +326,6 @@ class UserManager(
             generation = generation,
             password = password,
             result = result,
-            clearUserOnError = false,
         )
         when (committed) {
             is NetWorkResult.Error ->
@@ -461,19 +460,6 @@ class UserManager(
         }
     }
 
-    /** Refreshes the active account and clears it only when the server rejects its credentials. */
-    suspend fun refreshAuthenticatedUser(username: String, password: String) {
-        cancelBackgroundJob()
-        val generation = beginManualLogin()
-        val result = userRepository.login(username, password)
-        commitLoginResult(
-            generation = generation,
-            password = password,
-            result = result,
-            clearUserOnError = true,
-        )
-    }
-
     /**
      * Runs [block] as the tracked background job and suspends until it finishes. The caller that
      * cancels this job does not join it, so a blocking embedded call cannot delay manual actions.
@@ -537,24 +523,17 @@ class UserManager(
         generation: Long,
         password: String,
         result: NetWorkResult<CandidateSession>,
-        clearUserOnError: Boolean,
     ): NetWorkResult<CandidateSession> {
         coroutineContext.ensureActive()
         return withSessionTransition {
             if (sessionGeneration.get() != generation) return@withSessionTransition result
             when (result) {
                 is NetWorkResult.Error -> {
-                    if (clearUserOnError && result.authFailure == AuthFailure.InvalidCredentials) {
-                        if (clearIdentityWhileLocked(result.message)) {
-                            sessionReadinessHolder.set(SessionReadiness.Unauthenticated)
-                        }
-                    } else {
-                        _userState.update {
-                            it.copy(
-                                isError = true,
-                                errorMsg = result.message,
-                            )
-                        }
+                    _userState.update {
+                        it.copy(
+                            isError = true,
+                            errorMsg = result.message,
+                        )
                     }
                 }
 
@@ -572,9 +551,7 @@ class UserManager(
                     sessionReadinessHolder.set(SessionReadiness.Authenticated)
                 }
             }
-            if (result !is NetWorkResult.Error || result.authFailure != AuthFailure.InvalidCredentials || !clearUserOnError) {
-                _userState.update { it.copy(isLoading = false) }
-            }
+            _userState.update { it.copy(isLoading = false) }
             result
         }
     }
@@ -590,7 +567,7 @@ class UserManager(
         publishSession()
     }
 
-    private fun clearIdentityWhileLocked(errorMsg: String? = null): Boolean {
+    private fun clearIdentityWhileLocked(): Boolean {
         if (!cookieStorage.clearSession()) {
             _userState.update { it.copy(isLoading = false, isError = true, errorMsg = "退出登录未能保存，请重试") }
             return false
@@ -600,8 +577,8 @@ class UserManager(
             it.copy(
                 data = User.create(),
                 isLoading = false,
-                isError = errorMsg != null,
-                errorMsg = errorMsg.orEmpty(),
+                isError = false,
+                errorMsg = "",
             )
         }
         userRepository.clearSession()

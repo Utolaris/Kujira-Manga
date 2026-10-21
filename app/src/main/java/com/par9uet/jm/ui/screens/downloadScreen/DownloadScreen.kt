@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -32,7 +33,7 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.par9uet.jm.ui.components.MotionIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -48,10 +49,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.par9uet.jm.ui.components.adaptiveComicGridCells
+import com.par9uet.jm.ui.components.comicGridMinCellSize
 import com.par9uet.jm.ui.components.BackIconButton
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.glass.AppGlassTopBar
@@ -463,34 +465,30 @@ private fun CompletedGrid(
     onLongClick: (DownloadItemGroup) -> Unit
 ) {
     val density = LocalDensity.current
-    val screenWidthDp = with(density) { LocalWindowInfo.current.containerSize.width.toDp() }
-    val columns = if (gridColumns > 0) {
-        gridColumns
-    } else {
-        when {
-            screenWidthDp >= 600.dp -> 4
-            screenWidthDp >= 400.dp -> 3
-            else -> 2
-        }
-    }
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        groups.chunked(columns).forEach { row ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                row.forEach { group ->
-                    DownloadCoverGridItem(
-                        modifier = Modifier.weight(1f),
-                        group = group,
-                        editing = editing,
-                        selected = selectedIds.containsAll(group.itemIds),
-                        onClick = { onClick(group) },
-                        onLongClick = { onLongClick(group) }
-                    )
-                }
-                repeat(columns - row.size) {
-                    Spacer(modifier = Modifier.weight(1f))
+    val cells = adaptiveComicGridCells(gridColumns, comicGridMinCellSize())
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val columns = with(cells) {
+            with(density) { calculateCrossAxisCellSizes(maxWidth.roundToPx(), 12.dp.roundToPx()).size }
+        }.coerceAtLeast(1)
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            groups.chunked(columns).forEach { row ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    row.forEach { group ->
+                        DownloadCoverGridItem(
+                            modifier = Modifier.weight(1f),
+                            group = group,
+                            editing = editing,
+                            selected = selectedIds.containsAll(group.itemIds),
+                            onClick = { onClick(group) },
+                            onLongClick = { onLongClick(group) }
+                        )
+                    }
+                    repeat(columns - row.size) {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
                 }
             }
         }

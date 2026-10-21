@@ -1,4 +1,5 @@
 package com.par9uet.jm.ui.screens.readScreen
+import com.par9uet.jm.ui.components.ReimuLoadingIndicator
 import com.par9uet.jm.reader.readerPageKey
 
 import androidx.compose.foundation.Image
@@ -7,7 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.par9uet.jm.ui.components.MotionTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf

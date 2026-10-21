@@ -43,6 +43,7 @@ class CatalogViewModelWiringTest {
             com.par9uet.jm.storage.BlockedTagTemplatePreferences,
             com.par9uet.jm.storage.MiscSettingsPreferences {
             override val blockedTags = MutableStateFlow(emptyList<String>())
+            override val blockedCommentKeywords = kotlinx.coroutines.flow.MutableStateFlow(emptyList<String>())
             override val preferenceRecommendEnabled = MutableStateFlow(false)
             override val blockedTagTemplates =
                 MutableStateFlow(emptyList<com.par9uet.jm.data.models.BlockedTagTemplate>())
@@ -58,13 +59,19 @@ class CatalogViewModelWiringTest {
         )
         val app = koinApplication {
             modules(comicModule, module {
+                single { com.par9uet.jm.startup.StartupHomeLoad() }
                 single<ComicRepository> { repository }
+                single<com.par9uet.jm.notification.model.NotificationUnreadStatus> {
+                    object : com.par9uet.jm.notification.model.NotificationUnreadStatus {
+                        override val hasUnread = MutableStateFlow(false)
+                    }
+                }
                 single<ContentPreferences> { settings }
                 single<RecommendationPreferences> { settings }
                 single<com.par9uet.jm.storage.BlockedTagTemplatePreferences> { settings }
                 single<com.par9uet.jm.storage.MiscSettingsPreferences> { settings }
                 single { historySearchManager }
-                single { com.par9uet.jm.ui.interaction.ListPositionMemory() }
+                single { com.par9uet.jm.ui.models.ListPositionMemory() }
             })
         }
         try {

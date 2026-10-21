@@ -7,6 +7,9 @@ import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.data.models.HomeComicSwiperItem
 import com.par9uet.jm.core.network.NetWorkResult
 import com.par9uet.jm.storage.RecommendationPreferences
+import com.par9uet.jm.startup.StartupHomeLoad
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -28,11 +31,14 @@ class HomeViewModel(
     private val recommendationPreferences: RecommendationPreferences,
     private val contentPreferences: com.par9uet.jm.storage.ContentPreferences,
     private val miscSettingsPreferences: com.par9uet.jm.storage.MiscSettingsPreferences,
+    unreadStatus: com.par9uet.jm.notification.model.NotificationUnreadStatus,
+    private val startupHome: StartupHomeLoad = StartupHomeLoad(),
 ) : ViewModel() {
     /** HomeScreen collects these instead of service-locating LocalSettingManager. */
     val preferenceRecommendEnabled = recommendationPreferences.preferenceRecommendEnabled
     val blockedTags = contentPreferences.blockedTags
     val misc = miscSettingsPreferences.misc
+    val hasUnreadNotifications = unreadStatus.hasUnread
 
     /** 首页分类描述：id 供仓库加载，title 为展示名。 */
     data class HomeCategoryInfo(
@@ -69,11 +75,16 @@ class HomeViewModel(
         mutableMapOf<String, List<Comic>>()
     private var networkHomeCache: List<HomeComicSwiperItem>? = null
     private val activeCategoryLoads = mutableMapOf<String, HomeRequestToken>()
+    private var homeActive = false
+    private var promoteRetryNeeded = false
+    private var promoteRetryAttempt = 0
+    private var promoteRetryJob: Job? = null
 
     companion object {
         const val CATEGORY_LATEST = "builtin_latest"
         private const val NETWORK_CATEGORY_PREFIX = "net_"
         private const val PROMOTE_LOAD_KEY = "promote_sections"
+        private val PROMOTE_RETRY_DELAYS_MS = listOf(2_000L, 5_000L, 15_000L, 30_000L, 60_000L)
         val EMBEDDED_CATEGORIES = swapFirstTwoHomePages(
             listOf(
                 HomeCategoryInfo(CATEGORY_LATEST, "最新上架"),
@@ -98,6 +109,10 @@ class HomeViewModel(
         val recommendEnabled = recommendationPreferences.preferenceRecommendEnabled.value
         val topologyChanged = recommendEnabled != lastPreferenceRecommendEnabled
         if (topologyChanged) {
+            promoteRetryJob?.cancel()
+            promoteRetryJob = null
+            promoteRetryNeeded = false
+            promoteRetryAttempt = 0
             // 分类结构变化时作废所有旧 token。阻塞式 JM 请求即使稍后返回，也不能写回新结构。
             homeTopologyGeneration++
             activeCategoryLoads.clear()
@@ -114,6 +129,34 @@ class HomeViewModel(
             }
         } else {
             applyEmbeddedHome()
+        }
+    }
+
+    /** L1 reports visible Home + started lifecycle; retry policy stays in this coordinator. */
+    fun setHomeActive(active: Boolean) {
+        if (homeActive == active) return
+        homeActive = active
+        if (!active) {
+            promoteRetryJob?.cancel()
+            promoteRetryJob = null
+        } else if (shouldRetryPromote()) {
+            promoteRetryAttempt = 0
+            loadPromoteSections()
+        }
+    }
+
+    private fun shouldRetryPromote(): Boolean =
+        homeActive && recommendationPreferences.preferenceRecommendEnabled.value &&
+            lastPreferenceRecommendEnabled == true && promoteRetryNeeded && networkHomeCache == null
+
+    private fun schedulePromoteRetry() {
+        if (!shouldRetryPromote() || promoteRetryJob?.isActive == true) return
+        val retryDelay = PROMOTE_RETRY_DELAYS_MS[promoteRetryAttempt]
+        promoteRetryAttempt = (promoteRetryAttempt + 1).coerceAtMost(PROMOTE_RETRY_DELAYS_MS.lastIndex)
+        promoteRetryJob = viewModelScope.launch {
+            delay(retryDelay)
+            promoteRetryJob = null
+            if (shouldRetryPromote()) loadPromoteSections()
         }
     }
 
@@ -192,7 +235,7 @@ class HomeViewModel(
                     activeCategoryLoads.remove(categoryId)
                 }
             }
-        }
+        }.also(startupHome::track)
     }
 
     private fun loadPromoteSections(
@@ -201,6 +244,8 @@ class HomeViewModel(
     ) {
         val active = activeCategoryLoads[PROMOTE_LOAD_KEY]
         if (!force && active?.topologyGeneration == homeTopologyGeneration) return
+        promoteRetryJob?.cancel()
+        promoteRetryJob = null
 
         val token = newHomeRequestToken(PROMOTE_LOAD_KEY)
         activeCategoryLoads[PROMOTE_LOAD_KEY] = token
@@ -219,11 +264,21 @@ class HomeViewModel(
                 if (!isCurrentHomeRequest(token)) return@launch
                 when (result) {
                     is NetWorkResult.Success -> {
-                        networkHomeCache = result.data
-                        applyPromoteHome(result.data)
+                        // 空响应也不能作为整个进程的成功缓存，否则再也没有补齐栏目的机会。
+                        val hasContent = result.data.any { it.list.isNotEmpty() }
+                        promoteRetryNeeded = !hasContent
+                        if (hasContent) {
+                            networkHomeCache = result.data
+                            promoteRetryAttempt = 0
+                            applyPromoteHome(result.data)
+                        } else {
+                            // 已有可用推荐时，暂时空响应也不能把栏目与内容抹掉。
+                            networkHomeCache?.let(::applyPromoteHome) ?: applyEmbeddedHome()
+                        }
                     }
 
                     is NetWorkResult.Error -> {
+                        promoteRetryNeeded = true
                         when {
                             refreshingCategoryId != null -> {
                                 val current = _homeState.value.states[refreshingCategoryId]
@@ -245,9 +300,10 @@ class HomeViewModel(
             } finally {
                 if (activeCategoryLoads[PROMOTE_LOAD_KEY] == token) {
                     activeCategoryLoads.remove(PROMOTE_LOAD_KEY)
+                    schedulePromoteRetry()
                 }
             }
-        }
+        }.also(startupHome::track)
     }
 
     private fun applyPromoteHome(categories: List<HomeComicSwiperItem>) {

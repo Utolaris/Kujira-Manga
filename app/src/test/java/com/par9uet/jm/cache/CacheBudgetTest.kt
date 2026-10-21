@@ -40,24 +40,15 @@ class CacheBudgetTest {
             CacheBudget.totalBytes(maxMb),
             CacheBudget.totalBytes(CacheBudget.UNLIMITED_MB),
         )
-        assertEquals(0, CacheBudget.downloadCacheMb(maxMb, downloadExempt = true))
-        assertEquals(
-            CacheBudget.downloadCacheMb(maxMb, downloadExempt = false),
-            CacheBudget.downloadCacheMb(CacheBudget.UNLIMITED_MB, downloadExempt = false),
-        )
     }
 
     @Test
     fun `component bytes do not re-apply share`() {
         val componentMb = CacheBudget.coverDiskCacheMb(CacheBudget.UNLIMITED_MB, downloadExempt = true)
         assertEquals(componentMb.toLong() * 1024L * 1024L, CacheBudget.componentMbToBytes(componentMb))
-        assertEquals(
-            CacheBudget.coverDiskCacheBytes(CacheBudget.UNLIMITED_MB, downloadExempt = true),
-            CacheBudget.componentMbToBytes(componentMb),
-        )
         assertNotEquals(
-            CacheBudget.coverDiskCacheBytes(componentMb, downloadExempt = true),
-            CacheBudget.componentMbToBytes(componentMb),
+            CacheBudget.coverDiskCacheMb(componentMb, downloadExempt = true),
+            componentMb,
         )
     }
 
@@ -72,7 +63,6 @@ class CacheBudgetTest {
         // 豁免时受控组件技术上限应高于固定 25%/45%（原 30% 下载份额按比例并入）
         assertTrue(coverExempt > coverFixed)
         assertTrue(readerExempt > readerFixed)
-        assertEquals(0, CacheBudget.downloadCacheMb(total, downloadExempt = true))
 
         // 受控组件份额之和接近总额度（允许取整误差）
         val controlledSum = coverExempt + readerExempt

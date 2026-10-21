@@ -104,9 +104,3 @@ data class GlassStyle(
         val Default = GlassStyle()
     }
 }
-
-object GlassCapabilities {
-    const val NativeBackdropBlurApi = 31
-
-    fun usesNativeBackdropBlur(apiLevel: Int): Boolean = apiLevel >= NativeBackdropBlurApi
-}

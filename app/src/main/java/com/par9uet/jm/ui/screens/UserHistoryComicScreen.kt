@@ -16,36 +16,36 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.par9uet.jm.ui.components.MotionIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.par9uet.jm.ui.components.MotionTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.lifecycle.compose.LifecycleStartEffect
 import com.par9uet.jm.ui.components.BackIconButton
 import com.par9uet.jm.ui.components.Comic
 import com.par9uet.jm.ui.components.ComicSkeleton
-import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.components.LocalComicGridScrolling
+import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.components.adaptiveComicGridCells
 import com.par9uet.jm.ui.components.comicGridMinCellSize
 import com.par9uet.jm.ui.glass.AppGlassTopBar
 import com.par9uet.jm.ui.glass.ChromeMode
 import com.par9uet.jm.ui.glass.GlassConfirmDialog
 import com.par9uet.jm.ui.glass.GlassTopBarModeTransition
-import com.par9uet.jm.ui.interaction.ListPositionKeyHistory
+import com.par9uet.jm.ui.models.ListPositionKeyHistory
 import com.par9uet.jm.ui.interaction.rememberRestoringGridState
 import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.UserViewModel
@@ -83,7 +83,7 @@ private fun UserHistoryComicSkeleton(gridColumns: Int) {
 fun UserHistoryComicScreen(
     userViewModel: UserViewModel = koinActivityViewModel(),
 ) {
-    val historyPageState by userViewModel.historyPageState.collectAsState()
+    val historyState by userViewModel.historyState.collectAsState()
     val historyEditState by userViewModel.historyEditState.collectAsState()
     val miscSettings by userViewModel.misc.collectAsState()
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
@@ -95,8 +95,8 @@ fun UserHistoryComicScreen(
             localHistory.map { it.toComic() }.filter { it.id in historyEditState.selectedComicIds }
         }
     } else {
-        remember(historyPageState.items, historyEditState.selectedComicIds) {
-            historyPageState.items.filter { it.id in historyEditState.selectedComicIds }
+        remember(historyState.items, historyEditState.selectedComicIds) {
+            historyState.items.filter { it.id in historyEditState.selectedComicIds }
         }
     }
     // Session switch clears the selection (and therefore editing); dismiss any open
@@ -108,10 +108,10 @@ fun UserHistoryComicScreen(
         userViewModel.clearHistorySelection()
     }
 
-    // 每次进入历史页拉一次最新一页；页面内部不再有任何请求。
-    LifecycleResumeEffect(Unit) {
+    // 每次进入重新获取 API 返回的完整历史列表。
+    LifecycleStartEffect(Unit) {
         userViewModel.refreshHistory()
-        onPauseOrDispose { }
+        onStopOrDispose { }
     }
 
     CommonScaffold(
@@ -196,31 +196,37 @@ fun UserHistoryComicScreen(
                     }
                 }
             }
-        } else if (historyPageState.loading && historyPageState.items.isEmpty()) {
+        } else if (historyState.loading && historyState.items.isEmpty()) {
             Box(modifier = Modifier.padding(top = topContentPadding)) {
                 UserHistoryComicSkeleton(gridColumns = miscSettings.gridColumns.history)
             }
-        } else if (historyPageState.items.isEmpty()) {
+        } else if (historyState.items.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(top = topContentPadding),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    text = historyPageState.error ?: "暂无历史记录",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = historyState.error ?: "暂无历史记录",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (historyState.error != null) {
+                        TextButton(onClick = userViewModel::refreshHistory) { Text("重试") }
+                    }
+                }
             }
         } else {
             HistoryComicGrid(
-                pageState = historyPageState,
+                state = historyState,
                 gridColumns = miscSettings.gridColumns.history,
                 topContentPadding = topContentPadding,
                 bottomContentPadding = bottomContentPadding,
                 editing = historyEditState.editing,
                 selectedComicIds = historyEditState.selectedComicIds,
+                onRetry = userViewModel::refreshHistory,
                 onComicLongClick = { comic ->
                     if (historyEditState.editing) {
                         userViewModel.toggleHistorySelected(comic.id)
@@ -235,26 +241,22 @@ fun UserHistoryComicScreen(
 
 }
 
-/**
- * 历史浏览网格（单页）：
- * 只展示官方返回的最新一页 20 条。往下滑动**不会再发任何请求**——
- * 不预取、不上拉加载、也没有页尾加载指示器。
- */
+/** 远端历史直接展示 API 返回的列表，保留多选行为。 */
 @Composable
 private fun HistoryComicGrid(
-    pageState: com.par9uet.jm.ui.viewModel.UserViewModel.HistoryPageState,
+    state: com.par9uet.jm.ui.viewModel.UserViewModel.HistoryState,
     gridColumns: Int,
     topContentPadding: Dp,
     bottomContentPadding: Dp,
     editing: Boolean,
     selectedComicIds: Set<Int>,
+    onRetry: () -> Unit,
     onComicLongClick: (com.par9uet.jm.data.models.Comic) -> Unit,
     onComicToggleSelected: (com.par9uet.jm.data.models.Comic) -> Unit,
 ) {
-    // 位置记录：进入漫画再返回时维持离开前的位置。
     val gridState = rememberRestoringGridState(
-        key = ListPositionKeyHistory,
-        itemCount = pageState.items.size,
+        key = "$ListPositionKeyHistory|remote",
+        itemCount = state.items.size,
     )
     var isGridScrolling by remember { mutableStateOf(false) }
     LaunchedEffect(gridState) {
@@ -262,7 +264,6 @@ private fun HistoryComicGrid(
             .distinctUntilChanged()
             .collect { isGridScrolling = it }
     }
-
     CompositionLocalProvider(LocalComicGridScrolling provides isGridScrolling) {
         LazyVerticalGrid(
             state = gridState,
@@ -274,14 +275,18 @@ private fun HistoryComicGrid(
                 start = 12.dp,
                 end = 12.dp,
                 top = topContentPadding + 12.dp,
-                bottom = bottomContentPadding,
+                bottom = bottomContentPadding + 12.dp,
             ),
         ) {
-            items(
-                count = pageState.items.size,
-                key = { pageState.items[it].id },
-            ) { index ->
-                val comic = pageState.items[index]
+            if (state.error != null) {
+                item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(state.error, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        TextButton(onClick = onRetry) { Text("重试") }
+                    }
+                }
+            }
+            items(state.items, key = { it.id }) { comic ->
                 Comic(
                     comic = comic,
                     editing = editing,

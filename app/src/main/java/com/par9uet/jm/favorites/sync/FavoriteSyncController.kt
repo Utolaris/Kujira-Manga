@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.flow.first
 
 enum class FavoriteSyncRequestKind {
     AUTO,
@@ -35,6 +37,8 @@ interface FavoriteSyncRequester {
 
     /** Starts a full cache build for an account that has never completed one. */
     suspend fun initializeForLogin()
+    /** Includes startup's asynchronously scheduled cooldown lookup, not just active page requests. */
+    suspend fun awaitIdle() { state.first { !it.isSyncing } }
 }
 
 /** Owns the application sync job, its session, progress and shared completion cooldown. */
@@ -81,6 +85,14 @@ class FavoriteSyncController(
                     _state.value = FavoriteSyncUiState()
                 }
             }
+        }
+    }
+
+    override suspend fun awaitIdle() {
+        while (true) {
+            val jobs = synchronized(lock) { listOfNotNull(automaticRequestJob, syncJob).filter { !it.isCompleted } }
+            if (jobs.isEmpty()) return
+            jobs.joinAll()
         }
     }
 

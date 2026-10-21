@@ -5,7 +5,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import com.par9uet.jm.cache.*
 import com.par9uet.jm.cache.getComicCoverDownloadFile
-import com.par9uet.jm.cache.writeComicCacheConfig
 import com.par9uet.jm.data.models.ComicPicImageState
 import com.par9uet.jm.database.model.DownloadComic
 import com.par9uet.jm.utils.compressWebpCompat

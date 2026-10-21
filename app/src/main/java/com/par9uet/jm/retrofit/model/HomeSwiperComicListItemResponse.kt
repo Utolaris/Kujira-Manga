@@ -3,9 +3,7 @@ package com.par9uet.jm.retrofit.model
 class HomeSwiperComicListItemResponse(
     val id: String,
     val title: String,
-    val slug: String,
     val type: String,
-    val filter_val: String,
     val content: List<ListItem>
 ) {
     data class ListItem(

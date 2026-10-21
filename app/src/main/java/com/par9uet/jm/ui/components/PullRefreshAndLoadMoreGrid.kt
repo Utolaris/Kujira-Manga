@@ -13,7 +13,7 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.material3.Button
+import com.par9uet.jm.ui.components.MotionButton as Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -48,7 +48,13 @@ fun <T : Any> PullRefreshAndLoadMoreGrid(
     animateItems: Boolean = false,
     itemContent: @Composable ((item: T) -> Unit),
 ) {
-    val isRefreshing = lazyPagingItems.loadState.refresh is LoadState.Loading
+    val refreshState = lazyPagingItems.loadState.refresh
+    var userRefreshRequested by remember(lazyPagingItems) { mutableStateOf(false) }
+    LaunchedEffect(refreshState) {
+        if (refreshState !is LoadState.Loading) userRefreshRequested = false
+    }
+    // Paging 首次订阅、返回页面和重连也会进入 Loading；只有真实下拉才显示顶部转圈。
+    val isRefreshing = userRefreshRequested && refreshState is LoadState.Loading
     var isGridScrolling by remember { mutableStateOf(false) }
     LaunchedEffect(gridState) {
         snapshotFlow { gridState.isScrollInProgress }
@@ -182,6 +188,7 @@ fun <T : Any> PullRefreshAndLoadMoreGrid(
             PullToRefreshBox(
                 isRefreshing = isRefreshing,
                 onRefresh = {
+                    userRefreshRequested = true
                     lazyPagingItems.refresh()
                 },
                 modifier = modifier

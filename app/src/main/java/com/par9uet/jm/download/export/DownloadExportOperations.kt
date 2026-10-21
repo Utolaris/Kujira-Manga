@@ -7,10 +7,9 @@ import com.par9uet.jm.database.model.DownloadComic
 import com.par9uet.jm.database.model.DownloadStatus
 import com.par9uet.jm.download.model.DownloadItem
 import com.par9uet.jm.download.model.DownloadItemStatus
+import com.par9uet.jm.download.model.PdfExportMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-
-enum class PdfExportMode { Merge, SplitByChapter }
 
 data class DownloadCacheSummary(val imageCount: Int, val totalBytes: Long)
 

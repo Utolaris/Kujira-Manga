@@ -34,7 +34,6 @@ class PullDownActionStateTest {
         state.onPull(deltaY = 80f, isAtTop = true)
         state.onPull(deltaY = -20f, isAtTop = true)
         assertEquals(PullDownActionPhase.PULLING, state.phase)
-        assertFalse(state.isArmed)
     }
 
     @Test

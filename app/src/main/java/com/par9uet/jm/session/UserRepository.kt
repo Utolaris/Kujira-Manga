@@ -3,7 +3,7 @@ import com.par9uet.jm.core.model.SignInData
 import com.par9uet.jm.core.network.AuthAttemptOrigin
 import com.par9uet.jm.core.network.NetWorkResult
 import com.par9uet.jm.data.models.ActionResult
-import com.par9uet.jm.data.models.ComicPage
+import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.data.models.CommentPage
 import com.par9uet.jm.retrofit.model.LoginResponse
 import okhttp3.Cookie
@@ -18,7 +18,7 @@ data class CandidateSession(
 /**
  * 会话仓库。
  *
- * 对外方法只返回领域类型（`SignInData` / `ComicPage` / `CommentPage` / `ActionResult`），
+ * 对外方法只返回领域类型（`SignInData` / `List<Comic>` / `CommentPage` / `ActionResult`），
  * 登录凭据 `LoginResponse` 只在本包内传递，不进表现层。
  */
 interface UserRepository {
@@ -50,7 +50,7 @@ interface UserRepository {
     /** Clears client-side session state without performing a network logout request. */
     fun clearSession()
 
-    suspend fun getHistoryComicList(page: Int = 1): NetWorkResult<ComicPage>
+    suspend fun getHistoryComicList(): NetWorkResult<List<Comic>>
     suspend fun deleteHistoryComic(id: Int): NetWorkResult<Unit>
     suspend fun getHistoryCommentList(
         page: Int = 1,

@@ -19,8 +19,6 @@ import com.par9uet.jm.favorites.TestFavoriteSession
 import com.par9uet.jm.favorites.data.FavoriteLocalMutation
 import com.par9uet.jm.favorites.data.FavoriteRemoteMutation
 import com.par9uet.jm.favorites.model.FavoriteLocalQuery
-import com.par9uet.jm.favorites.model.FavoriteSession
-import com.par9uet.jm.favorites.model.FavoriteSessionSnapshot
 import com.par9uet.jm.favorites.usecase.CollectFavorite
 import com.par9uet.jm.favorites.usecase.ObserveLocalFavorite
 import com.par9uet.jm.favorites.usecase.UncollectFavorites
@@ -41,8 +39,6 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.flowOf
@@ -77,6 +73,53 @@ class ComicDetailViewModelTest {
     @After
     fun tearDown() {
         Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `a fully filtered page still loads the following server page`() = runTest(scheduler) {
+        val environment = environment(MutableStateFlow(listOf("VIP")))
+        val requests = mutableListOf<Int>()
+        val clean = commentFor(21)
+        environment.repository.pagedComments = { page, _ ->
+            requests += page
+            NetWorkResult.Success(CommentPage(
+                if (page == 1) (1..20).map { commentFor(it).copy(content = "vip") } else listOf(clean), 21,
+            ))
+        }
+        val presenter = object : PagingDataPresenter<Comment>(StandardTestDispatcher(scheduler)) {
+            override suspend fun presentPagingDataEvent(event: PagingDataEvent<Comment>) = Unit
+        }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            environment.viewModel.commentPager(11).collectLatest(presenter::collectFrom)
+        }
+        runCurrent()
+        assertEquals(listOf(clean), presenter.snapshot().items)
+        assertEquals(listOf(1, 2), requests)
+    }
+
+    @Test
+    fun `editing keywords re-filters cached comments and nested replies without requesting again`() = runTest(scheduler) {
+        val keywords = MutableStateFlow(listOf("VIP"))
+        val environment = environment(keywords)
+        val clean = commentFor(11).copy(content = "正文", replyCommentList = listOf(commentFor(12).copy(content = "vip")))
+        val blocked = commentFor(13).copy(content = "VIP 广告")
+        var requests = 0
+        environment.repository.comments = { requests++; NetWorkResult.Success(CommentPage(listOf(clean, blocked), 2)) }
+        val presenter = object : PagingDataPresenter<Comment>(StandardTestDispatcher(scheduler)) {
+            override suspend fun presentPagingDataEvent(event: PagingDataEvent<Comment>) = Unit
+        }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            environment.viewModel.commentPager(11).collectLatest(presenter::collectFrom)
+        }
+        runCurrent()
+        assertEquals(listOf(clean.copy(replyCommentList = emptyList())), presenter.snapshot().items)
+        keywords.value = emptyList()
+        runCurrent()
+        assertEquals(listOf(clean, blocked), presenter.snapshot().items)
+        keywords.value = listOf("正文")
+        runCurrent()
+        assertEquals(listOf(blocked), presenter.snapshot().items)
+        assertEquals(1, requests)
     }
 
     @Test
@@ -261,7 +304,7 @@ class ComicDetailViewModelTest {
         return messages
     }
 
-    private fun environment(): TestEnvironment {
+    private fun environment(commentKeywords: MutableStateFlow<List<String>> = MutableStateFlow(emptyList())): TestEnvironment {
         val repository = StubComicRepository()
         val toastManager = ToastManager()
         val local = FakeFavoriteLocalData()
@@ -304,6 +347,7 @@ class ComicDetailViewModelTest {
                 ),
                 contentPreferences = object : com.par9uet.jm.storage.ContentPreferences {
                     override val blockedTags = MutableStateFlow(emptyList<String>())
+                    override val blockedCommentKeywords = commentKeywords
                 },
                 localMode = com.par9uet.jm.favorites.alwaysNetworkLocalModeStatus(),
                 localBrowseHistory = com.par9uet.jm.storage.LocalBrowseHistoryManager(
@@ -340,7 +384,7 @@ class ComicDetailViewModelTest {
 
             override fun activateVerifiedSession(verified: com.par9uet.jm.session.CandidateSession, identity: com.par9uet.jm.core.model.User) = false
             override fun clearSession() = Unit
-            override suspend fun getHistoryComicList(page: Int) =
+            override suspend fun getHistoryComicList() =
                 com.par9uet.jm.core.network.NetWorkResult.Error("unused")
 
             override suspend fun deleteHistoryComic(id: Int) =
@@ -482,6 +526,7 @@ class ComicDetailViewModelTest {
 
     private class StubComicRepository : ComicRepository {
         var comments: suspend (Int) -> NetWorkResult<CommentPage> = { unused() }
+        var pagedComments: (suspend (Int, Int) -> NetWorkResult<CommentPage>)? = null
         override suspend fun getComicDetail(id: Int): NetWorkResult<Comic> =
             NetWorkResult.Error("detail not needed")
 
@@ -500,7 +545,8 @@ class ComicDetailViewModelTest {
         ): NetWorkResult<ComicSearchPage> = unused()
         override suspend fun getWeekData(): NetWorkResult<WeekData> = unused()
         override suspend fun getWeekRecommendComicList(page: Int, categoryId: String, typeId: String): NetWorkResult<ComicPage> = unused()
-        override suspend fun getCommentList(page: Int, comicId: Int): NetWorkResult<CommentPage> = comments(comicId)
+        override suspend fun getCommentList(page: Int, comicId: Int): NetWorkResult<CommentPage> =
+            pagedComments?.invoke(page, comicId) ?: comments(comicId)
         override suspend fun comment(content: String, comicId: Int, commentId: Int?): NetWorkResult<ActionResult> = unused()
         override suspend fun getComicIdsByTag(tagName: String, maxPages: Int): Set<Int> = emptySet()
 

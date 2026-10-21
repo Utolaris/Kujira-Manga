@@ -1,15 +1,14 @@
 package com.par9uet.jm.ui.viewModel
 
-import androidx.paging.LoadState
 import androidx.paging.PagingDataEvent
 import androidx.paging.PagingDataPresenter
+import com.par9uet.jm.data.models.Comment
 import com.par9uet.jm.core.ToastManager
 import com.par9uet.jm.core.model.SignInData
 import com.par9uet.jm.core.model.User
 import com.par9uet.jm.core.network.NetWorkResult
 import com.par9uet.jm.data.models.ActionResult
 import com.par9uet.jm.data.models.Comic
-import com.par9uet.jm.data.models.ComicPage
 import com.par9uet.jm.data.models.CommentPage
 import com.par9uet.jm.database.dao.DownloadComicDao
 import com.par9uet.jm.download.DownloadWorkScheduler
@@ -30,16 +29,16 @@ import com.par9uet.jm.storage.ContentPreferences
 import com.par9uet.jm.storage.CookieStorage
 import com.par9uet.jm.storage.UserStorage
 import java.lang.reflect.Proxy
-import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.TestScope
@@ -58,7 +57,7 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * R08: history comic paging and multi-select must follow the same account+generation
+ * R08: history comic display and multi-select must follow the same account+generation
  * lifecycle as history comments. A→B, logout, and refresh failure must clear A's display
  * and selection immediately; A's ids must never submit under B's session.
  */
@@ -77,6 +76,28 @@ class UserViewModelHistorySessionTest {
     }
 
     @Test
+    fun `my comments re-filter cached pages when keywords change`() = runTest(scheduler) {
+        val preferences = FakeContentPreferences()
+        preferences.blockedCommentKeywords.value = listOf("VIP")
+        val environment = environment(contentPreferences = preferences)
+        val clean = Comment(1, 11, 1, "", "正常评论", "reader", "", "", 0, false, emptyList())
+        val blocked = clean.copy(id = 2, content = "注册 vip")
+        environment.repository.comments = listOf(clean, blocked)
+        val presenter = object : PagingDataPresenter<Comment>(StandardTestDispatcher(scheduler)) {
+            override suspend fun presentPagingDataEvent(event: PagingDataEvent<Comment>) = Unit
+        }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            environment.viewModel.historyCommentPager.collectLatest(presenter::collectFrom)
+        }
+        runCurrent()
+        assertEquals(listOf(clean), presenter.snapshot().items)
+        preferences.blockedCommentKeywords.value = emptyList()
+        runCurrent()
+        assertEquals(listOf(clean, blocked), presenter.snapshot().items)
+        assertEquals(1, environment.repository.commentRequests)
+    }
+
+    @Test
     fun `manual login requests account cache initialization`() = runTest(scheduler) {
         val environment = environment()
         environment.repository.currentAccountId = 2
@@ -88,7 +109,7 @@ class UserViewModelHistorySessionTest {
     }
 
     @Test
-    fun `account switch rebuilds history pager and clears selection`() = runTest(scheduler) {
+    fun `account switch clears history list and clears selection`() = runTest(scheduler) {
         val environment = environment()
         runCurrent()
 
@@ -99,7 +120,7 @@ class UserViewModelHistorySessionTest {
 
         val pageA = loadHistoryToSettled(environment.viewModel)
         assertEquals(listOf(101), pageA.items.map { it.id })
-        val pagesForA = environment.repository.historyPageRequests.size
+        val pagesForA = environment.repository.historyRequests.size
 
         environment.loginAs(id = 2, username = "accountB")
         runCurrent()
@@ -110,10 +131,10 @@ class UserViewModelHistorySessionTest {
         assertNull(edit.session)
 
         // 会话切换必须清空 A 的列表；重新加载得到 B 的页，绝不复用 A 的缓存。
-        assertTrue(environment.viewModel.historyPageState.value.items.isEmpty())
+        assertTrue(environment.viewModel.historyState.value.items.isEmpty())
         val pageB = loadHistoryToSettled(environment.viewModel)
         assertEquals(listOf(201), pageB.items.map { it.id })
-        assertTrue(environment.repository.historyPageRequests.size > pagesForA)
+        assertTrue(environment.repository.historyRequests.size > pagesForA)
     }
 
     @Test
@@ -135,11 +156,11 @@ class UserViewModelHistorySessionTest {
         assertNull(edit.session)
 
         // Unauthenticated state starts empty instead of reusing A's items.
-        assertTrue(environment.viewModel.historyPageState.value.items.isEmpty())
+        assertTrue(environment.viewModel.historyState.value.items.isEmpty())
     }
 
     @Test
-    fun `refresh failure under B never reuses A's cached pages`() = runTest(scheduler) {
+    fun `refresh failure under B never reuses A's cached history`() = runTest(scheduler) {
         val environment = environment(historyFailuresAfterSwitch = true)
         runCurrent()
 
@@ -157,27 +178,137 @@ class UserViewModelHistorySessionTest {
         assertTrue("refresh failure must surface as error, got ${pageB.error}", pageB.error != null)
     }
 
-    /**
-     * 历史页只有一页：刷新只打第 1 页，且**不会再有任何后续请求**——
-     * 这是「往下滑动不产生新请求」的回归防线（曾经有过上拉加载第二页的实现，已撤销）。
-     */
     @Test
-    fun `history only ever requests the first page`() = runTest(scheduler) {
+    fun `history maps a chapter entry to its original collection`() = runTest(scheduler) {
+        val environment = environment()
+        runCurrent()
+        val parent = historyComic(255485).copy(
+            name = "原漫画合集",
+            authorList = listOf("合集作者"),
+            tagList = listOf("合集标签"),
+        )
+        environment.readHistory.recordSeries(parent)
+        environment.readHistory.markRead(parent.id, 266898)
+        environment.repository.historyHandler = {
+            NetWorkResult.Success(
+                listOf(
+                    historyComic(266898).copy(
+                        name = "章节标题",
+                        authorList = listOf("章节作者"),
+                        tagList = listOf("章节标签"),
+                    ),
+                ),
+            )
+        }
+
+        val page = loadHistoryToSettled(environment.viewModel)
+
+        assertEquals(listOf(255485), page.items.map { it.id })
+        assertEquals("原漫画合集", page.items.single().name)
+        assertEquals(listOf("合集作者"), page.items.single().authorList)
+        assertEquals(listOf("合集标签"), page.items.single().tagList)
+    }
+
+    @Test
+    fun `legacy chapter progress retains server id but supplies collection id for the cover`() = runTest(scheduler) {
+        val env = environment()
+        runCurrent()
+        env.readHistory.markRead(255485, 266898)
+        env.repository.historyHandler = {
+            NetWorkResult.Success(listOf(historyComic(266898)))
+        }
+        val first = loadHistoryToSettled(env.viewModel)
+        assertEquals(266898, first.items.single().id)
+        assertEquals("255485", first.items.single().seriesId)
+        env.viewModel.enterHistoryEdit(266898)
+        env.viewModel.deleteHistoryComics(first.items)
+        runCurrent()
+        assertEquals(listOf(266898), env.repository.deletedIds)
+    }
+
+    @Test
+    fun `deleting a mapped history entry submits the original server chapter id`() = runTest(scheduler) {
+        val environment = environment()
+        runCurrent()
+        environment.readHistory.recordSeries(historyComic(255485).copy(name = "原漫画合集"))
+        environment.readHistory.markRead(255485, 266898)
+        environment.repository.historyHandler = {
+            NetWorkResult.Success(listOf(historyComic(266898)))
+        }
+        val page = loadHistoryToSettled(environment.viewModel)
+        environment.viewModel.enterHistoryEdit(page.items.single().id)
+
+        environment.viewModel.deleteHistoryComics(page.items)
+        runCurrent()
+
+        assertEquals(listOf(266898), environment.repository.deletedIds)
+    }
+
+    /** 历史列表每次进入只请求一次，刷新重新取 API 返回的完整列表。 */
+    @Test
+    fun `history requests one list per refresh`() = runTest(scheduler) {
         val environment = environment()
         runCurrent()
 
         val state = loadHistoryToSettled(environment.viewModel)
         assertEquals(listOf(101), state.items.map { it.id })
-        assertEquals(listOf(1), environment.repository.historyPageRequests)
+        assertEquals(listOf(1), environment.repository.historyRequests)
 
-        // 多次刷新仍然只碰第 1 页，页码不会推进。
+        // 每次刷新只发送一个历史请求。
         environment.viewModel.refreshHistory()
         runCurrent()
         environment.viewModel.refreshHistory()
         runCurrent()
 
-        assertEquals(listOf(1, 1, 1), environment.repository.historyPageRequests)
-        assertEquals(listOf(101), environment.viewModel.historyPageState.value.items.map { it.id })
+        assertEquals(listOf(1, 1, 1), environment.repository.historyRequests)
+        assertEquals(listOf(101), environment.viewModel.historyState.value.items.map { it.id })
+    }
+
+    @Test
+    fun `twenty chapter records merge into nineteen cards and delete all source chapters`() = runTest(scheduler) {
+        val env = environment()
+        runCurrent()
+        env.readHistory.recordSeries(historyComic(100))
+        env.readHistory.markRead(100, 1)
+        env.readHistory.markRead(100, 2)
+        env.repository.historyHandler = {
+            NetWorkResult.Success((1..20).map(::historyComic))
+        }
+        val state = loadHistoryToSettled(env.viewModel)
+        assertEquals(19, state.items.size)
+        assertEquals(listOf(1), env.repository.historyRequests)
+        env.viewModel.enterHistoryEdit(100)
+        env.viewModel.deleteHistoryComics(state.items.filter { it.id == 100 })
+        runCurrent()
+        assertEquals(listOf(1, 2), env.repository.deletedIds)
+    }
+
+    @Test
+    fun `history displays the complete API list without a client side limit`() = runTest(scheduler) {
+        val env = environment()
+        runCurrent()
+        env.repository.historyHandler = {
+            NetWorkResult.Success((1..25).map(::historyComic))
+        }
+        val state = loadHistoryToSettled(env.viewModel)
+        assertEquals((1..25).toList(), state.items.map { it.id })
+        assertEquals(listOf(1), env.repository.historyRequests)
+    }
+
+    @Test
+    fun `refresh failure keeps same account history and can retry`() = runTest(scheduler) {
+        val env = environment()
+        runCurrent()
+        val first = loadHistoryToSettled(env.viewModel)
+        env.repository.historyHandler = { NetWorkResult.Error("网络连接失败") }
+        val failed = loadHistoryToSettled(env.viewModel)
+        assertEquals(first.items, failed.items)
+        assertEquals("网络连接失败", failed.error)
+        assertFalse(failed.loading)
+        env.repository.historyHandler = { NetWorkResult.Success(emptyList()) }
+        val retried = loadHistoryToSettled(env.viewModel)
+        assertTrue(retried.items.isEmpty())
+        assertNull(retried.error)
     }
 
     @Test
@@ -185,20 +316,20 @@ class UserViewModelHistorySessionTest {
         val environment = environment()
         runCurrent()
 
-        environment.repository.historyPageDelayMs = 50
+        environment.repository.historyDelayMs = 50
         environment.viewModel.refreshHistory()
         runCurrent()
 
         // 请求还在飞的时候换号：旧会话的响应不许写进新会话的列表。
         environment.loginAs(id = 2, username = "accountB")
         runCurrent()
-        environment.repository.historyPageDelayMs = 0
+        environment.repository.historyDelayMs = 0
         advanceUntilIdle()
         runCurrent()
 
         assertTrue(
-            "旧会话的刷新结果不得落进 B 的列表，实际=${environment.viewModel.historyPageState.value.items.map { it.id }}",
-            environment.viewModel.historyPageState.value.items.isEmpty(),
+            "旧会话的刷新结果不得落进 B 的列表，实际=${environment.viewModel.historyState.value.items.map { it.id }}",
+            environment.viewModel.historyState.value.items.isEmpty(),
         )
     }
 
@@ -251,17 +382,17 @@ class UserViewModelHistorySessionTest {
         assertTrue(environment.repository.deletedIds.isEmpty())
     }
 
-    /** 触发历史首页加载并驱动调度器直到落定（成功或失败），返回当前分页状态。 */
+    /** 触发历史列表加载并驱动调度器直到落定（成功或失败），返回当前列表状态。 */
     private fun TestScope.loadHistoryToSettled(
         viewModel: UserViewModel,
-    ): UserViewModel.HistoryPageState {
+    ): UserViewModel.HistoryState {
         viewModel.refreshHistory()
         runCurrent()
         var guard = 0
-        while (viewModel.historyPageState.value.loading && guard++ < 200) {
+        while (viewModel.historyState.value.loading && guard++ < 200) {
             runCurrent()
         }
-        return viewModel.historyPageState.value
+        return viewModel.historyState.value
     }
 
     private class FakeUserStorage(initial: User = User.create()) : UserStorage {
@@ -291,14 +422,15 @@ class UserViewModelHistorySessionTest {
     }
 
     private class HistoryRepository : UserRepository {
-        val historyPageRequests = mutableListOf<Int>()
+        val historyRequests = mutableListOf<Int>()
         val deletedIds = mutableListOf<Int>()
         var currentAccountId: Int = 1
         var activeAccountIdForHistory: Int = 1
         var failHistoryAfterAccountSwitch = false
+        var historyHandler: (suspend () -> NetWorkResult<List<Comic>>)? = null
 
         /** 让请求挂起一段时间，用于复现「响应在飞时换号」的竞态。 */
-        var historyPageDelayMs: Long = 0
+        var historyDelayMs: Long = 0
 
         override suspend fun login(username: String, password: String): NetWorkResult<CandidateSession> {
             val id = currentAccountId
@@ -315,19 +447,20 @@ class UserViewModelHistorySessionTest {
         override fun activateVerifiedSession(verified: CandidateSession, identity: com.par9uet.jm.core.model.User) = true
         override fun clearSession() = Unit
 
-        override suspend fun getHistoryComicList(page: Int): NetWorkResult<ComicPage> {
-            historyPageRequests += page
-            if (historyPageDelayMs > 0) kotlinx.coroutines.delay(historyPageDelayMs)
+        override suspend fun getHistoryComicList(): NetWorkResult<List<Comic>> {
+            historyRequests += 1
+            if (historyDelayMs > 0) kotlinx.coroutines.delay(historyDelayMs)
+            historyHandler?.let { return it() }
             val accountId = activeAccountIdForHistory
             if (accountId <= 0) {
-                return NetWorkResult.Success(ComicPage(items = emptyList(), total = null))
+                return NetWorkResult.Success(emptyList())
             }
             if (failHistoryAfterAccountSwitch && accountId != 1) {
                 return NetWorkResult.Error("refresh failed")
             }
             val id = if (accountId == 1) 101 else 201
             return NetWorkResult.Success(
-                ComicPage(items = listOf(historyComic(id)), total = null)
+                listOf(historyComic(id))
             )
         }
 
@@ -336,8 +469,12 @@ class UserViewModelHistorySessionTest {
             return NetWorkResult.Success(Unit)
         }
 
-        override suspend fun getHistoryCommentList(page: Int, userId: Int): NetWorkResult<CommentPage> =
-            NetWorkResult.Success(CommentPage(emptyList(), total = 0))
+        var comments = emptyList<Comment>()
+        var commentRequests = 0
+        override suspend fun getHistoryCommentList(page: Int, userId: Int): NetWorkResult<CommentPage> {
+            commentRequests++
+            return NetWorkResult.Success(CommentPage(comments, total = comments.size))
+        }
 
         override suspend fun getSignData(userId: Int): NetWorkResult<SignInData> =
             NetWorkResult.Error("unused")
@@ -347,7 +484,8 @@ class UserViewModelHistorySessionTest {
     }
 
     private class FakeContentPreferences : ContentPreferences {
-        override val blockedTags: StateFlow<List<String>> = MutableStateFlow(emptyList())
+        override val blockedTags = MutableStateFlow<List<String>>(emptyList())
+        override val blockedCommentKeywords = kotlinx.coroutines.flow.MutableStateFlow(emptyList<String>())
     }
 
     private class FakeMiscSettingsPreferences : com.par9uet.jm.storage.MiscSettingsPreferences {
@@ -360,6 +498,7 @@ class UserViewModelHistorySessionTest {
         val userManager: UserManager,
         val repository: HistoryRepository,
         val sync: FakeSyncRequester,
+        val readHistory: com.par9uet.jm.storage.ReadHistoryManager,
     ) {
         suspend fun loginAs(id: Int, username: String) {
             repository.currentAccountId = id
@@ -377,6 +516,7 @@ class UserViewModelHistorySessionTest {
 
     private fun environment(
         historyFailuresAfterSwitch: Boolean = false,
+        contentPreferences: ContentPreferences = FakeContentPreferences(),
     ): Environment {
         val repository = HistoryRepository().apply {
             failHistoryAfterAccountSwitch = historyFailuresAfterSwitch
@@ -392,11 +532,20 @@ class UserViewModelHistorySessionTest {
         )
         readiness.set(SessionReadiness.Authenticated)
         val sync = FakeSyncRequester()
+        val readHistory = com.par9uet.jm.storage.ReadHistoryManager(
+            object : com.par9uet.jm.storage.ReadHistoryStore {
+                private var data: Map<Int, com.par9uet.jm.storage.ComicReadHistory> = emptyMap()
+                override fun getOrNull() = data
+                override fun set(history: Map<Int, com.par9uet.jm.storage.ComicReadHistory>) {
+                    data = history
+                }
+            }
+        )
         val viewModel = UserViewModel(
             userManager = userManager,
             userRepository = repository,
             toastManager = ToastManager(),
-            contentPreferences = FakeContentPreferences(),
+            contentPreferences = contentPreferences,
             downloadManager = testDownloadManager(CoroutineScope(Dispatchers.Default)),
             miscSettingsPreferences = FakeMiscSettingsPreferences(),
             localMode = com.par9uet.jm.favorites.alwaysNetworkLocalModeStatus(),
@@ -405,6 +554,7 @@ class UserViewModelHistorySessionTest {
                 override suspend fun exitLocalModeAfterLogin(accountId: Int, generation: Long) = Unit
             },
             favoriteSyncRequester = sync,
+            readHistoryManager = readHistory,
             localBrowseHistory = com.par9uet.jm.storage.LocalBrowseHistoryManager(
                 object : com.par9uet.jm.storage.LocalBrowseHistoryStore {
                     private var data: List<com.par9uet.jm.storage.LocalBrowseHistoryEntry> = emptyList()
@@ -416,7 +566,7 @@ class UserViewModelHistorySessionTest {
                 }
             ),
         )
-        return Environment(viewModel, userManager, repository, sync)
+        return Environment(viewModel, userManager, repository, sync, readHistory)
     }
 }
 

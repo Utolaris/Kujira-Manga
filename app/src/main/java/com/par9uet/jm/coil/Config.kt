@@ -7,7 +7,6 @@ import com.par9uet.jm.cache.CacheBudget
 import com.par9uet.jm.cache.getCommonCacheDir
 import com.par9uet.jm.network.DohManager
 import com.par9uet.jm.network.applyAppHttpDefaults
-import java.util.concurrent.TimeUnit
 import okhttp3.Cache
 import okhttp3.ConnectionPool
 import okhttp3.Dispatcher
@@ -38,6 +37,7 @@ fun createAsyncImageLoader(
         maxRequestsPerHost = 4
     }
     return ImageLoader.Builder(context)
+        .components { add(coil.decode.ImageDecoderDecoder.Factory()) }
         .okHttpClient {
             OkHttpClient.Builder()
                 .applyAppHttpDefaults(

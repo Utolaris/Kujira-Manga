@@ -4,6 +4,10 @@ import android.content.ClipData
 import com.par9uet.jm.ui.navigation.HierarchicalBackHandler
 import android.net.Uri
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateContentSize
+import com.par9uet.jm.ui.interaction.CoverEasing
+import com.par9uet.jm.ui.interaction.DetailReflowMillis
+import com.par9uet.jm.ui.interaction.motionEnabled
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -24,7 +28,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -36,15 +42,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.filled.Download
@@ -53,15 +57,13 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.RemoveRedEye
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
-import androidx.compose.material3.Button
+import com.par9uet.jm.ui.components.MotionButton as Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
+import com.par9uet.jm.ui.components.MotionIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.par9uet.jm.ui.components.MotionTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -75,6 +77,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
@@ -84,11 +87,13 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layout
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
+import com.par9uet.jm.ui.interaction.rememberFavoritePulse
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
@@ -103,6 +108,7 @@ import com.par9uet.jm.session.SessionReadiness
 import com.par9uet.jm.ui.components.ChapterMultiSelectDialog
 import com.par9uet.jm.ui.components.ComicContentTag
 import com.par9uet.jm.ui.components.ComicCoverImage
+import com.par9uet.jm.ui.components.comicMetricText
 import com.par9uet.jm.ui.components.ComicRoleTag
 import com.par9uet.jm.ui.components.ComicWorkTag
 import com.par9uet.jm.ui.components.CoverBlurredBackground
@@ -115,8 +121,12 @@ import com.par9uet.jm.ui.glass.GlassSurfaceStyle
 import com.par9uet.jm.ui.models.LocalComicDetailLoader
 import com.par9uet.jm.ui.models.LocalRemoteImageHost
 import com.par9uet.jm.ui.models.LocalTabletLayoutEnabled
+import com.par9uet.jm.ui.interaction.detailEntryCover
+import com.par9uet.jm.ui.interaction.detailEntryContent
 import com.par9uet.jm.ui.screens.tabScreen.FavoritesToolbarDefaults
 import com.par9uet.jm.ui.navigation.LocalMainNavController
+import com.par9uet.jm.ui.viewModel.ComicTrackingViewModel
+import com.par9uet.jm.ui.viewModel.ComicTrackingState
 import com.par9uet.jm.ui.viewModel.ComicDetailViewModel
 import com.par9uet.jm.utils.formatAlbumAddTimeDisplay
 import com.par9uet.jm.utils.shimmer
@@ -171,73 +181,43 @@ private fun ComicInfoListItem(
 }
 
 @Composable
-private fun ComicDetailSkeleton(id: Int, headerTopPadding: Dp) {
-    val isTabletLayout = LocalTabletLayoutEnabled.current
+private fun ComicDetailSkeleton(id: Int, headerTopPadding: Dp, bottomReserved: Dp, twoColumns: Boolean) {
+    val tabletEnabled = LocalTabletLayoutEnabled.current
     val scrollState = rememberScrollState()
+    if (tabletEnabled) {
+        Box(Modifier.fillMaxSize()) {
+            CoverBlurredBackground(id, LocalRemoteImageHost.current, Modifier.fillMaxSize())
+            ComicDetailAdaptiveLayout(
+                twoColumns = twoColumns,
+                headerTopPadding = headerTopPadding,
+                bottomReserved = bottomReserved,
+                scrollState = scrollState,
+                cover = { Box(it.aspectRatio(.75f).detailEntryCover(ready = false).clip(MaterialTheme.shapes.small).shimmer()) },
+                metadata = { Column(Modifier.detailEntryContent(horizontal = true), verticalArrangement = Arrangement.spacedBy(10.dp)) { SkeletonMetadataBars() } },
+                body = { TagSkeletonRow(Modifier.detailEntryContent()) },
+            )
+        }
+        return
+    }
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(scrollState),
+        modifier = Modifier.fillMaxSize().verticalScroll(scrollState),
         verticalArrangement = Arrangement.spacedBy(ComicDetailSectionSpacing),
     ) {
-        Box(modifier = Modifier.fillMaxWidth()) {
-            // 模糊封面背景只依赖 comicId：骨架期就开加载，内容就位时背景已经在画，
-            // 骨架与新设计之间不再有可感知的切换。
-            CoverBlurredBackground(
-                comicId = id,
-                remoteHost = LocalRemoteImageHost.current,
-                modifier = Modifier.matchParentSize(),
-            )
-            if (isTabletLayout) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 16.dp, top = headerTopPadding, end = 16.dp, bottom = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(18.dp),
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .weight(0.42f)
-                            .widthIn(max = 320.dp)
-                            .aspectRatio(0.75f)
-                            .clip(MaterialTheme.shapes.small)
-                            .shimmer(),
-                    )
-                    Column(
-                        modifier = Modifier.weight(0.58f),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        SkeletonMetadataBars()
-                    }
-                }
-            } else {
-                Column(modifier = Modifier.padding(top = headerTopPadding)) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = ComicDetailHorizontalPadding + 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(14.dp),
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .width(180.dp)
-                                .aspectRatio(0.75f)
-                                .clip(MaterialTheme.shapes.small)
-                                .shimmer(),
-                        )
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            SkeletonMetadataBars()
-                        }
-                    }
-                }
+        Box(Modifier.fillMaxWidth()) {
+            CoverBlurredBackground(id, LocalRemoteImageHost.current, Modifier.matchParentSize())
+            Row(
+                modifier = Modifier.padding(top = headerTopPadding, start = 16.dp, end = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Box(Modifier.width(180.dp).aspectRatio(.75f).detailEntryCover(ready = false)
+                    .clip(MaterialTheme.shapes.small).shimmer())
+                Column(
+                    modifier = Modifier.weight(1f).detailEntryContent(horizontal = true),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) { SkeletonMetadataBars() }
             }
         }
-        Column(
-            modifier = Modifier.padding(horizontal = ComicDetailHorizontalPadding),
-        ) {
-            TagSkeletonRows()
-        }
+        TagSkeletonRow(Modifier.padding(horizontal = ComicDetailHorizontalPadding).detailEntryContent())
     }
 }
 
@@ -310,9 +290,16 @@ private fun ComicDetailErrorPage(
     }
 }
 
+/** Keep the entry thumbnail until the real destination painter can draw without a fade. */
+@Composable
+private fun ComicDetailCover(comic: Comic, modifier: Modifier = Modifier) {
+    var ready by remember(comic.id) { mutableStateOf(false) }
+    ComicCoverImage(comic = comic, modifier = modifier.detailEntryCover(ready), onReady = { ready = it })
+}
+
 /** 标题 + 可点击作者，详情页紧凑 header 与平板元数据列共用。 */
 @Composable
-private fun ComicTitleAndAuthors(
+internal fun ComicTitleAndAuthors(
     comic: Comic,
     onTagSearch: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -335,7 +322,12 @@ private fun ComicTitleAndAuthors(
             },
         )
         FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            comic.authorList.forEach {
+            val authors = comic.authorList.filter { it.isNotBlank() && !it.trim().equals("N/A", ignoreCase = true) }
+            if (authors.isEmpty()) {
+                Text("未知作者", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            }
+            authors.forEach {
                 key(it) {
                     Text(
                         modifier = Modifier.clickable(onClick = { onTagSearch(it) }),
@@ -357,8 +349,8 @@ private fun ComicCompactStatsRow(comic: Comic, modifier: Modifier = Modifier) {
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        ComicStatLine(icon = Icons.Default.Favorite, label = "喜欢", value = comic.likeCount.toString())
-        ComicStatLine(icon = Icons.Default.RemoveRedEye, label = "浏览", value = comic.readCount.toString())
+        ComicStatLine(icon = Icons.Default.Favorite, label = "喜欢", value = comicMetricText(comic.readCount, comic.likeCount))
+        ComicStatLine(icon = Icons.Default.RemoveRedEye, label = "浏览", value = comicMetricText(comic.readCount, comic.readCount))
     }
 }
 
@@ -390,6 +382,7 @@ private data class ComicChipSpec(val label: String, val kind: ComicChipKind)
 /** M3 AssistChip 固定高度与芯片流间距。 */
 private val TagChipHeight = 32.dp
 private val TagChipSpacing = 5.dp
+private const val TagInitialVisibleRows = 1
 
 /** 行入场：透明度走贝塞尔缓动，缩放带轻微 overshoot（贝塞尔曲线 + 弹出感）。 */
 private val TagRowEasing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
@@ -405,7 +398,7 @@ private fun overshoot(t: Float, tension: Float = 1.5f): Float {
  * 对外报告 [heightPx] 高度并裁剪绘制，但子内容仍按原始约束完整测量。
  * 用于「内容自身稳定测量行数、外层高度跑弹簧动画」的组合，避免尺寸反馈回路。
  */
-private fun Modifier.fixedClipHeight(heightPx: Int): Modifier = layout { measurable, constraints ->
+private fun Modifier.fixedClipHeight(heightPx: Int): Modifier = clip(RectangleShape).layout { measurable, constraints ->
     val placeable = measurable.measure(
         Constraints(
             minWidth = 0,
@@ -416,36 +409,22 @@ private fun Modifier.fixedClipHeight(heightPx: Int): Modifier = layout { measura
     )
     val width = if (constraints.hasBoundedWidth) constraints.maxWidth else placeable.width
     layout(width, heightPx) {
-        placeable.placeWithLayer(0, 0) {
-            clip = true
-            shape = RectangleShape
-        }
+        placeable.place(0, 0)
     }
 }
 
-/** 加载中的三行标签形骨架占位。 */
+/** 加载中的单行标签形骨架占位，与数据到达后的初始高度一致。 */
 @Composable
-private fun TagSkeletonRows(modifier: Modifier = Modifier) {
-    val rows = remember {
-        listOf(
-            listOf(72, 110, 64),
-            listOf(96, 58),
-            listOf(84, 124, 70),
-        )
-    }
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(TagChipSpacing)) {
-        rows.forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(TagChipSpacing)) {
-                row.forEach { width ->
-                    Box(
-                        Modifier
-                            .width(width.dp)
-                            .height(TagChipHeight)
-                            .clip(MaterialTheme.shapes.small)
-                            .shimmer(),
-                    )
-                }
-            }
+private fun TagSkeletonRow(modifier: Modifier = Modifier) {
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(TagChipSpacing)) {
+        listOf(72, 110, 64).forEach { width ->
+            Box(
+                Modifier
+                    .width(width.dp)
+                    .height(TagChipHeight)
+                    .clip(MaterialTheme.shapes.small)
+                    .shimmer(),
+            )
         }
     }
 }
@@ -453,33 +432,28 @@ private fun TagSkeletonRows(modifier: Modifier = Modifier) {
 /**
  * 芯片流的逐行动画布局：
  * - 自定义 Layout 按宽度贪心装箱成行（M3 AssistChip 高度固定，行数即芯片分布）；
- * - [targetRows] 超过 3 时，第 4 行起逐行弹出（每行 130ms 错峰，贝塞尔透明度 + overshoot 缩放）；
- * - 行数经 onSizeChanged 上报（内容测量恒为全高，无动画反馈回路）。
+ * - [targetRows] 超过初始一行时，第 2 行起逐行弹出（每行 130ms 错峰，贝塞尔透明度 + overshoot 缩放）；
+ * - 测量后报告真实行数与高度（内容测量恒为全高，无动画反馈回路）。
  */
 @Composable
 private fun AnimatedChipRows(
     chips: List<ComicChipSpec>,
     targetRows: Int,
-    onRowsMeasured: (Int) -> Unit,
+    onRowsMeasured: (rows: Int, heightPx: Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val revealed = remember(chips) { Animatable(3f) }
-    LaunchedEffect(targetRows) {
-        if (targetRows > 3) {
+    val revealed = remember(chips) { Animatable(TagInitialVisibleRows.toFloat()) }
+    // 种子数据替换成完整标签时即使行数不变，也必须驱动新建的 Animatable。
+    LaunchedEffect(chips, targetRows) {
+        if (targetRows > TagInitialVisibleRows) {
             revealed.animateTo(
                 targetRows.toFloat(),
-                tween(durationMillis = (targetRows - 3) * 130 + 200, easing = LinearEasing),
+                tween(durationMillis = (targetRows - TagInitialVisibleRows) * 130 + 200, easing = LinearEasing),
             )
         }
     }
-    val density = LocalDensity.current
-    val stridePx = with(density) { (TagChipHeight + TagChipSpacing).roundToPx() }
-    val trailingPx = with(density) { TagChipSpacing.roundToPx() }
-
     Layout(
-        modifier = modifier.onSizeChanged { size ->
-            onRowsMeasured((size.height + trailingPx) / stridePx)
-        },
+        modifier = modifier,
         content = {
             chips.forEach { spec ->
                 when (spec.kind) {
@@ -511,6 +485,8 @@ private fun AnimatedChipRows(
             x += placeable.width + hPx
         }
         val fullHeight = (rowHeights.sum() + vPx * (rowHeights.size - 1)).coerceAtLeast(0)
+        // AssistChip 的点击区域/字体缩放会影响真实行高，不能用固定 32dp 反推行数。
+        onRowsMeasured(rowHeights.size, fullHeight)
         val revealedRows = revealed.value
         layout(maxWidth, fullHeight) {
             placeables.forEachIndexed { index, placeable ->
@@ -534,33 +510,32 @@ private fun AnimatedChipRows(
     }
 }
 
-/** 标签/角色/作品芯片区：加载时三行骨架占位，数据到达后逐行弹出、高度弹簧过渡。 */
+/** 标签/角色/作品芯片区：加载时单行骨架占位，数据到达后逐行弹出、高度弹簧过渡。 */
 @Composable
-private fun ComicTagSection(
+internal fun ComicTagSection(
     comic: Comic,
     modifier: Modifier = Modifier,
     isLoading: Boolean = false,
 ) {
     val chips = remember(comic.id, comic.tagList, comic.roleList, comic.workList) {
         buildList {
-            comic.tagList.forEach { add(ComicChipSpec(it, ComicChipKind.TAG)) }
-            comic.roleList.forEach { add(ComicChipSpec(it, ComicChipKind.ROLE)) }
-            comic.workList.forEach { add(ComicChipSpec(it, ComicChipKind.WORK)) }
+            comic.tagList.filter { it.isNotBlank() }.forEach { add(ComicChipSpec(it, ComicChipKind.TAG)) }
+            comic.roleList.filter { it.isNotBlank() }.forEach { add(ComicChipSpec(it, ComicChipKind.ROLE)) }
+            comic.workList.filter { it.isNotBlank() }.forEach { add(ComicChipSpec(it, ComicChipKind.WORK)) }
         }
     }
     var measuredRows by remember(comic.id) { mutableIntStateOf(0) }
+    var measuredHeightPx by remember(comic.id) { mutableIntStateOf(0) }
     val density = LocalDensity.current
-    val stridePx = with(density) { (TagChipHeight + TagChipSpacing).roundToPx() }
-    val trailingPx = with(density) { TagChipSpacing.roundToPx() }
-    val skeletonHeightPx = 3 * stridePx - trailingPx
+    val skeletonHeightPx = with(density) { TagChipHeight.roundToPx() }
 
     Box(modifier) {
         if (chips.isEmpty()) {
-            if (isLoading) TagSkeletonRows()
-            // 加载完成仍无标签：整段收起（高度弹簧到 0 的路径由 chips 非空分支自然覆盖）
+            if (isLoading) TagSkeletonRow()
+            // 加载完成仍无标签：不再保留骨架或空白高度。
         } else {
             val heightAnim = remember(comic.id) { Animatable(skeletonHeightPx.toFloat()) }
-            val targetHeightPx = (measuredRows * stridePx - trailingPx).coerceAtLeast(0)
+            val targetHeightPx = measuredHeightPx
             LaunchedEffect(comic.id, targetHeightPx) {
                 if (measuredRows > 0 && heightAnim.targetValue != targetHeightPx.toFloat()) {
                     heightAnim.animateTo(
@@ -573,14 +548,17 @@ private fun ComicTagSection(
                 AnimatedChipRows(
                     chips = chips,
                     targetRows = measuredRows,
-                    onRowsMeasured = { measuredRows = it },
+                    onRowsMeasured = { rows, height ->
+                        measuredRows = rows
+                        measuredHeightPx = height
+                    },
                 )
             }
         }
     }
 }
 
-/** JM 编号标签：样式与评论区「xxxx 年 x 月 x 日上架」一致（titleMedium + Bold + onSurfaceVariant）。 */
+/** JM 编号标签：样式与评论区「xxxx 年 x 月 x 日更新」一致（titleMedium + Bold + onSurfaceVariant）。 */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ComicJmIdLabel(
@@ -601,33 +579,37 @@ private fun ComicJmIdLabel(
 @Composable
 private fun ComicMetadataContent(
     comic: Comic,
+    compact: Boolean = false,
     onTagSearch: (String) -> Unit,
     onTitleClick: (() -> Unit)? = null,
-    isLoading: Boolean = false,
     onCopyId: () -> Unit = {},
     onShowDetail: (() -> Unit)? = null,
+    trackingState: ComicTrackingState = ComicTrackingState(),
+    onSubscribe: () -> Unit = {},
 ) {
     Column(
-        modifier = Modifier.padding(top = 10.dp),
+        modifier = Modifier.animateContentSize(tween(if (motionEnabled()) DetailReflowMillis else 0, easing = CoverEasing))
+            .detailEntryContent(horizontal = true),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         ComicTitleAndAuthors(
             comic = comic,
             onTagSearch = onTagSearch,
             onTitleClick = onTitleClick,
+            titleMaxLines = if (compact) 3 else Int.MAX_VALUE,
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (compact) ComicCompactStatsRow(comic) else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ComicInfoListItem(
                 modifier = Modifier.weight(.5f),
                 icon = Icons.Default.Favorite,
                 label = "\u559c\u6b22",
-                value = comic.likeCount.toString()
+                value = comicMetricText(comic.readCount, comic.likeCount)
             )
             ComicInfoListItem(
                 modifier = Modifier.weight(.5f),
                 icon = Icons.Default.RemoveRedEye,
                 label = "\u6d4f\u89c8",
-                value = comic.readCount.toString()
+                value = comicMetricText(comic.readCount, comic.readCount)
             )
         }
         // JM 编号从封面角标移到这里；点击复制保留，长按打开详情弹窗（原封面角标长按行为）
@@ -636,7 +618,25 @@ private fun ComicMetadataContent(
             onClick = onCopyId,
             onLongClick = onShowDetail,
         )
-        ComicTagSection(comic, isLoading = isLoading)
+        ComicSubscriptionButton(comic.id, trackingState, onSubscribe)
+    }
+}
+
+@Composable
+internal fun ComicSubscriptionButton(id: Int, state: ComicTrackingState, onClick: () -> Unit) {
+    if (state.id != id || !state.eligible) return
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Button(onClick = onClick, enabled = !state.busy, shape = CircleShape,
+            modifier = Modifier.height(30.dp).defaultMinSize(minWidth = 1.dp),
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)) {
+            Text(when {
+                state.busy -> "加载中"
+                state.error != null -> "重试"
+                state.subscribed == true -> "已订阅"
+                else -> "订阅"
+            })
+        }
+        state.error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
     }
 }
 
@@ -645,18 +645,28 @@ private fun ComicMetadataContent(
 fun ComicDetailScreen(
     id: Int,
     comicDetailViewModel: ComicDetailViewModel = koinActivityViewModel(),
+    trackingViewModel: ComicTrackingViewModel = koinActivityViewModel(),
 ) {
     val mainNavController = LocalMainNavController.current
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val clipboard = LocalClipboard.current
     val scrollState = rememberScrollState()
+    val commentGridState = rememberLazyGridState()
     val comicDetailState by comicDetailViewModel.comicDetailState.collectAsState()
     val collectState by comicDetailViewModel.collectComicState.collectAsState()
     // The activity-scoped ViewModel can still hold another comic for one composition frame while
     // a direct route change is starting. Never render a seed or toolbar title for that old id.
     val requestedComic = comicDetailState.data?.takeIf { it.id == id }
     val authState by comicDetailViewModel.authState.collectAsState()
+    val trackingState by trackingViewModel.state.collectAsState()
+    LaunchedEffect(id, requestedComic?.comicChapterList) {
+        trackingViewModel.bind(id, requestedComic?.comicChapterList.orEmpty().map { it.id })
+    }
+    val subscribe: () -> Unit = {
+        if (authState == com.par9uet.jm.session.SessionReadiness.Unauthenticated) mainNavController.navigate("login")
+        else trackingViewModel.toggle()
+    }
     val commentLazyPagingItems = remember(id, comicDetailViewModel) {
         comicDetailViewModel.commentPager(id)
     }.collectAsLazyPagingItems()
@@ -682,6 +692,10 @@ fun ComicDetailScreen(
     var showCoverDetailDialog by remember { mutableStateOf(false) }
     var coverDetailInfoText by remember { mutableStateOf("") }
     var coverDetailLoading by remember { mutableStateOf(false) }
+    com.par9uet.jm.ui.interaction.BlockDetailDrag(
+        showDownloadChapterDialog || showTitleDialog || showCoverDetailDialog ||
+            detailBottomState.mode == DetailBottomMode.COMMENT,
+    )
     val coverDetailScope = rememberCoroutineScope()
     val comicDetailLoader = LocalComicDetailLoader.current
 
@@ -735,11 +749,10 @@ fun ComicDetailScreen(
     val detailBarBottomPadding = 8.dp + navigationBarInset
     // 手机底栏是通栏玻璃条，内容需要让出整条高度；平板底栏是左下阅读 + 右下四操作
     // 两组悬浮玻璃，不必再预留一整条底栏，否则评论滑到底会露出大块主题背景「白框」。
-    val isTabletChrome = LocalTabletLayoutEnabled.current
-    val detailContentBottomPadding = if (isTabletChrome) {
-        detailBarBottomPadding + 16.dp
-    } else {
-        detailBarHeight + detailBarBottomPadding
+    val tabletEnabled = LocalTabletLayoutEnabled.current
+    val windowSize = LocalWindowInfo.current.containerSize
+    val isTabletChrome = with(LocalDensity.current) {
+        useDetailColumns(tabletEnabled, windowSize.width.toDp(), windowSize.height.toDp())
     }
 
     // COMMENT mode consumes Back so it never pops ComicDetail; ACTIONS falls through to
@@ -755,6 +768,9 @@ fun ComicDetailScreen(
         }
     }
 
+    val displayedColumns = isTabletChrome
+    val detailContentBottomPadding = if (displayedColumns) detailBarBottomPadding + 16.dp
+        else detailBarHeight + detailBarBottomPadding
     GlassCaptureHost(
         modifier = Modifier.fillMaxSize(),
         sourceContent = {
@@ -764,58 +780,37 @@ fun ComicDetailScreen(
                         errorMessage = comicDetailState.errorMsg,
                         onRetry = { comicDetailViewModel.getComicDetail(id) },
                         onBack = { mainNavController.popBackStack() },
-                        modifier = Modifier.padding(top = detailTopContentPadding),
+                        modifier = Modifier.padding(top = detailTopContentPadding).detailEntryContent(),
                     )
                 }
                 requestedComic == null -> {
-                    ComicDetailSkeleton(id = id, headerTopPadding = detailHeaderTopPadding)
+                    ComicDetailSkeleton(id = id, headerTopPadding = detailHeaderTopPadding,
+                        bottomReserved = detailBarHeight + detailBarBottomPadding + 16.dp, twoColumns = displayedColumns)
                 }
                 else -> {
                     val comic = requestedComic
-                        // 详情页不需要整页下拉刷新：平板上与内嵌评论 LazyGrid 嵌套滚动会立刻崩溃，
-                        // 手机上也只是重复 getComicDetail，已删除 PullToRefreshBox。
+                        // 详情页不做整页下拉刷新：平板上与内嵌评论 LazyGrid 嵌套滚动会崩溃，
+                        // 手机上则只是重复请求 getComicDetail。
                         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                            val isTabletLayout = LocalTabletLayoutEnabled.current
+                            val isTabletLayout = displayedColumns
                             val viewportHeight = maxHeight
-                            if (isTabletLayout) {
-                                Box(modifier = Modifier.fillMaxSize()) {
-                                    // 整页垫模糊封面背景, 渐变在下半部过渡到纯色,
-                                    // 右列滚动内容始终落在接近纯色的区域上。
-                                    CoverBlurredBackground(
-                                        comicId = comic.id,
-                                        remoteHost = LocalRemoteImageHost.current,
-                                        modifier = Modifier.fillMaxSize(),
-                                    )
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(
-                                                start = 16.dp,
-                                                top = detailHeaderTopPadding,
-                                                end = 16.dp,
-                                                bottom = 16.dp,
-                                            ),
-                                        horizontalArrangement = Arrangement.spacedBy(18.dp),
-                                    ) {
-                                    ComicCoverImage(
-                                        comic = comic,
-                                        modifier = Modifier
-                                            .widthIn(max = 320.dp)
-                                            .weight(0.42f),
-                                    )
-                                    Column(
-                                        modifier = Modifier
-                                            .weight(0.58f)
-                                            .verticalScroll(scrollState)
-                                            .padding(horizontal = ComicDetailHorizontalPadding)
-                                            .padding(bottom = detailContentBottomPadding),
-                                        verticalArrangement = Arrangement.spacedBy(ComicDetailSectionSpacing),
-                                    ) {
+                            val compactCoverWidth = compactDetailCoverWidth(tabletEnabled, minOf(maxWidth, 840.dp))
+                            if (tabletEnabled) {
+                                CoverBlurredBackground(comic.id, LocalRemoteImageHost.current, Modifier.fillMaxSize())
+                                ComicDetailAdaptiveLayout(
+                                    twoColumns = isTabletLayout,
+                                    headerTopPadding = detailHeaderTopPadding,
+                                    bottomReserved = detailBarHeight + detailBarBottomPadding + 16.dp,
+                                    scrollState = scrollState,
+                                    cover = { ComicDetailCover(comic, it) },
+                                    metadata = {
                                         ComicMetadataContent(
                                             comic,
-                                            ::searchTag,
+                                            compact = !isTabletLayout,
+                                            trackingState = trackingState,
+                                            onSubscribe = subscribe,
+                                            onTagSearch = ::searchTag,
                                             onTitleClick = { showTitleDialog = true },
-                                            isLoading = comicDetailState.isLoading,
                                             onCopyId = {
                                                 coverDetailScope.launch {
                                                     clipboard.setClipEntry(
@@ -836,32 +831,34 @@ fun ComicDetailScreen(
                                                 }
                                             },
                                         )
-                                        ComicCommentContent(
-                                            commentLazyPagingItems = commentLazyPagingItems,
-                                            authState = authState,
-                                            onLogin = { mainNavController.navigate("login") },
-                                            onReply = ::enterReplyMode,
-                                            // heightIn：短评论不再强行撑满一屏，避免底栏外侧出现空白「白框」。
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .heightIn(max = viewportHeight),
-                                            listBottomPadding = if (isTabletLayout) {
-                                                72.dp + detailBarBottomPadding
-                                            } else {
-                                                detailBarHeight + detailBarBottomPadding + 24.dp
-                                            },
-                                            publishDateText = formatAlbumAddTimeDisplay(comic.addTime),
-                                        )
-                                    }
-                                    }
-                                }
+                                    },
+                                    body = {
+                                        Column(Modifier.detailEntryContent(), verticalArrangement = Arrangement.spacedBy(ComicDetailSectionSpacing)) {
+                                            ComicTagSection(comic, isLoading = comicDetailState.isLoading)
+                                            ComicCommentContent(
+                                                commentLazyPagingItems = commentLazyPagingItems,
+                                                gridState = commentGridState,
+                                                authState = authState,
+                                                onLogin = { mainNavController.navigate("login") },
+                                                onReply = ::enterReplyMode,
+                                                modifier = Modifier.fillMaxWidth().heightIn(max = viewportHeight),
+                                                listBottomPadding = 72.dp + detailBarBottomPadding,
+                                                publishDateText = formatAlbumAddTimeDisplay(comic.addTime),
+                                            )
+                                        }
+                                    },
+                                )
                             } else {
                                 // 手机: animeko 式紧凑 header——小封面 + 标题在右,
                                 // 模糊封面背景垫底并延伸到顶栏后面, 随 header 滚走;
                                 // 下方标签/评论区保持页面纯色背景。
                                 Column(
                                     modifier = Modifier
-                                        .fillMaxSize()
+                                        .widthIn(max = 840.dp)
+                                        // 平板上单栏（竖屏/分屏）限宽居中，避免封面被拉成满屏；手机保持满宽。
+                                        .fillMaxWidth(if (tabletEnabled) detailReadingColumnWidth(true, maxWidth) / maxWidth else 1f)
+                                        .align(Alignment.TopCenter)
+                                        .fillMaxHeight()
                                         .verticalScroll(scrollState)
                                         .padding(bottom = detailContentBottomPadding),
                                     verticalArrangement = Arrangement.spacedBy(ComicDetailSectionSpacing),
@@ -881,12 +878,13 @@ fun ComicDetailScreen(
                                                     .padding(horizontal = ComicDetailHorizontalPadding + 6.dp),
                                                 horizontalArrangement = Arrangement.spacedBy(14.dp),
                                             ) {
-                                                ComicCoverImage(
+                                                ComicDetailCover(
                                                     comic = comic,
                                                     // 120dp 沿对角线放大 1.5 倍: 180dp 宽 / 240dp 高
-                                                    modifier = Modifier.width(180.dp),
+                                                    modifier = Modifier.width(compactCoverWidth),
                                                 )
                                                 Column(
+                                                    modifier = Modifier.detailEntryContent(horizontal = true),
                                                     verticalArrangement = Arrangement.spacedBy(8.dp),
                                                 ) {
                                                     ComicTitleAndAuthors(
@@ -908,17 +906,19 @@ fun ComicDetailScreen(
                                                             }
                                                         },
                                                     )
+                                                    ComicSubscriptionButton(comic.id, trackingState, subscribe)
                                                 }
                                             }
                                         }
                                     }
                                     Column(
-                                        modifier = Modifier.padding(horizontal = ComicDetailHorizontalPadding),
+                                        modifier = Modifier.padding(horizontal = ComicDetailHorizontalPadding).detailEntryContent(),
                                         verticalArrangement = Arrangement.spacedBy(ComicDetailSectionSpacing),
                                     ) {
                                         ComicTagSection(comic, isLoading = comicDetailState.isLoading)
                                         ComicCommentContent(
                                             commentLazyPagingItems = commentLazyPagingItems,
+                                                gridState = commentGridState,
                                             authState = authState,
                                             onLogin = { mainNavController.navigate("login") },
                                             onReply = ::enterReplyMode,
@@ -938,8 +938,7 @@ fun ComicDetailScreen(
         },
         overlayContent = {
             val comic = requestedComic
-            Box(modifier = Modifier.fillMaxSize()) {
-                val isTabletLayout = LocalTabletLayoutEnabled.current
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 // 顶栏整体去除（对齐 animeko 透明顶栏）：只保留左右两个浮动玻璃钮,
                 // 样式复用收藏夹顶栏左上角同步按钮的单钮设计
                 // （GlassSurface 50dp + cornerRadius 25dp, FavoritesToolbarDefaults.controlHeight）。
@@ -1000,7 +999,7 @@ fun ComicDetailScreen(
                                 .padding(bottom = detailBarBottomPadding),
                         ) {
                             when (targetMode) {
-                                DetailBottomMode.ACTIONS -> if (isTabletLayout) {
+                                DetailBottomMode.ACTIONS -> if (tabletEnabled) {
                                     ComicDetailTabletBottomBar(
                                         modifier = Modifier
                                             .fillMaxSize(),
@@ -1028,7 +1027,12 @@ fun ComicDetailScreen(
                                                 showDownloadChapterDialog = true
                                             }
                                         },
-                                        onRead = { targetId -> mainNavController.navigate("comicRead/$targetId") },
+                                        onRead = { targetId ->
+                                            val historyId = comic.seriesId.toIntOrNull()
+                                                ?.takeIf { it > 0 && it != comic.id }
+                                                ?: comic.id
+                                            mainNavController.navigate("comicRead/$targetId?historyId=$historyId")
+                                        },
                                         onChapters = {
                                             val currentChapterId =
                                                 comicDetailViewModel.lastReadChapterId(comic) ?: -1
@@ -1041,8 +1045,8 @@ fun ComicDetailScreen(
                                     ComicDetailBottomBar(
                                         modifier = Modifier
                                             .align(Alignment.BottomCenter)
-                                            .fillMaxWidth()
                                             .widthIn(max = 600.dp)
+                                            .fillMaxWidth()
                                             .height(detailBarHeight),
                                         comic = comic,
                                         collectEnabled = !collectState.isLoading &&
@@ -1067,7 +1071,12 @@ fun ComicDetailScreen(
                                                 showDownloadChapterDialog = true
                                             }
                                         },
-                                        onRead = { targetId -> mainNavController.navigate("comicRead/$targetId") },
+                                        onRead = { targetId ->
+                                            val historyId = comic.seriesId.toIntOrNull()
+                                                ?.takeIf { it > 0 && it != comic.id }
+                                                ?: comic.id
+                                            mainNavController.navigate("comicRead/$targetId?historyId=$historyId")
+                                        },
                                         onChapters = {
                                             val currentChapterId =
                                                 comicDetailViewModel.lastReadChapterId(comic) ?: -1
@@ -1090,8 +1099,8 @@ fun ComicDetailScreen(
                                     onSuccess = ::exitCommentMode,
                                     modifier = Modifier
                                         .align(Alignment.BottomCenter)
-                                        .fillMaxWidth()
                                         .widthIn(max = 600.dp)
+                                        .fillMaxWidth()
                                         .padding(horizontal = ComicDetailHorizontalPadding),
                                     surfaceIdPrefix = "comic-detail-comment",
                                 )
@@ -1190,8 +1199,7 @@ fun ComicDetailScreen(
 }
 
 /**
- * 平板详情底栏：阅读按钮固定在左下，其余四个操作固定在右下；
- * 两组玻璃表面等宽，避免整条底栏在大屏上被拉成通栏。
+ * 平板底栏始终锚定左右下角，旋转时使用新窗口的边缘，不沿旧横屏绝对坐标飞回。
  */
 @Composable
 private fun ComicDetailTabletBottomBar(
@@ -1210,10 +1218,9 @@ private fun ComicDetailTabletBottomBar(
     val readTargetId = lastReadChapterId
         ?: comic.comicChapterList.firstOrNull()?.id
         ?: comic.id
-    val iconCellSize = 48.dp
-    val groupWidth = iconCellSize * 4
-
-    Box(modifier = modifier) {
+    BoxWithConstraints(modifier = modifier) {
+        val iconCellSize = minOf(48.dp, ((maxWidth - 40.dp) / 8).coerceAtLeast(0.dp))
+        val groupWidth = iconCellSize * 4
         GlassSurface(
             surfaceId = "comic-detail-actions-read",
             modifier = Modifier
@@ -1246,7 +1253,8 @@ private fun ComicDetailTabletBottomBar(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 DetailIconAction(
-                    icon = if (comic.isCollect) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                    icon = if (comic.isCollect) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                    pulseOnClick = true,
                     contentDescription = if (comic.isCollect) "已收藏" else "收藏",
                     tint = if (comic.isCollect) MaterialTheme.colorScheme.tertiary else null,
                     size = iconCellSize,
@@ -1323,7 +1331,8 @@ private fun ComicDetailBottomBar(
                 }
 
                 DetailIconAction(
-                    icon = if (comic.isCollect) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                    icon = if (comic.isCollect) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                    pulseOnClick = true,
                     contentDescription = if (comic.isCollect) "\u5df2\u6536\u85cf" else "\u6536\u85cf",
                     tint = if (comic.isCollect) MaterialTheme.colorScheme.tertiary else null,
                     size = iconCellSize,
@@ -1355,14 +1364,16 @@ private fun ComicDetailBottomBar(
 }
 
 @Composable
-private fun DetailIconAction(
+internal fun DetailIconAction(
     icon: ImageVector,
     contentDescription: String,
     enabled: Boolean = true,
+    pulseOnClick: Boolean = false,
     tint: androidx.compose.ui.graphics.Color? = null,
     size: Dp,
     onClick: () -> Unit,
 ) {
+    val pulse = rememberFavoritePulse()
     val contentColor = when {
         !enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
         tint != null -> tint
@@ -1371,9 +1382,13 @@ private fun DetailIconAction(
     IconButton(
         modifier = Modifier.size(size),
         enabled = enabled,
-        onClick = onClick,
+        onClick = {
+            if (pulseOnClick) pulse.trigger()
+            onClick()
+        },
     ) {
         Icon(
+            modifier = Modifier.graphicsLayer { scaleX = pulse.scale; scaleY = pulse.scale },
             imageVector = icon,
             contentDescription = contentDescription,
             tint = contentColor,

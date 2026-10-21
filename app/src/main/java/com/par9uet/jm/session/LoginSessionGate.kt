@@ -3,7 +3,6 @@ package com.par9uet.jm.session
 import com.par9uet.jm.core.network.NetWorkResult
 import com.par9uet.jm.core.network.NetworkErrorKind
 import com.par9uet.jm.utils.log
-import com.par9uet.jm.utils.logError
 import okhttp3.Cookie
 
 /**

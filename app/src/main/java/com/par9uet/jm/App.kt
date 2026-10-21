@@ -1,5 +1,6 @@
 package com.par9uet.jm
 
+import com.par9uet.jm.session.ClipboardDetectionSession
 import android.content.Context
 import android.view.WindowManager
 import androidx.compose.foundation.layout.Arrangement
@@ -15,11 +16,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.par9uet.jm.ui.components.MotionTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -36,7 +36,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -290,9 +289,10 @@ private fun MainAppContent(
     val clipboard = LocalClipboard.current
     val clipboardScope = rememberCoroutineScope()
     val koin = getKoin()
+    val clipboardSession = remember(koin) { koin.get<ClipboardDetectionSession>() }
     var lastClipboardText by remember { mutableStateOf("") }
     var clipboardDetectedComicId by remember { mutableStateOf<Int?>(null) }
-    var clipboardDetectedComic by remember { mutableStateOf<Comic?>(null) }
+    var clipboardPreview by remember { mutableStateOf<Pair<Int, Comic>?>(null) }
     var pendingNavComicId by remember { mutableIntStateOf(-1) }
 
     // Process death while reading never runs onDispose. If Navigation could not restore the
@@ -325,7 +325,8 @@ private fun MainAppContent(
                             lastClipboardText = clipText
                             val digits = clipText.filter { it.isDigit() }
                             if (digits.length in 3..12) {
-                                clipboardDetectedComicId = digits.toIntOrNull()
+                                val id = digits.toIntOrNull()
+                                if (id != null && clipboardSession.shouldPrompt(id)) clipboardDetectedComicId = id
                             }
                         }
                     }
@@ -339,6 +340,10 @@ private fun MainAppContent(
     // Resolve the repository only after the clipboard feature has actually detected an ID.
     LaunchedEffect(clipboardDetectedComicId) {
         val id = clipboardDetectedComicId ?: return@LaunchedEffect
+        if (!clipboardSession.shouldPrompt(id)) {
+            clipboardDetectedComicId = null
+            return@LaunchedEffect
+        }
         val result = withContext(Dispatchers.IO) {
             val outcome = runCatching { koin.get<ComicRepository>().getComicDetail(id) }
             // 与 detailLoader 相同：runCatching 会吞掉 CancellationException，
@@ -350,7 +355,7 @@ private fun MainAppContent(
         }
         when (result) {
             is NetWorkResult.Success -> {
-                clipboardDetectedComic = result.data
+                clipboardPreview = id to result.data
             }
 
             else -> {
@@ -431,7 +436,7 @@ private fun MainAppContent(
             modifier = Modifier.fillMaxSize(),
             sourceContent = {
                 Box(modifier = Modifier.fillMaxSize()) {
-                    AppScreen(externalNavController = mainNavController)
+                    AppScreen(externalNavController = mainNavController, listPositionMemory = koin.get())
                     AppSnackbarHost(
                         hostState = snackbarHostState,
                         modifier = Modifier
@@ -493,16 +498,18 @@ private fun MainAppContent(
                         )
                     }
 
-                    clipboardDetectedComic?.let { comic ->
+                    clipboardPreview?.let { (detectedId, comic) ->
                         ClipboardDetectedComicDialog(
                             visible = true,
                             comic = comic,
                             onDismiss = {
-                                clipboardDetectedComic = null
+                                clipboardSession.dismiss(detectedId)
+                                clipboardSession.dismiss(comic.id)
+                                clipboardPreview = null
                                 clipboardDetectedComicId = null
                             },
                             onNavigate = { id ->
-                                clipboardDetectedComic = null
+                                clipboardPreview = null
                                 clipboardDetectedComicId = null
                                 pendingNavComicId = id
                             },

@@ -10,8 +10,8 @@ import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.data.models.ComicSearchOrderFilter
 import com.par9uet.jm.repository.ComicRepository
 import com.par9uet.jm.storage.ContentPreferences
-import com.par9uet.jm.ui.interaction.ListPositionMemory
-import com.par9uet.jm.ui.interaction.searchListPositionKey
+import com.par9uet.jm.ui.models.ListPositionMemory
+import com.par9uet.jm.ui.models.searchListPositionKey
 import com.par9uet.jm.ui.pagingSource.SearchComicFilter
 import com.par9uet.jm.ui.pagingSource.SearchComicPagingSource
 import com.par9uet.jm.utils.log

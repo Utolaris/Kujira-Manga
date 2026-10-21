@@ -6,9 +6,29 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ArchitectureBoundaryTest {
+    /** 领域包：通用设施不得反向依赖。 */
+    private val forbidDomain = listOf(
+        "com.par9uet.jm.session.", "com.par9uet.jm.storage.", "com.par9uet.jm.download.",
+        "com.par9uet.jm.reader.", "com.par9uet.jm.favorites.", "com.par9uet.jm.notification.",
+        "com.par9uet.jm.cache.", "com.par9uet.jm.backup.", "com.par9uet.jm.update.",
+        "com.par9uet.jm.repository.", "com.par9uet.jm.startup.", "com.par9uet.jm.dinner.",
+    )
+
     @Test
     fun `lower layers do not import the entry packages already removed from them`() {
         val violations = buildList {
+            // 已迁移仓库的公开契约只返回领域模型；wire DTO 留在 impl/service。
+            listOf("ComicRepository.kt", "RemoteSettingRepository.kt").forEach { repository ->
+                val forbidden = listOf("com.par9uet.jm.retrofit.")
+                addAll(forbiddenImports("repository/$repository", forbidden))
+                addAll(forbiddenQualifiedUsages("repository/$repository", forbidden))
+            }
+            addAll(forbiddenImports("retrofit/model/RemoteSettingResponse.kt", listOf(
+                "com.par9uet.jm.core.model.",
+            )))
+            addAll(forbiddenQualifiedUsages("retrofit/model/RemoteSettingResponse.kt", listOf(
+                "com.par9uet.jm.core.model.",
+            )))
             addAll(forbiddenImports("ui/viewModel/ComicReadViewModel.kt", listOf(
                 "java.io.", "java.util.zip.", "com.par9uet.jm.database.", "com.par9uet.jm.cache.",
             )))
@@ -62,14 +82,21 @@ class ArchitectureBoundaryTest {
             // Screens must not touch cache policy objects; VM injects stops/slices.
             addAll(forbiddenImports("ui/screens", listOf("com.par9uet.jm.cache.")))
             addAll(forbiddenQualifiedUsages("ui/screens", listOf("com.par9uet.jm.cache.")))
+            // 导出模式是界面契约（download/model），Screen 不直接依赖 L3 导出实现包。
+            addAll(forbiddenImports("ui/screens", listOf("com.par9uet.jm.download.export.")))
+            addAll(forbiddenQualifiedUsages("ui/screens", listOf("com.par9uet.jm.download.export.")))
             // ui/screens 一律不得服务定位（getKoin）；依赖经 Feature ViewModel / 组合根注入。
             addAll(forbiddenImports("ui/screens", listOf(
                 "org.koin.compose.getKoin",
                 "org.koin.androidx.compose.getKoin",
+                "org.koin.compose.koinInject",
+                "org.koin.androidx.compose.koinInject",
             )))
             addAll(forbiddenQualifiedUsages("ui/screens", listOf(
                 "org.koin.compose.getKoin",
                 "org.koin.androidx.compose.getKoin",
+                "org.koin.compose.koinInject",
+                "org.koin.androidx.compose.koinInject",
             )))
             // FQN 绕过：设置/引导页不得再全限定引用 storage/network 或 getKoin 取领域服务
             listOf(
@@ -175,6 +202,34 @@ class ArchitectureBoundaryTest {
                     "com.par9uet.jm.download.coordinator.DownloadManager",
                 )))
             }
+            // L2 不得反向依赖 L1 组合层：列表位置与触觉反馈只有数据语义，分别归 ui/models 与 core；
+            // rememberRestoringGridState 之类的组合函数仍留在 ui/interaction，只有 L1 使用。
+            listOf("ui/viewModel", "favorites/presentation", "favorites/sync", "session").forEach { pkg ->
+                addAll(forbiddenImports(pkg, listOf(
+                    "com.par9uet.jm.ui.interaction.",
+                    "com.par9uet.jm.ui.haptics.",
+                    "com.par9uet.jm.ui.components.",
+                    "com.par9uet.jm.ui.glass.",
+                    "com.par9uet.jm.ui.screens.",
+                )))
+                addAll(forbiddenQualifiedUsages(pkg, listOf(
+                    "com.par9uet.jm.ui.interaction.",
+                    "com.par9uet.jm.ui.haptics.",
+                    "com.par9uet.jm.ui.screens.",
+                )))
+            }
+            // 通用 L4 只依赖更底层设施：coil/image/contentfilter/launcher/database 不得反向
+            // import 领域包；network/retrofit 仍允许读 storage 的窄偏好端口与 cache 额度（见 ARCHITECTURE.md）。
+            listOf("image", "contentfilter", "launcher", "database").forEach { pkg ->
+                addAll(forbiddenImports(pkg, forbidDomain))
+            }
+            addAll(forbiddenImports("utils", forbidDomain))
+            // core/network 是通用设施，不认识任何领域包。
+            addAll(forbiddenImports("core", listOf(
+                "com.par9uet.jm.session.", "com.par9uet.jm.storage.", "com.par9uet.jm.download.",
+                "com.par9uet.jm.reader.", "com.par9uet.jm.favorites.", "com.par9uet.jm.network.",
+                "com.par9uet.jm.repository.", "com.par9uet.jm.notification.", "com.par9uet.jm.cache.",
+            )))
             addAll(forbiddenImports("ui/screens/ExtractCodeScreen.kt", listOf(
                 "com.par9uet.jm.repository.",
             )))

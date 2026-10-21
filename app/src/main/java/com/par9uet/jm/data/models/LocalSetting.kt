@@ -24,12 +24,15 @@ data class BlockedTagTemplate(
     val tagList: List<String> = listOf(),
 )
 
+val DEFAULT_COMMENT_FILTER_KEYWORDS = listOf("扣群", "加群", "VIP", "可约", "一对一")
+
 /**
  * Unified persistence DTO for all local settings (one encrypted JSON document). Its shape is
  * shared with backup/restore and legacy migrations, so fields are never removed casually.
  */
 data class LocalSetting(
     // 开启后请求公开网络 API 获取首页推荐，不携带登录会话，可能不稳定
+    // Legacy backup field; LocalSettingManager normalizes this feature to enabled.
     val preferenceRecommendEnabled: Boolean = true,
     // 选中的 API 节点（候选集合见 [AVAILABLE_APIS]）
     val api: String = AVAILABLE_APIS.first(),
@@ -49,6 +52,8 @@ data class LocalSetting(
     val showComicCacheNotificationName: Boolean = true,
     val blockedTagList: List<String> = listOf(),
     val blockedTagTemplateList: List<BlockedTagTemplate> = listOf(),
+    // null / 旧设置缺字段使用默认词；显式空列表表示用户已清空，不能重新填入默认词。
+    val blockedCommentKeywordList: List<String>? = DEFAULT_COMMENT_FILTER_KEYWORDS,
     val appLockEnabled: Boolean = false,
     // 空字符串表示未设置密码
     val appLockPassword: String = "",
@@ -62,7 +67,7 @@ data class LocalSetting(
     val onboardingCompleted: Boolean = false,
     // 检测到剪贴板包含漫画编码时自动弹出跳转提示
     val clipboardAutoDetectEnabled: Boolean = false,
-    // 已登录且今日未签到时在启动后自动签到
+    // 已登录且今日未签到时在启动后自动签到；旧备份中的关闭值会归一为开启。
     val autoSignInEnabled: Boolean = true,
     // 冷启动后静默检查 GitHub Release；失败不弹错。仅进程首次启动触发，从后台唤起不检查。
     val autoCheckUpdateEnabled: Boolean = true,
@@ -84,7 +89,7 @@ data class LocalSetting(
     // DoH TLS 校验是否信任用户安装的设备证书
     val dohUseDeviceCertificates: Boolean = true,
     val dohPreferIpv6: Boolean = false,
-    // 网格列数：0 自适应，2-6 固定列数
+    // 网格列数：0 自适应，1-6 固定列数
     val homeGridColumns: Int = 0,
     val collectGridColumns: Int = 0,
     val downloadGridColumns: Int = 0,
@@ -96,13 +101,7 @@ data class LocalSetting(
     // 隐藏主导航按钮（首页/收藏/设置）。null = 未显式设置：跟随平板布局开关
     // （平板默认隐藏，手机默认显示）。显式设置后只由设置开关改写。
     val hideNavigationButtons: Boolean? = null,
-    // 历史遗留：原「图片内存优化」开关。设置已移除；字段保留兼容旧备份 JSON，读取时忽略。
-    val readMemoryOptEnabled: Boolean = false,
-    val readDecodeConcurrency: Int = 2,
-    // 已移除：homeExcludedTags（首页标签排除）。排除模板的去重并集 blockedTagList 已经全局生效
-    //（首页/周刊/历史/收藏/相关推荐本地过滤 + 搜索交服务端），该字段冗余故废弃。
-    // 旧存档/旧备份里仍可能有这个键，Gson 反序列化时忽略未知字段，无需迁移。
-    // 封面磁盘缓存上限（MB）；历史字段，现由 cacheBudgetMb 按份额推导，读取时忽略用户旧值。
+    // 封面磁盘缓存上限（MB）；历史字段，仅随备份透传，现由 cacheBudgetMb 按份额推导。
     val coverDiskCacheMb: Int = 256,
     // 缓存控制：总预算（MB）。各命名空间按 CacheBudget 推荐份额分配。
     val cacheBudgetMb: Int = 1024,
@@ -122,16 +121,10 @@ data class LocalSetting(
 )
 
 const val COLOR_PALETTE_PRESET_DEFAULT = "default"
-const val COLOR_PALETTE_PRESET_OCEAN = "ocean"
-const val COLOR_PALETTE_PRESET_SUNSET = "sunset"
-const val COLOR_PALETTE_PRESET_FOREST = "forest"
-const val COLOR_PALETTE_PRESET_LAVENDER = "lavender"
 const val COLOR_PALETTE_PRESET_CUSTOM = "custom"
 const val COLOR_PALETTE_PRESET_MONET = "monet"
 
 const val READ_MODE_SCROLL = "scroll"
-const val READ_MODE_PAGE = "page"
-const val READ_MODE_TAP = "tap"
 
 /**
  * 内置 API 请求带的 `lang` 参数，对齐官方 app 的 `localStorage.lang`。

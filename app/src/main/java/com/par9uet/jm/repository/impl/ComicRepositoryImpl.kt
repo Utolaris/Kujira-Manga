@@ -48,7 +48,10 @@ class ComicRepositoryImpl(
         embeddedDataSource.getHomeCategory(categoryId).map { items -> items.map { it.toComic() } }
 
     override suspend fun getNetworkHomePage(): NetWorkResult<List<HomeComicSwiperItem>> =
-        networkHomeDataSource.getHomePage().map { items -> items.map { it.toHomeComicSwiperItem() } }
+        networkHomeDataSource.getHomePage().map { items ->
+            // Library and novels are separate products, not comic albums. Drop before mapping.
+            items.filterNot { it.id == "1001" || it.id == "1002" }.map { it.toHomeComicSwiperItem() }
+        }
 
     override suspend fun getComicPicList(id: Int): NetWorkResult<ComicPageList> =
         embeddedDataSource.getComicPicList(id).map { it.toComicPageList() }

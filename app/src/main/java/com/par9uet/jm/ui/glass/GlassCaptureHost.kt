@@ -4,6 +4,8 @@ import android.content.Context
 import android.graphics.Canvas
 import android.os.Build
 import android.view.View
+import androidx.compose.foundation.LocalOverscrollFactory
+import androidx.compose.foundation.OverscrollFactory
 import android.widget.FrameLayout
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,10 +28,23 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.navigation.NavHostController
 import com.par9uet.jm.ui.models.LocalTabletLayoutEnabled
+import com.par9uet.jm.ui.models.DetailMotionControl
+import com.par9uet.jm.ui.models.DetailEntryControl
+import com.par9uet.jm.ui.models.LocalDetailMotion
+import com.par9uet.jm.ui.models.LocalDetailEntry
+import com.par9uet.jm.ui.models.CoverNavigator
+import com.par9uet.jm.ui.models.CoverAnchorRegistry
+import com.par9uet.jm.ui.models.LocalCoverNavigator
+import com.par9uet.jm.ui.models.LocalCoverAnchors
+import com.par9uet.jm.ui.models.LocalCoverPageKey
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.navigation.NavBackStackEntry
 import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.ui.theme.ExtendedColorScheme
 import com.par9uet.jm.ui.theme.ExtendedTheme
 import com.par9uet.jm.ui.theme.LocalExtendedColors
+import com.par9uet.jm.ui.models.ListPositionMemory
+import com.par9uet.jm.ui.interaction.LocalListPositionMemory
 
 import kotlin.math.roundToInt
 
@@ -53,6 +68,13 @@ fun GlassCaptureHost(
     val mainNavController = LocalMainNavController.current
     val minimumInteractiveComponentSize = LocalMinimumInteractiveComponentSize.current
     val tabletLayoutEnabled = LocalTabletLayoutEnabled.current
+    val overscrollFactory = LocalOverscrollFactory.current
+    val listPositionMemory = LocalListPositionMemory.current
+    val detailMotion = LocalDetailMotion.current
+    val detailEntry = LocalDetailEntry.current
+    val coverNavigator = LocalCoverNavigator.current
+    val coverAnchors = LocalCoverAnchors.current
+    val coverPageKey = LocalCoverPageKey.current ?: (LocalLifecycleOwner.current as? NavBackStackEntry)?.id
     val context = LocalContext.current
 
     AndroidView(
@@ -72,6 +94,13 @@ fun GlassCaptureHost(
                     mainNavController = mainNavController,
                     minimumInteractiveComponentSize = minimumInteractiveComponentSize,
                     tabletLayoutEnabled = tabletLayoutEnabled,
+                    overscrollFactory = overscrollFactory,
+                    listPositionMemory = listPositionMemory,
+                    detailMotion = detailMotion,
+                    detailEntry = detailEntry,
+                    coverNavigator = coverNavigator,
+                    coverAnchors = coverAnchors,
+                    coverPageKey = coverPageKey,
                 )
             }
         },
@@ -85,6 +114,13 @@ fun GlassCaptureHost(
                 mainNavController = mainNavController,
                 minimumInteractiveComponentSize = minimumInteractiveComponentSize,
                 tabletLayoutEnabled = tabletLayoutEnabled,
+                overscrollFactory = overscrollFactory,
+                listPositionMemory = listPositionMemory,
+                detailMotion = detailMotion,
+                detailEntry = detailEntry,
+                coverNavigator = coverNavigator,
+                coverAnchors = coverAnchors,
+                coverPageKey = coverPageKey,
             )
         },
         onRelease = GlassCaptureHostView::dispose,
@@ -95,6 +131,8 @@ internal class GlassCaptureHostView(context: Context) :
     FrameLayout(context),
     GlassSurfaceRegistry {
 
+    private val fallbackPositionMemory = ListPositionMemory()
+
     private data class ThemeState(
         val colorScheme: ColorScheme,
         val typography: Typography,
@@ -103,6 +141,13 @@ internal class GlassCaptureHostView(context: Context) :
         val mainNavController: NavHostController,
         val minimumInteractiveComponentSize: androidx.compose.ui.unit.Dp,
         val tabletLayoutEnabled: Boolean,
+        val overscrollFactory: OverscrollFactory?,
+        val listPositionMemory: ListPositionMemory,
+        val detailMotion: DetailMotionControl?,
+        val detailEntry: DetailEntryControl?,
+        val coverNavigator: CoverNavigator?,
+        val coverAnchors: CoverAnchorRegistry?,
+        val coverPageKey: String?,
     )
 
     private data class RegisteredSurface(
@@ -226,6 +271,13 @@ internal class GlassCaptureHostView(context: Context) :
         mainNavController: NavHostController,
         minimumInteractiveComponentSize: androidx.compose.ui.unit.Dp,
         tabletLayoutEnabled: Boolean,
+        overscrollFactory: OverscrollFactory? = null,
+        listPositionMemory: ListPositionMemory = fallbackPositionMemory,
+        detailMotion: DetailMotionControl? = null,
+        detailEntry: DetailEntryControl? = null,
+        coverNavigator: CoverNavigator? = null,
+        coverAnchors: CoverAnchorRegistry? = null,
+        coverPageKey: String? = null,
     ) {
         val newTheme = ThemeState(
             colorScheme = colorScheme,
@@ -235,6 +287,13 @@ internal class GlassCaptureHostView(context: Context) :
             mainNavController = mainNavController,
             minimumInteractiveComponentSize = minimumInteractiveComponentSize,
             tabletLayoutEnabled = tabletLayoutEnabled,
+            overscrollFactory = overscrollFactory,
+            listPositionMemory = listPositionMemory,
+            detailMotion = detailMotion,
+            detailEntry = detailEntry,
+            coverNavigator = coverNavigator,
+            coverAnchors = coverAnchors,
+            coverPageKey = coverPageKey,
         )
         val themeChanged = themeState.value != newTheme
         themeState.value = newTheme
@@ -455,6 +514,13 @@ internal class GlassCaptureHostView(context: Context) :
             LocalMainNavController provides theme.mainNavController,
             LocalMinimumInteractiveComponentSize provides theme.minimumInteractiveComponentSize,
             LocalTabletLayoutEnabled provides theme.tabletLayoutEnabled,
+            LocalOverscrollFactory provides theme.overscrollFactory,
+            LocalListPositionMemory provides theme.listPositionMemory,
+            LocalDetailMotion provides theme.detailMotion,
+            LocalDetailEntry provides theme.detailEntry,
+            LocalCoverNavigator provides theme.coverNavigator,
+            LocalCoverAnchors provides theme.coverAnchors,
+            LocalCoverPageKey provides theme.coverPageKey,
         ) {
             MaterialTheme(
                 colorScheme = theme.colorScheme,

@@ -6,6 +6,7 @@ import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
 import androidx.paging.cachedIn
+import com.par9uet.jm.contentfilter.filterBlockedComments
 import com.par9uet.jm.data.models.Comment
 import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.data.models.ComicChapter
@@ -21,12 +22,13 @@ import com.par9uet.jm.core.ToastManager
 import com.par9uet.jm.core.model.CommonUIState
 import com.par9uet.jm.ui.pagingSource.ComicCommentPagingSource
 import com.par9uet.jm.ui.state.CommentSubmissionGate
-import com.par9uet.jm.ui.haptics.AppHaptics
+import com.par9uet.jm.core.AppHaptics
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -153,8 +155,12 @@ class ComicDetailViewModel(
                             isError = false,
                             errorMsg = "",
                         )
+                        readHistoryManager.recordSeries(data.data)
                         if (localMode.isLocalMode) {
-                            localBrowseHistory.record(favoriteSession.currentAccountId(), data.data)
+                            val historyComic = readHistoryManager.seriesComic(data.data.id)
+                                ?: readHistoryManager.seriesComicForChapter(data.data.id)
+                                ?: data.data
+                            localBrowseHistory.record(favoriteSession.currentAccountId(), historyComic)
                         }
                     }
                 }
@@ -351,7 +357,9 @@ class ComicDetailViewModel(
             Pager(
                 config = PagingConfig(pageSize = 20, prefetchDistance = 6, initialLoadSize = 20),
                 pagingSourceFactory = { ComicCommentPagingSource(comicRepository, comicId) },
-            ).flow.cachedIn(viewModelScope)
+            ).flow.cachedIn(viewModelScope).combine(contentPreferences.blockedCommentKeywords) { pages, keywords ->
+                pages.filterBlockedComments(keywords)
+            }
         }
 
     private val _commentComicState = MutableStateFlow(CommonUIState(data = null))

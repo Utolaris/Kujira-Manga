@@ -112,7 +112,6 @@ private fun parseInline(text: String): AnnotatedString = buildAnnotatedString {
         val bold = match.groupValues[1]
         val code = match.groupValues[2]
         val linkText = match.groupValues[3]
-        val linkUrl = match.groupValues[4]
         when {
             bold.isNotEmpty() -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(bold) }
             code.isNotEmpty() -> withStyle(

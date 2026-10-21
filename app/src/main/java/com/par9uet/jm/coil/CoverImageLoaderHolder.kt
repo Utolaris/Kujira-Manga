@@ -65,6 +65,12 @@ class CoverImageLoaderHolder(
 
     fun current(): ImageLoader = _loader.value
 
+    /** Clear through Coil's journal protocol instead of deleting its live directory. */
+    @OptIn(coil.annotation.ExperimentalCoilApi::class)
+    fun clearDiskCache() {
+        _loader.value.diskCache?.clear()
+    }
+
     private fun replaceDiskCacheSize(mb: Int) {
         val previous = _loader.value
         _loader.value = createAsyncImageLoader(

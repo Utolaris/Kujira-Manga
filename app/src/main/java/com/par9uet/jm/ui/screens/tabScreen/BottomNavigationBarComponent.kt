@@ -174,7 +174,7 @@ internal object TabletFloatingNavDefaults {
     val outerMargin = 12.dp
     val itemHeight = 64.dp
 
-    /** 设置一级页双侧留白，超出悬浮按钮外缘 12dp。 */
+    /** 设置一级页横屏双侧留白；竖屏仅在显示悬浮导航时用于左侧避让。 */
     val settingsHorizontalInset: Dp = width + outerMargin + 12.dp
 }
 

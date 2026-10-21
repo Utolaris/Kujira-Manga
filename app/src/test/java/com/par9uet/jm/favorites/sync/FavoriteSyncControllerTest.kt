@@ -13,10 +13,10 @@ import org.junit.Assert.assertTrue
 import com.par9uet.jm.favorites.data.FAVORITE_SCOPE_ALL
 import com.par9uet.jm.favorites.sync.FavoriteSyncProgress
 import com.par9uet.jm.favorites.sync.FavoriteSyncReport
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -535,6 +535,27 @@ class FavoriteSyncControllerTest {
             assertFalse(controller.state.value.isSyncing)
         }
         assertEquals(3, calls)
+    }
+
+    @Test fun `await idle includes asynchronous cooldown lookup and the sync it schedules`() = runTest {
+        val lookup = CompletableDeferred<Long?>()
+        val sync = CompletableDeferred<Unit>()
+        val requests = mutableListOf<Request>()
+        val controller = controller(backgroundScope, TestFavoriteSession(), requests,
+            operation = { _, _, _, _ -> sync.await(); success() },
+            lastSuccessfulSyncAt = { lookup.await() })
+        controller.request(FavoriteSyncRequestKind.AUTO)
+        var finished = false
+        val waiting = launch { controller.awaitIdle(); finished = true }
+        runCurrent()
+        assertFalse(controller.state.value.isSyncing)
+        assertFalse(finished)
+        lookup.complete(null); runCurrent()
+        assertTrue(controller.state.value.isSyncing)
+        assertFalse(finished)
+        sync.complete(Unit); waiting.join()
+        assertTrue(finished)
+        assertEquals(1, requests.size)
     }
 
     private fun controller(

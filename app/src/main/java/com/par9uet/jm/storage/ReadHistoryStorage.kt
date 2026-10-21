@@ -10,6 +10,13 @@ data class ComicReadHistory(
     val readChapterIds: List<Int> = emptyList(),
     val lastPageIndex: Int = 0,
     val lastChapterPageCount: Int = 0,
+    /** 合集卡片元数据；章节页读完后历史列表仍展示原合集，而不是章节自身。 */
+    val seriesName: String = "",
+    val seriesAuthorList: List<String> = emptyList(),
+    val seriesTagList: List<String> = emptyList(),
+    val seriesDescription: String = "",
+    /** 合集详情列出的章节；与已读章节分开，避免把目录误标为全部已读。 */
+    val seriesChapterIds: List<Int> = emptyList(),
 )
 
 /** 阅读历史持久化端口；`null` 读结果表示 Keystore 暂时不可读。 */

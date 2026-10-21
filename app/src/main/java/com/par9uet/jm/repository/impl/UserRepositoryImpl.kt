@@ -1,10 +1,10 @@
 package com.par9uet.jm.repository.impl
 
 import com.par9uet.jm.core.BaseRepository
-import com.par9uet.jm.data.comic.mapper.toComicPage
+import com.par9uet.jm.data.comic.mapper.toComicList
 import com.par9uet.jm.data.comic.mapper.toCommentPage
 import com.par9uet.jm.data.models.ActionResult
-import com.par9uet.jm.data.models.ComicPage
+import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.data.models.CommentPage
 import com.par9uet.jm.network.AuthenticatedEmbeddedClient
 import com.par9uet.jm.network.EmbeddedClientManager
@@ -163,17 +163,16 @@ class UserRepositoryImpl(
         }
     }
 
-    override suspend fun getHistoryComicList(page: Int): NetWorkResult<ComicPage> {
+    override suspend fun getHistoryComicList(): NetWorkResult<List<Comic>> {
         return safeEmbeddedCall("内置 API 获取历史漫画失败") {
             requireNotNull(
                 authenticatedEmbeddedClient.withClient { client ->
-                    val albumMetas = client.getWatchHistory(page)
                     UserHistoryComicListResponse(
-                        list = albumMetas.map { it.toHistoryListItem() },
+                        list = client.getWatchHistory(1).map { it.toHistoryListItem() },
                     )
                 }
             )
-        }.map { it.toComicPage() }
+        }.map { it.toComicList() }
     }
 
     override suspend fun deleteHistoryComic(id: Int): NetWorkResult<Unit> {
@@ -281,11 +280,7 @@ class UserRepositoryImpl(
         )
     }
 
-    /**
-     * 内置 API 的签到状态直接映射成 `core.model.SignInData`。
-     * 不再绕一层 wire 的 `SignInDataResponse`（已删除）：此前经它再 `toSignData()`
-     * 会让映射规则分两处维护。
-     */
+    /** 内置 API 的签到状态直接映射成 `core.model.SignInData`，避免映射规则分两处维护。 */
     private fun JmDailyCheckInStatus.toSignInData(): SignInData {
         return SignInData(
             dailyId = dailyId,

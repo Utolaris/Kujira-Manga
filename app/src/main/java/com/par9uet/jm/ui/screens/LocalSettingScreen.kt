@@ -4,18 +4,15 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.foundation.background
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -30,10 +27,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.rounded.Api
-import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Bookmarks
 import androidx.compose.material.icons.rounded.ChevronRight
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.ContentPaste
 import androidx.compose.material.icons.rounded.DarkMode
@@ -47,8 +42,6 @@ import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Palette
-import androidx.compose.material.icons.rounded.Recommend
-import androidx.compose.material.icons.rounded.Source
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Translate
@@ -56,22 +49,17 @@ import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.CloudOff
-import androidx.compose.material.icons.rounded.EventAvailable
 import androidx.compose.material.icons.rounded.Lock
-import androidx.compose.material3.Card
+import com.par9uet.jm.ui.components.MotionCard as Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.par9uet.jm.ui.components.MotionTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -86,6 +74,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -97,6 +86,7 @@ import com.par9uet.jm.data.models.AVAILABLE_THEMES
 import com.par9uet.jm.data.models.LauncherDisguise
 import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.SettingsUiState
+import com.par9uet.jm.ui.components.DiscreteSettingSlider
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.components.SelectDialog
 import kotlinx.coroutines.launch
@@ -163,14 +153,10 @@ fun LocalSettingScreen(
     var showExitLocalModeConfirm by remember { mutableStateOf(false) }
     var showLocalModeHelp by remember { mutableStateOf(false) }
     var showForceRefreshConfirm by remember { mutableStateOf(false) }
-    val localModeCoordinator = org.koin.compose.koinInject<com.par9uet.jm.session.LocalModeCoordinator>()
-    val localModeExitScheduler = org.koin.compose.koinInject<com.par9uet.jm.core.model.LocalModeExitScheduler>()
-    val localFavoriteOperationGate = org.koin.compose.koinInject<com.par9uet.jm.favorites.usecase.LocalFavoriteOperationGate>()
-    val toastManager = org.koin.compose.koinInject<com.par9uet.jm.core.ToastManager>()
-    val isLocalMode by org.koin.compose.koinInject<com.par9uet.jm.core.model.ConnectionModeStatus>()
-        .isLocalModeFlow.collectAsState()
-    val localModeTransition by localModeCoordinator.transition.collectAsState()
-    val isSyncingLocalFavorites by localFavoriteOperationGate.isTransitioning.collectAsState()
+    val isLocalMode by settingsViewModel.isLocalMode.collectAsState()
+    val localModeExitStage by settingsViewModel.localModeExitStage.collectAsState()
+    val localModeExitFailed by settingsViewModel.localModeExitFailed.collectAsState()
+    val isSyncingLocalFavorites by settingsViewModel.isSyncingLocalFavorites.collectAsState()
 
     fun openSetting(type: SettingType) {
         settingType = type
@@ -208,7 +194,7 @@ fun LocalSettingScreen(
                 onConfirm = { dontShowAgain ->
                     if (dontShowAgain) settingsViewModel.dismissLocalModeHelp()
                     showLocalModeHelp = false
-                    localModeCoordinator.enterLocalMode()
+                    settingsViewModel.enterLocalMode()
                 },
                 onDismiss = { showLocalModeHelp = false },
             )
@@ -219,15 +205,13 @@ fun LocalSettingScreen(
                 confirmText = "开始同步",
                 onConfirm = {
                     showExitLocalModeConfirm = false
-                    if (!localModeExitScheduler.request()) toastManager.showAsync("无法启动收藏同步，请重试")
+                    settingsViewModel.requestLocalModeExit()
                 },
                 onDismiss = { showExitLocalModeConfirm = false },
                 surfaceId = "exit-local-mode-confirm",
             )
-            LaunchedEffect(localModeTransition) {
-                if (localModeTransition is com.par9uet.jm.session.LocalModeTransition.Failed) {
-                    showExitLocalModeConfirm = false
-                }
+            LaunchedEffect(localModeExitFailed) {
+                if (localModeExitFailed) showExitLocalModeConfirm = false
             }
             GlassModal(
                 visible = showCachePathDialog,
@@ -319,6 +303,13 @@ fun LocalSettingScreen(
                 }
             }
             item {
+                SettingsSection(title = "内容过滤") {
+                    SettingsRow(Icons.Rounded.VisibilityOff, "评论过滤", "命中任意关键词即隐藏") {
+                        mainNavController.navigate("commentFilter")
+                    }
+                }
+            }
+            item {
                 SettingsSection(title = "\u9690\u79c1") {
                     SettingsRow(
                         icon = Icons.Rounded.Lock,
@@ -351,8 +342,7 @@ fun LocalSettingScreen(
                         value = isLocalMode,
                         enabled = !isSyncingLocalFavorites,
                         valueText = if (isSyncingLocalFavorites) {
-                            (localModeTransition as? com.par9uet.jm.session.LocalModeTransition.Exiting)?.stage
-                                ?: "正在准备同步"
+                            localModeExitStage ?: "正在准备同步"
                         } else null,
                         onCheckedChange = { enabled ->
                             if (isSyncingLocalFavorites) return@SettingsSwitchRow
@@ -361,7 +351,7 @@ fun LocalSettingScreen(
                             } else if (!settingsViewModel.localModeHelpDismissed.value) {
                                 showLocalModeHelp = true
                             } else {
-                                localModeCoordinator.enterLocalMode()
+                                settingsViewModel.enterLocalMode()
                             }
                         }
                     )
@@ -392,12 +382,6 @@ fun LocalSettingScreen(
                     ) {
                         mainNavController.navigate("dohSetting")
                     }
-                    SettingsSwitchRow(
-                        icon = Icons.Rounded.Recommend,
-                        title = "\u7f51\u7edc\u63a8\u8350",
-                        value = ui.recommendationEnabled,
-                        onCheckedChange = { settingsViewModel.setPreferenceRecommendEnabled(it) }
-                    )
                     SettingsRow(
                         Icons.Rounded.CloudSync,
                         "\u5f3a\u5236\u5237\u65b0\u6536\u85cf\u5939",
@@ -433,12 +417,6 @@ fun LocalSettingScreen(
             }
             item {
                 SettingsSection(title = "\u5176\u4ed6") {
-                    SettingsSwitchRow(
-                        icon = Icons.Rounded.EventAvailable,
-                        title = "\u81ea\u52a8\u7b7e\u5230",
-                        value = ui.autoSignInEnabled,
-                        onCheckedChange = { settingsViewModel.setAutoSignInEnabled(it) }
-                    )
                     SettingsRow(Icons.Rounded.BugReport, "\u67e5\u770b\u65e5\u5fd7", "\u8c03\u8bd5\u548c\u9519\u8bef\u4fe1\u606f") {
                         mainNavController.navigate("logViewer")
                     }
@@ -563,7 +541,7 @@ private fun SettingSelectDialogContent(
 }
 
 @Composable
-private fun AllGridColumnSliderDialog(
+internal fun AllGridColumnSliderDialog(
     visible: Boolean,
     homeColumns: Int,
     collectColumns: Int,
@@ -573,23 +551,24 @@ private fun AllGridColumnSliderDialog(
     onConfirm: (Int, Int, Int, Int, Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var home by remember { mutableFloatStateOf(homeColumns.toFloat()) }
-    var collect by remember { mutableFloatStateOf(collectColumns.toFloat()) }
-    var download by remember { mutableFloatStateOf(downloadColumns.toFloat()) }
-    var history by remember { mutableFloatStateOf(historyColumns.toFloat()) }
-    var search by remember { mutableFloatStateOf(searchColumns.toFloat()) }
+    val columnValues = (0..6).toList()
+    fun columnValue(value: Int) = value.coerceIn(0, 6).toFloat()
+    var home by remember { mutableFloatStateOf(columnValue(homeColumns)) }
+    var collect by remember { mutableFloatStateOf(columnValue(collectColumns)) }
+    var download by remember { mutableFloatStateOf(columnValue(downloadColumns)) }
+    var history by remember { mutableFloatStateOf(columnValue(historyColumns)) }
+    var search by remember { mutableFloatStateOf(columnValue(searchColumns)) }
 
     LaunchedEffect(visible) {
         if (visible) {
-            home = homeColumns.toFloat()
-            collect = collectColumns.toFloat()
-            download = downloadColumns.toFloat()
-            history = historyColumns.toFloat()
-            search = searchColumns.toFloat()
+            home = columnValue(homeColumns)
+            collect = columnValue(collectColumns)
+            download = columnValue(downloadColumns)
+            history = columnValue(historyColumns)
+            search = columnValue(searchColumns)
         }
     }
 
-    @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     fun SliderRow(
         icon: ImageVector,
@@ -618,45 +597,31 @@ private fun AllGridColumnSliderDialog(
                     color = MaterialTheme.colorScheme.primary
                 )
             }
-            Slider(
-                value = value,
-                onValueChange = onChange,
-                valueRange = 0f..6f,
-                steps = 5,
-                thumb = {
-                    // 与「高斯模糊」滑条同款圆球游标
-                    val primary = MaterialTheme.colorScheme.primary
-                    Surface(
-                        modifier = Modifier.size(24.dp),
-                        shape = CircleShape,
-                        color = primary,
-                        border = BorderStroke(2.dp, MaterialTheme.colorScheme.surface),
-                        shadowElevation = 3.dp,
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Box(
-                                modifier = Modifier
-                                    .size(5.dp)
-                                    .background(MaterialTheme.colorScheme.onPrimary, CircleShape)
-                            )
-                        }
-                    }
-                },
+            DiscreteSettingSlider(
+                labels = listOf("自适应", "1", "2", "3", "4", "5", "6"),
+                selectedIndex = columnValues.indexOf(value.toInt()).coerceAtLeast(0),
+                onSelected = { onChange(columnValues[it].toFloat()) },
+                description = "${label}网格列数",
             )
         }
     }
 
-    val screenHeight = LocalWindowInfo.current.containerSize.height.dp
+    val density = LocalDensity.current
+    val screenHeight = with(density) { LocalWindowInfo.current.containerSize.height.toDp() }
+    // Native backdrops sit below the sharp toolbar overlay. Keep the modal clear of that chrome.
+    val topChrome = with(density) { WindowInsets.statusBars.getTop(this).toDp() } +
+        com.par9uet.jm.ui.glass.AppGlassTopBarDefaults.ContentHeight + 16.dp
+    val maxHeight = minOf(screenHeight * 0.85f, (screenHeight - topChrome * 2).coerceAtLeast(1.dp))
     GlassModal(
         visible = visible,
         onDismissRequest = onDismiss,
         surfaceId = "settings-grid-columns-glass-modal",
-        modifier = Modifier.settingsDialogWidth(),
+        modifier = Modifier.settingsDialogWidth().testTag("grid-columns-dialog"),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = screenHeight * 0.85f)
+                .heightIn(max = maxHeight)
                 .verticalScroll(rememberScrollState())
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -670,7 +635,7 @@ private fun AllGridColumnSliderDialog(
                 )
                 SliderRow(Icons.Rounded.Home, "首页", home) { home = it }
                 SliderRow(Icons.Rounded.Bookmarks, "收藏夹", collect) { collect = it }
-                SliderRow(Icons.Rounded.Download, "缓存", download) { download = it }
+                SliderRow(Icons.Rounded.Download, "下载中心", download) { download = it }
                 SliderRow(Icons.Rounded.History, "历史记录", history) { history = it }
                 SliderRow(Icons.Rounded.Search, "搜索", search) { search = it }
             }

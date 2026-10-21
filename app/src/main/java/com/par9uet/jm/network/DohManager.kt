@@ -183,8 +183,6 @@ class DohManager(
         result
     }
 
-    fun selectedServer(): DohServer = dohPrefs.doh.value.toDohServer()
-
     /** Activates DoH at app start according to the persisted enable/auto-start choices. */
     suspend fun init() {
         val setting = dohPrefs.doh.value

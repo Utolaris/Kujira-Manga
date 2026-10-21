@@ -16,6 +16,8 @@ interface ContentPreferences {
      * 客户端在 首页 / 周刊 / 历史 / 收藏 / 详情页相关推荐 本地过滤，搜索则拼进 `search_query` 交服务端排除。
      */
     val blockedTags: StateFlow<List<String>>
+    /** 评论正文子串匹配，忽略大小写，命中任意关键词即隐藏；空列表不过滤。 */
+    val blockedCommentKeywords: StateFlow<List<String>>
 }
 
 interface BlockedTagTemplatePreferences {

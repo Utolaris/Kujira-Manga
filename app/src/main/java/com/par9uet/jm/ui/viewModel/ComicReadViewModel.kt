@@ -26,7 +26,7 @@ import com.par9uet.jm.storage.ReaderPreferences
 import com.par9uet.jm.storage.ReadHistoryManager
 import com.par9uet.jm.core.ToastManager
 import com.par9uet.jm.core.model.CommonUIState
-import com.par9uet.jm.ui.haptics.AppHaptics
+import com.par9uet.jm.core.AppHaptics
 import com.par9uet.jm.utils.log
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -125,7 +125,7 @@ class ComicReadViewModel(
     private var lastDirectionAtMillis = 0L
     private var pageVelocity = 0f
 
-    fun getComicDetail(comicId: Int) {
+    fun getComicDetail(comicId: Int, historyId: Int = -1) {
         observeLocalFavoriteFlag(comicId)
         viewModelScope.launch {
             _comicDetailState.update {
@@ -137,7 +137,10 @@ class ComicReadViewModel(
             }
             when (val data = comicRepository.getComicDetail(comicId)) {
                 is NetWorkResult.Error -> {
-                    readHistoryComicId.intValue = readHistoryManager.markRead(comicId, comicId)
+                    val key = historyId.takeIf { it > 0 }
+                        ?: readHistoryManager.seriesComicForChapter(comicId)?.id
+                        ?: comicId
+                    readHistoryComicId.intValue = readHistoryManager.markRead(key, comicId)
                     _comicDetailState.update {
                         it.copy(
                             isError = true,
@@ -148,9 +151,15 @@ class ComicReadViewModel(
 
                 is NetWorkResult.Success -> {
                     val comic = data.data
-                    readHistoryComicId.intValue = readHistoryManager.markRead(comic, comicId)
+                    val key = historyId.takeIf { it > 0 }
+                        ?: readHistoryManager.seriesComicForChapter(comicId)?.id
+                        ?: readHistoryManager.historyKey(comic, comicId)
+                    readHistoryComicId.intValue = readHistoryManager.markRead(key, comicId)
                     if (localMode.isLocalMode) {
-                        localBrowseHistory.record(favoriteSession.currentAccountId(), comic)
+                        val historyComic = readHistoryManager.seriesComic(key)
+                            ?: comic.takeIf { key == comicId }
+                            ?: comic.copy(id = key)
+                        localBrowseHistory.record(favoriteSession.currentAccountId(), historyComic)
                     }
                     _comicDetailState.update {
                         it.copy(

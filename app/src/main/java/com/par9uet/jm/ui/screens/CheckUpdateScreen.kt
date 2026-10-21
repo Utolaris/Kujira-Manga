@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -27,22 +28,22 @@ import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Minimize
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
+import com.par9uet.jm.ui.components.MotionButton as Button
+import com.par9uet.jm.ui.components.MotionCard as Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
+import com.par9uet.jm.ui.components.MotionFilledTonalButton as FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.par9uet.jm.ui.components.MotionIconButton as IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.par9uet.jm.ui.components.MotionOutlinedButton as OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.par9uet.jm.ui.components.MotionTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -449,8 +450,8 @@ private fun ReleaseDialog(
         onDismissRequest = onDismiss,
         surfaceId = "update-release-glass-modal",
         modifier = Modifier
-            .fillMaxWidth()
             .widthIn(max = 520.dp)
+            .fillMaxWidth()
             .padding(horizontal = 24.dp),
     ) {
         Column(
@@ -495,7 +496,7 @@ private fun ReleaseDialog(
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(280.dp),
+                        .weight(1f, fill = false).heightIn(max = 280.dp),
                     shape = RoundedCornerShape(16.dp),
                     color = MaterialTheme.colorScheme.surfaceContainer
                 ) {
@@ -553,8 +554,8 @@ private fun UpdateDownloadDialog(
         dismissOnOutsideClick = isDone,
         dismissOnBack = isDone,
         modifier = Modifier
-            .fillMaxWidth()
             .widthIn(max = 480.dp)
+            .fillMaxWidth()
             .padding(horizontal = 24.dp),
     ) {
         Column(

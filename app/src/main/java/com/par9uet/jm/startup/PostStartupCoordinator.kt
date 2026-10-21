@@ -15,6 +15,8 @@ import com.par9uet.jm.utils.log
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import org.koin.core.Koin
@@ -28,8 +30,10 @@ class PostStartupCoordinator(
 
     fun start() {
         if (!started.compareAndSet(false, true)) return
+        val tasks = mutableListOf<Job>()
+        fun task(name: String, block: suspend () -> Unit) { tasks += launchTask(name, block) }
 
-        launchTask("DoH 网络配置") {
+        task("DoH 网络配置") {
             runAuthenticatedStartupTasks(
                 initDoh = { koin.get<DohManager>().init() },
                 refreshRemoteConfig = { koin.get<RemoteConfigManager>().refresh() },
@@ -53,35 +57,45 @@ class PostStartupCoordinator(
                 },
             )
         }
-        launchTask("桌面图标入口") {
+        task("桌面图标入口") {
             koin.get<LocalSettingManager>().applyLauncherDisguiseIfNeeded()
         }
         // Runs beside the task above rather than after it: the probe is best-effort and multi-second
-        // on a bad link, so nothing may wait on it. A switch retires the previous resolver, which is
+        // on a bad link, so other startup work runs independently. Only the final unread check waits.
+        // A switch retires the previous resolver, which is
         // why DohManager grants in-flight lookups a grace period instead of cancelling them.
-        launchTask("DoH 自动选线") {
+        task("DoH 自动选线") {
             koin.get<DohManager>().autoSelectFastest()
         }
-        launchTask("搜索历史") {
+        task("搜索历史") {
             koin.get<HistorySearchManager>().load()
         }
-        launchTask("阅读历史") {
+        task("阅读历史") {
             koin.get<ReadHistoryManager>().load()
         }
-        launchTask("本地浏览历史") {
+        task("本地浏览历史") {
             koin.get<com.par9uet.jm.storage.LocalBrowseHistoryManager>().load()
         }
-        launchTask("通知渠道") {
+        task("通知渠道") {
             ensureAppNotificationChannels(koin.get())
         }
         // 进程内只跑一次（AtomicBoolean）：从后台唤起不会再次检查。
         // 失败静默，由 AutoUpdateChecker 吞掉；有新版本才写 prompt。
-        launchTask("自动检查更新") {
+        task("自动检查更新") {
             koin.get<com.par9uet.jm.update.AutoUpdateChecker>().checkOnce()
+        }
+        task("缓存额度检查") {
+            koin.get<StartupCacheCleanup>().checkOnce()
+        }
+        launchTask("未读通知检查") {
+            tasks.joinAll()
+            koin.get<StartupHomeLoad>().awaitIdle()
+            koin.get<FavoriteSyncRequester>().awaitIdle()
+            koin.get<com.par9uet.jm.notification.NotificationUnreadCoordinator>().checkOnce()
         }
     }
 
-    private fun launchTask(name: String, block: suspend () -> Unit) {
+    private fun launchTask(name: String, block: suspend () -> Unit): Job =
         scope.launch {
             try {
                 block()
@@ -91,7 +105,6 @@ class PostStartupCoordinator(
                 log("启动后任务", "$name 失败：${error.message}")
             }
         }
-    }
 }
 
 /** Activates DoH before remote configuration and account verification start in parallel. */

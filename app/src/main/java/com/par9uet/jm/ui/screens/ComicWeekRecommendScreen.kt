@@ -9,7 +9,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.par9uet.jm.ui.components.MotionIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -36,7 +36,7 @@ import com.par9uet.jm.ui.components.SelectDialog
 import com.par9uet.jm.ui.components.SelectOption
 import com.par9uet.jm.ui.components.adaptiveComicGridCells
 import com.par9uet.jm.ui.components.comicGridMinCellSize
-import com.par9uet.jm.ui.interaction.ListPositionKeyWeek
+import com.par9uet.jm.ui.models.ListPositionKeyWeek
 import com.par9uet.jm.ui.interaction.rememberRestoringGridState
 import com.par9uet.jm.ui.viewModel.WeekViewModel
 import org.koin.compose.viewmodel.koinActivityViewModel

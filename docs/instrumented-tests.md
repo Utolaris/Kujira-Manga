@@ -83,6 +83,20 @@ adb shell appops get kujira.manga.debug | grep 10021
 | store | `FavoriteStoreSyncTest` | 收藏同步与 Room 事务（测试包仍在 `store`，主源码 `store` 已拆到领域包） |
 | network | `AppHttpClientDoHDeviceTest` | 真实图片健康探测必须调用注入的 DNS，禁止绕过到系统 DNS |
 | ui / ui.glass / ui.navigation / ui.viewModel | `FavoriteSyncGridTest`、`MainNavigationFlowTest`、`NavigationInteractionTest`、`SearchResultRefreshContentTest`、`PagingRefreshRetryTest`、`GlassCaptureHostSettleTest`、`RetainedMainNavigationTest`、`ReaderFavoriteMutationTest` | Compose 必须 RESUMED；Glass 静态源要能收敛；分页网格刷新失败应保留列表并可重试（组件测试，不代表真实 App 后台恢复验证） |
+| ui | `DinnerGridTest` | 多列交错排布、封面比例、列数改变、整行页尾及封面点击（合成封面） |
+| ui | `DinnerNavigationAndPagingTest` | Glass 重建后多列位置恢复、封面导航、触底自动加载、防重入和错误重试（合成文章） |
+| ui | `DinnerArticleRenderingTest` | 原生文章段落/表格/代码显示；详情加载失败后重试恢复（合成文章组件测试，不代表真实图床或站内跳转的真机验证） |
+| ui | `HomeToolbarMenuTest` | 首页标题点按分类菜单、铃铛未读状态（合成 UI） |
+| ui | `NotificationScreenTest` | 通知标题/时间、点击已读、标题点按筛选、全部已读与合集订阅按钮（合成数据） |
+| ui | `CommentFilterScreenTest` | 默认词/添加/移除/空列表界面、添加保存失败保留草稿（合成设置数据） |
+| ui | `ComicAuthorTest` | 空白/N/A 作者显示不可点击的未知作者，有效作者保留搜索 |
+| ui | `DetailLayoutReflowTest` | 横竖屏组件中间位置/尺寸、连续旋转接续、组合实例与滚动状态保留、横屏封面固定、短内容封面/介绍顶部对齐、评论高度改变不移动头部或拉开标题/作者间距、下载详情顶栏下无额外留白且横竖屏保留组合、缩窄时每帧内容不越界（合成 UI） |
+| ui | `ChapterDialogViewportTest` | 短横屏长章节列表不挤掉取消/分章/合并按钮，确认仍可点击（合成 UI） |
+| ui | `DetailEntryRegressionTest` | 编码/链接无来源立即显示、延迟目标保留缩略图、标题弹窗长按拖动锁定（合成 UI） |
+| ui | `ComicTagSectionTest` | 单行加载骨架、同排数标签替换可见、旧缓存的空标签/角色/作品不产生空芯片 |
+| ui | `GridColumnSliderDialogTest` | 网格列数复用离散额度滑条、弹窗避开顶部栏、下载中心名称、各行独立选择与确认后保存（合成设置数据） |
+| ui | `CoverTransitionFlowTest` | Glass 分层入场顺序、侧滑进度/取消保持详情不动及确认后完整退场、平板双栏评论滚动保持左侧封面固定、空白区不拖动而封面可拖动回弹、反向返回/来源移除/详情封面离屏/二次触碰及侧滑隔离、阅读返回不重播与触边震动（合成 UI） |
+| ui | `PressFeedbackRenderingTest` | V3 按压取消与收藏心形反馈的像素尺寸（合成 UI） |
 | worker | `DownloadComicWorkerContractTest`、`CacheMigrationWorkerContractTest`、`LocalModeExitNotificationTest` | 真实 `WorkerParameters`；本地模式同步的常驻通知 |
 
 ## 调试要点

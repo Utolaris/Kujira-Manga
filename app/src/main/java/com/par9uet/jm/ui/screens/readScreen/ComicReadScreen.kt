@@ -1,4 +1,5 @@
 package com.par9uet.jm.ui.screens.readScreen
+import com.par9uet.jm.ui.components.ReimuLoadingIndicator
 
 import android.app.Activity
 import com.par9uet.jm.ui.navigation.HierarchicalBackHandler
@@ -30,18 +31,19 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
-import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import com.par9uet.jm.ui.interaction.rememberFavoritePulse
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material3.Button
+import com.par9uet.jm.ui.components.MotionButton as Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.par9uet.jm.ui.components.MotionTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -58,6 +60,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -84,6 +87,7 @@ import org.koin.androidx.compose.koinViewModel
 @Composable
 fun ComicReadScreen(
     comicId: Int,
+    historyId: Int = -1,
     localOnly: Boolean = false,
     comicReadViewModel: ComicReadViewModel = koinViewModel(),
 ) {
@@ -99,6 +103,8 @@ fun ComicReadScreen(
     val localChapterList by comicReadViewModel.localChapterList.collectAsState()
     val readHistory by comicReadViewModel.readHistoryState.collectAsState()
     val comic = comicDetailState.data
+    // A parent id equal to the chapter id carries no series information; let the VM resolve it.
+    val historyKeyHint = historyId.takeIf { it > 0 && it != comicId } ?: -1
     val loading = comicPicState.isLoading
     val initialReaderIndex = if (size > 0) currentIndexState.coerceIn(0, size - 1) else 0
     val lazyListState = rememberLazyListState(initialFirstVisibleItemIndex = initialReaderIndex)
@@ -136,12 +142,16 @@ fun ComicReadScreen(
         val targetRoute = if (localOnly) {
             "localComicRead/${chapter.id}"
         } else {
-            "comicRead/${chapter.id}"
+            val seriesId = comic?.seriesId?.toIntOrNull()
+                ?.takeIf { it > 0 && it != comicId }
+                ?: historyKeyHint.takeIf { it > 0 }
+                ?: readHistoryComicId.takeIf { it > 0 && it != comicId }
+            "comicRead/${chapter.id}" + (seriesId?.let { "?historyId=$it" } ?: "")
         }
-        val currentRoute = if (localOnly) "localComicRead/$comicId" else "comicRead/$comicId"
+        val currentDestinationId = mainNavController.currentBackStackEntry?.destination?.id
         mainNavController.navigate(targetRoute) {
-            popUpTo(currentRoute) {
-                inclusive = true
+            if (currentDestinationId != null) {
+                popUpTo(currentDestinationId) { inclusive = true }
             }
         }
     }
@@ -196,12 +206,12 @@ fun ComicReadScreen(
         }
     }
 
-    LaunchedEffect(comicId, localOnly) {
+    LaunchedEffect(comicId, historyId, localOnly) {
         if (localOnly) {
             comicReadViewModel.clearComicDetail()
             comicReadViewModel.getLocalComicPicList(comicId)
         } else {
-            comicReadViewModel.getComicDetail(comicId)
+            comicReadViewModel.getComicDetail(comicId, historyKeyHint)
             comicReadViewModel.getComicPicList(comicId)
         }
     }
@@ -559,7 +569,7 @@ private fun ChapterCachePickerDialog(
                     )
                     Text(text = if (allSelected) "取消全选" else "全选")
                 }
-                LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
+                LazyColumn(modifier = Modifier.weight(1f, fill = false).heightIn(max = 360.dp)) {
                     itemsIndexed(chapters) { index, chapter ->
                         val selected = chapter.id in selectedChapterIds
                         Row(
@@ -640,11 +650,12 @@ private fun ReadSideBar(
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             ReadSideBarAction(
-                icon = if (comic?.isCollect == true) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                icon = if (comic?.isCollect == true) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                 label = "收藏",
                 enabled = !localOnly && comic != null,
                 tint = if (comic?.isCollect == true) MaterialTheme.colorScheme.tertiary else null,
-                onClick = onToggleCollect
+                onClick = onToggleCollect,
+                pulseOnClick = true,
             )
             ReadSideBarAction(
                 icon = Icons.Default.Download,
@@ -668,8 +679,10 @@ private fun ReadSideBarAction(
     label: String,
     enabled: Boolean = true,
     tint: androidx.compose.ui.graphics.Color? = null,
+    pulseOnClick: Boolean = false,
     onClick: () -> Unit,
 ) {
+    val pulse = rememberFavoritePulse()
     val contentColor = when {
         !enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
         tint != null -> tint
@@ -678,7 +691,10 @@ private fun ReadSideBarAction(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(enabled = enabled, onClick = onClick)
+            .clickable(enabled = enabled, onClick = {
+                if (pulseOnClick) pulse.trigger()
+                onClick()
+            })
             .padding(vertical = 9.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(3.dp)
@@ -686,7 +702,7 @@ private fun ReadSideBarAction(
         Icon(
             imageVector = icon,
             contentDescription = label,
-            modifier = Modifier.size(22.dp),
+            modifier = Modifier.size(22.dp).graphicsLayer { scaleX = pulse.scale; scaleY = pulse.scale },
             tint = contentColor
         )
         Text(
@@ -736,7 +752,7 @@ private fun ChapterPickerDialog(
             } else {
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier.heightIn(max = 360.dp)
+                    modifier = Modifier.weight(1f, fill = false).heightIn(max = 360.dp)
                 ) {
                     itemsIndexed(chapters) { index, chapter ->
                         val selected = chapter.id == currentChapterId
