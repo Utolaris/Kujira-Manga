@@ -75,12 +75,25 @@ eval "$(./scripts/android signing-env)"   # 导出 KUJIRA_MANGA_RELEASE_*_PASSWO
 ## 约定
 
 1. **真机优先**：不带序列号时自动选唯一真机，忽略模拟器；多台真机会报错并列出。
-   **例外**：`install-debug` 未指定序列号时会安装到**全部**真机（一次编译、逐台 `adb install`）。
+   **例外**：`install-debug` 未指定序列号时会安装到**全部**真机（一次编译、并发 `adb install`）。
+   设备列表和安装目标显示代号（例如 `dada`、`elish`），附型号与序列号；代号不可用时退回型号/序列号。
+   `install-debug` 在构建前显示目标列表（单机/指定设备也显示）；开始安装后不重复列出设备，完成结果仍显示代号与耗时。
+   每台设备独立安装、计时及记录日志；全部结束后才汇总错误，任一失败时 CLI 最终返回非零。
+   成功同时要求 adb 返回 0 且安装输出含 `Success`、不含 `Failure [...]`，防止厂商桥接误报。
+   汇总日志为 `build/install-debug-install.log`，独立日志保留在 `build/install-debug-install.*/`。
 2. **安装默认覆盖安装**（`install -r -t`），保留登录/设置；只有插桩脚本的 `--fresh` 才卸载。
 3. **结果以输出流为准**，不要只看 adb 退出码（见 [instrumented-tests.md](./instrumented-tests.md)）。
 4. **JDK**：编译前过 `scripts/jdk-guard.sh`，把 `JAVA_HOME` 锁到 Eclipse Temurin 21；
    解析不到合格 JDK 直接失败并打印安装命令。
 5. 新调试能力加进 `scripts/android`，并在本文件补一行用法，而不是另起碎片脚本。
+
+安装 CLI 回归测试使用临时 SDK/adb/Gradle 替身，不连接设备、不执行真实安装：
+
+```bash
+uv run python -B -m unittest discover -s scripts/tests -p 'test_android_install.py' -v
+```
+
+覆盖设备代号与回退、兼容脚本、并发屏障、单机安装、失败后等待全部完成、输出与退出码不一致、构建失败和终端进度。
 
 ## Clash TUN 与无线 adb
 

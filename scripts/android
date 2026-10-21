@@ -103,9 +103,10 @@ device_table() {
       continue
     fi
     if is_emulator "$serial"; then kind="模拟器"; else kind="真机"; fi
-    local model
+    local model codename
     model="$("$ADB" -s "$serial" shell getprop ro.product.model </dev/null 2>/dev/null | tr -d '\r\n' || true)"
-    printf '  %s [%s]%s\n' "$serial" "$kind" "${model:+ — $model}"
+    codename="$(device_codename "$serial")"
+    printf '  %s [%s] — %s%s\n' "$serial" "$kind" "$codename" "${model:+ ($model)}"
   done < <("$ADB" devices -l | sed -n '2,$p')
 }
 
@@ -150,7 +151,7 @@ select_device() {
 # install-debug 专用：未指定 serial 时返回**全部**已连接真机（一行一台），
 # 多机并排调试不用再手写循环；指定了 serial 仍只装那一台。
 select_install_targets() {
-  local requested="${1:-}" phones count
+  local requested="${1:-}" phones
   if [ -n "$requested" ]; then
     select_device "$requested"
     return
@@ -161,11 +162,6 @@ select_install_targets() {
     device_table >&2
     echo "手机请打开「开发者选项 → 无线调试」并完成配对；USB 时确认已授权调试。" >&2
     return 1
-  fi
-  count="$(printf '%s\n' "$phones" | wc -l | tr -d ' ')"
-  if [ "$count" -gt 1 ]; then
-    echo "==> 检测到 $count 台真机，将全部安装：" >&2
-    printf '%s\n' "$phones" | sed 's/^/  /' >&2
   fi
   printf '%s\n' "$phones"
 }
@@ -386,41 +382,112 @@ cmd_sdk_update() {
   yes | "$SDKMANAGER" "${pkgs[@]}"
 }
 
-cmd_install_debug() {
-  local targets serial apk apk_name failed=0
-  local codename build_log install_log
-  build_log="build/install-debug-build.log"
-  install_log="build/install-debug-install.log"
+# One worker per device. Failures stay in its log until all workers have finished.
+install_debug_target() {
+  local serial="$1" apk="$2" log_file="$3" start_ts rc=0
+  start_ts="$(_hr_now)"
+  if "$ADB" -s "$serial" install -r -t "$apk" >"$log_file" 2>&1; then
+    # Some vendor transports return zero while the package installer reports Failure.
+    if ! awk '
+      /^[[:space:]]*Success[[:space:]]*$/ { success = 1 }
+      /Failure[[:space:]]*\[/ { failure = 1 }
+      END { exit !(success && !failure) }
+    ' "$log_file"; then
+      rc=1
+    fi
+  else
+    rc=$?
+  fi
+  printf '%s\n' "$(( $(_hr_now) - start_ts ))" >"${log_file}.seconds"
+  return "$rc"
+}
 
-  targets="$(select_install_targets "${1:-}")" || exit 1
+cmd_install_debug() {
+  local targets serial apk apk_name failed=0 count=0 index=0 elapsed frame=0 running started
+  local build_log="build/install-debug-build.log" install_log="build/install-debug-install.log" log_dir
+  local serials=() codenames=() pids=() results=()
+
+  targets="$(select_install_targets "${1:-}")" || return 1
+  # List targets once during detection; installation results still identify each device.
+  while IFS= read -r serial; do
+    [ -n "$serial" ] || continue
+    serials[$count]="$serial"
+    codenames[$count]="$(device_codename "$serial")"
+    count=$((count + 1))
+  done <<< "$targets"
+  echo "检测到 ${count} 台设备："
+  while [ "$index" -lt "$count" ]; do
+    printf '  %s — %s\n' "${serials[$index]}" "${codenames[$index]}"
+    index=$((index + 1))
+  done
   require_gradle_jdk
 
   if ! run_with_progress "正在构建" "$build_log" \
       ./gradlew $GRADLE_FLAGS assembleDebug --console=plain; then
-    exit 1
+    return 1
   fi
   echo "构建完成，耗时 ${LAST_DURATION_SEC} 秒"
 
   apk="$(latest_apk app/build/outputs/apk/debug)"
-  [ -n "$apk" ] || { echo "[ERROR] debug APK not found under app/build/outputs/apk/debug" >&2; exit 1; }
+  [ -n "$apk" ] || { echo "[ERROR] debug APK not found under app/build/outputs/apk/debug" >&2; return 1; }
   apk_name="$(basename "$apk")"
+  log_dir="$(mktemp -d build/install-debug-install.XXXXXX)"
 
-  # 安装过程用进度条（run_with_progress 结束会清行）；终端最终只留摘要两行。
-  while IFS= read -r serial; do
-    [ -n "$serial" ] || continue
-    codename="$(device_codename "$serial")"
-    if ! run_with_progress "正在安装到 ${codename}" "$install_log" \
-        "$ADB" -s "$serial" install -r -t "$apk"; then
-      echo "[ERROR] install failed on ${codename} (${serial})" >&2
-      failed=1
-      continue
+  # Dispatch every install without waiting for a device.
+  echo "正在并发安装到 ${count} 台设备"
+  index=0
+  while [ "$index" -lt "$count" ]; do
+    install_debug_target "${serials[$index]}" "$apk" "$log_dir/$index.log" &
+    pids[$index]=$!
+    index=$((index + 1))
+  done
+
+  if [ -t 1 ]; then
+    started="$(_hr_now)"
+    while :; do
+      running=0
+      index=0
+      while [ "$index" -lt "$count" ]; do
+        if kill -0 "${pids[$index]}" 2>/dev/null; then running=$((running + 1)); fi
+        index=$((index + 1))
+      done
+      [ "$running" -gt 0 ] || break
+      printf '\r正在并发安装 %s %s/%s 已完成 %2ds' "$(progress_bar "$frame")" "$((count - running))" "$count" "$(( $(_hr_now) - started ))"
+      frame=$((frame + 1))
+      sleep 0.12
+    done
+    printf '\r\033[K'
+  fi
+
+  # Reap all workers first. No failed device may stop or pre-empt another installation.
+  index=0
+  while [ "$index" -lt "$count" ]; do
+    if wait "${pids[$index]}"; then
+      results[$index]=0
+    else
+      results[$index]=$?
+      failed=$((failed + 1))
     fi
-    echo "${apk_name} 已经安装到 ${codename}，安装耗时 ${LAST_DURATION_SEC}秒。"
-  done <<< "$targets"
+    index=$((index + 1))
+  done
 
+  : >"$install_log"
+  index=0
+  while [ "$index" -lt "$count" ]; do
+    printf '=== %s (%s) ===\n' "${codenames[$index]}" "${serials[$index]}" >>"$install_log"
+    cat "$log_dir/$index.log" >>"$install_log"
+    elapsed="$(cat "$log_dir/$index.log.seconds" 2>/dev/null || echo '?')"
+    if [ "${results[$index]}" -eq 0 ]; then
+      echo "${apk_name} 已经安装到 ${codenames[$index]}，安装耗时 ${elapsed}秒。"
+    else
+      echo "[ERROR] install failed on ${codenames[$index]} (${serials[$index]}), exit ${results[$index]}. Log: $log_dir/$index.log" >&2
+      tail -n 40 "$log_dir/$index.log" >&2
+    fi
+    index=$((index + 1))
+  done
   if [ "$failed" -ne 0 ]; then
-    echo "[ERROR] install-debug finished with device failures" >&2
-    exit 1
+    echo "[ERROR] install-debug finished: ${failed}/${count} devices failed; all installations have completed" >&2
+    return 1
   fi
 }
 
