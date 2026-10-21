@@ -12,49 +12,23 @@ class ReaderConcurrencyPolicyTest {
     @Test
     fun normalDeviceUsesHardwareDefaultOfTwo() {
         assertEquals(2, ReaderConcurrencyPolicy.imageWorkConcurrency(false, 512))
-        assertEquals(2, ReaderConcurrencyPolicy.maxDecodeConcurrency(false, 512))
-        assertEquals(
-            2,
-            ReaderConcurrencyPolicy.effectiveDecodeConcurrency(
-                lowRamDevice = false,
-                memoryClassMb = 512,
-            ),
-        )
     }
 
     @Test
     fun lowRamDeviceStaysAtOne() {
         assertEquals(1, ReaderConcurrencyPolicy.imageWorkConcurrency(true, 256))
-        assertEquals(1, ReaderConcurrencyPolicy.maxDecodeConcurrency(true, 256))
-        assertEquals(
-            1,
-            ReaderConcurrencyPolicy.effectiveDecodeConcurrency(
-                lowRamDevice = true,
-                memoryClassMb = 256,
-            ),
-        )
     }
 
     @Test
     fun smallMemoryClassClampedLikeLowRam() {
         // memoryClass < 384 与 lowRam 同样视为低内存。
         assertEquals(1, ReaderConcurrencyPolicy.imageWorkConcurrency(false, 256))
-        assertEquals(
-            1,
-            ReaderConcurrencyPolicy.effectiveDecodeConcurrency(
-                lowRamDevice = false,
-                memoryClassMb = 256,
-            ),
-        )
     }
 
     @Test
     fun limiterFollowsHardwarePolicy() {
         val limiter = ReaderDynamicLimiter(
-            ReaderConcurrencyPolicy.effectiveDecodeConcurrency(
-                lowRamDevice = false,
-                memoryClassMb = 512,
-            ),
+            ReaderConcurrencyPolicy.imageWorkConcurrency(lowRamDevice = false, memoryClassMb = 512),
         )
         assertEquals(2, limiter.limit)
     }

@@ -30,7 +30,6 @@ import okhttp3.Response
 internal class ReaderBackgroundPreempted : Exception("后台图片请求让出网络槽位")
 
 internal data class ReaderRemoteAttempt(
-    val url: String,
     val file: File,
 )
 
@@ -48,29 +47,12 @@ internal interface ReaderRemoteObserver {
         elapsedMillis: Long,
         httpCode: Int,
     ) = Unit
-    fun onRequestSucceeded(
-        url: String,
-        candidate: ReaderRemoteCandidate,
-        timeToHeadersMillis: Long,
-        bodyMillis: Long,
-        totalMillis: Long,
-    ) = Unit
-
     fun onRequestFailed(
         url: String,
         candidate: ReaderRemoteCandidate,
-        totalMillis: Long,
         error: Throwable? = null,
     ) = Unit
-    fun onRequestCanceled(
-        url: String,
-        candidate: ReaderRemoteCandidate,
-        totalMillis: Long,
-        preempted: Boolean,
-    ) = Unit
-
     fun onHedgeSecondaryStarted() = Unit
-    fun onHedgeWinner(primary: Boolean, url: String) = Unit
     fun onHedgeLoserCanceled() = Unit
 }
 
@@ -125,7 +107,6 @@ internal class ReaderRemoteFetcher(
             earlyPrimary.getOrNull()?.let { opened ->
                 val primaryResult = readOpened(opened, shouldPreempt)
                 primaryResult.getOrNull()?.let { winner ->
-                    observer.onHedgeWinner(primary = true, url = winner.url)
                     return@supervisorScope winner
                 }
                 val secondary = fetchCandidate(
@@ -135,7 +116,6 @@ internal class ReaderRemoteFetcher(
                     shouldPreempt = shouldPreempt,
                 )
                 secondary.getOrNull()?.let { winner ->
-                    observer.onHedgeWinner(primary = false, url = winner.url)
                     return@supervisorScope winner
                 }
                 throw secondary.exceptionOrNull()
@@ -149,7 +129,6 @@ internal class ReaderRemoteFetcher(
                 shouldPreempt = shouldPreempt,
             )
             secondary.getOrNull()?.let { winner ->
-                observer.onHedgeWinner(primary = false, url = winner.url)
                 return@supervisorScope winner
             }
             throw secondary.exceptionOrNull()
@@ -166,20 +145,18 @@ internal class ReaderRemoteFetcher(
             )
         }
         val first = select<OpenedSelection> {
-            primary.onAwait { OpenedSelection(it, primary = true, other = secondary) }
-            secondary.onAwait { OpenedSelection(it, primary = false, other = primary) }
+            primary.onAwait { OpenedSelection(it, other = secondary) }
+            secondary.onAwait { OpenedSelection(it, other = primary) }
         }
         first.result.getOrNull()?.let { opened ->
             cancelOpenedLoser(first.other)
             val winner = readOpened(opened, shouldPreempt).getOrThrow()
-            observer.onHedgeWinner(primary = first.primary, url = winner.url)
             return@supervisorScope winner
         }
 
         val secondResult = first.other.await()
         secondResult.getOrNull()?.let { opened ->
             val winner = readOpened(opened, shouldPreempt).getOrThrow()
-            observer.onHedgeWinner(primary = !first.primary, url = winner.url)
             return@supervisorScope winner
         }
         throw secondResult.exceptionOrNull()
@@ -208,11 +185,10 @@ internal class ReaderRemoteFetcher(
         var permit: ReaderNetworkPermit? = null
         var call: Call? = null
         var response: Response? = null
-        var startedAt = clockMillis()
         return try {
             permit = acquirePermit()
             if (shouldPreempt()) throw ReaderBackgroundPreempted()
-            startedAt = clockMillis()
+            val startedAt = clockMillis()
             call = client.newCall(imageRequest(url))
             response = awaitResponse(call, shouldPreempt) {
                 observer.onRequestStarted(url, candidate, call)
@@ -237,8 +213,6 @@ internal class ReaderRemoteFetcher(
                 call = call,
                 response = response,
                 permit = permit,
-                startedAtMillis = startedAt,
-                timeToHeadersMillis = headersMillis,
             )
             response = null
             permit = null
@@ -248,12 +222,6 @@ internal class ReaderRemoteFetcher(
             throw error
         } catch (error: ReaderBackgroundPreempted) {
             call?.cancel()
-            observer.onRequestCanceled(
-                url,
-                candidate,
-                (clockMillis() - startedAt).coerceAtLeast(0L),
-                preempted = true,
-            )
             throw error
         } catch (error: OutOfMemoryError) {
             call?.cancel()
@@ -263,7 +231,6 @@ internal class ReaderRemoteFetcher(
             observer.onRequestFailed(
                 url,
                 candidate,
-                (clockMillis() - startedAt).coerceAtLeast(0L),
                 error,
             )
             Result.failure(error)
@@ -324,12 +291,10 @@ internal class ReaderRemoteFetcher(
             observer.onRequestFailed(
                 opened.url,
                 opened.candidate,
-                (clockMillis() - opened.startedAtMillis).coerceAtLeast(0L),
                 error,
             )
             return Result.failure(error)
         }
-        val bodyStartedAt = clockMillis()
         val preempted = AtomicBoolean(false)
         return try {
             coroutineScope {
@@ -350,34 +315,14 @@ internal class ReaderRemoteFetcher(
                 }
             }
             validateTemporary(temporary)
-            val finishedAt = clockMillis()
-            observer.onRequestSucceeded(
-                url = opened.url,
-                candidate = opened.candidate,
-                timeToHeadersMillis = opened.timeToHeadersMillis,
-                bodyMillis = (finishedAt - bodyStartedAt).coerceAtLeast(0L),
-                totalMillis = (finishedAt - opened.startedAtMillis).coerceAtLeast(0L),
-            )
-            Result.success(ReaderRemoteAttempt(opened.url, temporary))
+            Result.success(ReaderRemoteAttempt(temporary))
         } catch (error: CancellationException) {
             opened.call.cancel()
             discardTemporary(temporary)
-            observer.onRequestCanceled(
-                opened.url,
-                opened.candidate,
-                (clockMillis() - opened.startedAtMillis).coerceAtLeast(0L),
-                preempted = false,
-            )
             throw error
         } catch (error: ReaderBackgroundPreempted) {
             opened.call.cancel()
             discardTemporary(temporary)
-            observer.onRequestCanceled(
-                opened.url,
-                opened.candidate,
-                (clockMillis() - opened.startedAtMillis).coerceAtLeast(0L),
-                preempted = true,
-            )
             throw error
         } catch (error: OutOfMemoryError) {
             opened.call.cancel()
@@ -387,18 +332,11 @@ internal class ReaderRemoteFetcher(
             opened.call.cancel()
             discardTemporary(temporary)
             if (preempted.get()) {
-                observer.onRequestCanceled(
-                    opened.url,
-                    opened.candidate,
-                    (clockMillis() - opened.startedAtMillis).coerceAtLeast(0L),
-                    preempted = true,
-                )
                 throw ReaderBackgroundPreempted()
             }
             observer.onRequestFailed(
                 opened.url,
                 opened.candidate,
-                (clockMillis() - opened.startedAtMillis).coerceAtLeast(0L),
                 error,
             )
             Result.failure(error)
@@ -462,7 +400,6 @@ internal class ReaderRemoteFetcher(
 
     private data class OpenedSelection(
         val result: Result<ReaderOpenedRemote>,
-        val primary: Boolean,
         val other: Deferred<Result<ReaderOpenedRemote>>,
     )
 
@@ -472,8 +409,6 @@ internal class ReaderRemoteFetcher(
         val call: Call,
         val response: Response,
         private val permit: ReaderNetworkPermit,
-        val startedAtMillis: Long,
-        val timeToHeadersMillis: Long,
     ) {
         private val closed = AtomicBoolean(false)
 

@@ -119,8 +119,6 @@ internal class ReaderInFlightRegistry<K, V>(
 
     fun isVisible(key: K): Boolean = entries[key]?.visibleConsumers?.get()?.let { it > 0 } == true
 
-    fun inFlightCount(): Int = entries.size
-
     fun invalidate(key: K): Boolean {
         val entry = entries.remove(key) ?: return false
         entry.deferred.cancel()

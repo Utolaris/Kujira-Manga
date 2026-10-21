@@ -64,16 +64,3 @@ internal fun readerPrefetchPlan(
     }
     return result
 }
-
-/** A large jump or a stable direction gets a small forward runway without unbounded work. */
-internal fun readerPrefetchDistance(
-    configuredDistance: Int,
-    jumpDistance: Int,
-    directionStreak: Int,
-): Int {
-    val base = configuredDistance.coerceAtLeast(0)
-    if (base == 0) return 0
-    val jumpBonus = if (jumpDistance >= 4) base.coerceAtMost(3) else 0
-    val streakBonus = if (directionStreak >= 3) 1 else 0
-    return (base + jumpBonus + streakBonus).coerceAtMost(12)
-}

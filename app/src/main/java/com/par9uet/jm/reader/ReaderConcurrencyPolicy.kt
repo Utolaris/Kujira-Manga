@@ -10,12 +10,4 @@ internal object ReaderConcurrencyPolicy {
     /** 图片工作默认并发：低内存设备始终为 1。 */
     fun imageWorkConcurrency(lowRamDevice: Boolean, memoryClassMb: Int): Int =
         if (lowRamDevice || memoryClassMb < 384) 1 else 2
-
-    /** 硬件安全上限（与默认并发一致；阅读路径没有更高档位）。 */
-    fun maxDecodeConcurrency(lowRamDevice: Boolean, memoryClassMb: Int): Int =
-        imageWorkConcurrency(lowRamDevice, memoryClassMb)
-
-    /** 生效的解码并发。 */
-    fun effectiveDecodeConcurrency(lowRamDevice: Boolean, memoryClassMb: Int): Int =
-        imageWorkConcurrency(lowRamDevice, memoryClassMb)
 }

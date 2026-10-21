@@ -69,10 +69,7 @@ data class ReaderPage(
     val speed: String,
     val localFile: File?,
     val fallbackFetcher: (suspend () -> ByteArray?)? = null,
-) {
-    val isGif: Boolean
-        get() = originSrc.substringBefore('?').endsWith(".gif", ignoreCase = true)
-}
+)
 
 enum class ReaderRequestPriority {
     PREFETCH,

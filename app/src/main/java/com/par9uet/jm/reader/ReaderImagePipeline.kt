@@ -2,9 +2,7 @@ package com.par9uet.jm.reader
 
 import android.app.ActivityManager
 import android.content.Context
-import android.os.SystemClock
 import androidx.core.net.toUri
-import com.par9uet.jm.BuildConfig
 import com.par9uet.jm.cache.CacheBudget
 import com.par9uet.jm.image.JmImageHostHealthManager
 import com.par9uet.jm.network.DohManager
@@ -43,8 +41,7 @@ class ReaderImagePipeline internal constructor(
     private val lowRamDevice = activityManager?.isLowRamDevice ?: false
     private val imageWorkConcurrency =
         ReaderConcurrencyPolicy.imageWorkConcurrency(lowRamDevice, memoryClassMb)
-    private val decodeConcurrency =
-        ReaderConcurrencyPolicy.effectiveDecodeConcurrency(lowRamDevice, memoryClassMb)
+    private val decodeConcurrency = imageWorkConcurrency
     private val networkConcurrency = if (imageWorkConcurrency > 1 && memoryClassMb >= 512) {
         3
     } else {
@@ -96,16 +93,14 @@ class ReaderImagePipeline internal constructor(
         scope = scope,
         healthManager = imageHostHealthManager,
     )
-    private val metrics = ReaderMetrics(BuildConfig.DEBUG)
     private val sourceLoader = ReaderSourceLoader(
         scope = scope,
         visibleRequestTracker = visibleRequestTracker,
         diskCache = diskCache,
         networkScheduler = networkScheduler,
         imageHostManager = imageHostManager,
-        metrics = metrics,
         httpClient = httpClient,
-        remoteObserver = ReaderRemoteTelemetry(metrics, imageHostManager),
+        remoteObserver = ReaderRemoteTelemetry(imageHostManager),
     )
 
     init {
@@ -154,10 +149,6 @@ class ReaderImagePipeline internal constructor(
         turboMode = turboMode,
     )
 
-    internal fun metricsSnapshot(): ReaderMetricsSnapshot = metrics.snapshot()
-
-    internal fun imageHostSnapshot(): ReaderImageHostSnapshot = imageHostManager.snapshot()
-
     fun warmImageConnections(page: ReaderPage) {
         imageHostManager.warmImageConnections(page.originSrc)
     }
@@ -167,7 +158,6 @@ class ReaderImagePipeline internal constructor(
             it.page.stableIdentity() == pageKey.stableIdentity()
         } > 0
         val sourceCancelled = sourceLoader.cancelPrefetch(pageKey)
-        if (decodedCancelled || sourceCancelled) metrics.prefetchCanceled()
         return decodedCancelled || sourceCancelled
     }
 
@@ -175,8 +165,6 @@ class ReaderImagePipeline internal constructor(
         requests.cancelAllPrefetch()
         sourceLoader.cancelAllPrefetch()
     }
-
-    fun clearMemory() = bitmapCache.clear()
 
     suspend fun clearDiskCache() = withContext(Dispatchers.IO) { diskCache.clear() }
 
@@ -222,26 +210,16 @@ class ReaderImagePipeline internal constructor(
         priority: ReaderRequestPriority,
         profile: ReaderDecodeProfile,
     ): ReaderDecodedPage {
-        val startedAt = SystemClock.elapsedRealtime()
-        metrics.request(priority)
         val canonicalPageKey = canonicalPageKey(page.key)
         if (profile != ReaderDecodeProfile.DOWNLOAD) {
             bitmapCache.get(canonicalPageKey, profile)?.let { cached ->
-                metrics.memoryHit()
-                if (priority == ReaderRequestPriority.PREFETCH) metrics.prefetchCacheHit()
-                metrics.requestFinished(priority, SystemClock.elapsedRealtime() - startedAt)
                 return cached
             }
         }
-        metrics.cacheMiss()
 
         val inFlightKey = ReaderInFlightKey(canonicalPageKey, profile.cacheToken)
-        return try {
-            requests.request(inFlightKey, priority) { handle ->
-                performLoad(page, priority, profile, canonicalPageKey, handle)
-            }
-        } finally {
-            metrics.requestFinished(priority, SystemClock.elapsedRealtime() - startedAt)
+        return requests.request(inFlightKey, priority) { handle ->
+            performLoad(page, priority, profile, canonicalPageKey, handle)
         }
     }
 
@@ -254,7 +232,6 @@ class ReaderImagePipeline internal constructor(
     ): ReaderDecodedPage = withContext(Dispatchers.IO) {
         if (profile != ReaderDecodeProfile.DOWNLOAD) {
             bitmapCache.get(canonicalPageKey, profile)?.let { cached ->
-                metrics.memoryHit()
                 return@withContext cached
             }
         }
@@ -271,7 +248,7 @@ class ReaderImagePipeline internal constructor(
                 }
                 return@withContext decodeAndCache(
                     cachePageKey = canonicalPageKey,
-                    decoded = withMeasuredDecode(handle) { decodeReaderRawFile(temporary, page, profile) },
+                    decoded = withDecodePriority(handle) { decodeReaderRawFile(temporary, page, profile) },
                     decodedFile = decodedFile,
                     profile = profile,
                 )
@@ -281,7 +258,7 @@ class ReaderImagePipeline internal constructor(
         if (localFile?.isFile == true) {
             return@withContext decodeAndCache(
                 cachePageKey = canonicalPageKey,
-                decoded = withMeasuredDecode(handle) {
+                decoded = withDecodePriority(handle) {
                     decodeReaderRawFile(localFile, page, profile)
                 },
                 decodedFile = decodedFile,
@@ -291,7 +268,6 @@ class ReaderImagePipeline internal constructor(
 
         if (profile != ReaderDecodeProfile.DOWNLOAD) {
             decodeReaderDecodedFile(decodedFile, profile)?.let { cached ->
-                metrics.decodedDiskHit()
                 bitmapCache.put(canonicalPageKey, profile, cached.bitmap)
                 return@withContext ReaderDecodedPage(cached.bitmap, cached.aspectRatio)
             } ?: decodedFile.takeIf(File::exists)?.delete()
@@ -303,7 +279,7 @@ class ReaderImagePipeline internal constructor(
         try {
             while (decodedPage == null) {
                 val decoded = try {
-                    withMeasuredDecode(handle) {
+                    withDecodePriority(handle) {
                         decodeReaderRawFile(sourceLease.file, page, profile)
                     }
                 } catch (error: Throwable) {
@@ -387,18 +363,6 @@ class ReaderImagePipeline internal constructor(
                 }
             }
             delay(PRIORITY_RETRY_DELAY_MILLIS)
-        }
-    }
-
-    private suspend fun <T> withMeasuredDecode(
-        handle: ReaderLoadHandle,
-        block: suspend () -> T,
-    ): T {
-        val startedAt = SystemClock.elapsedRealtime()
-        return try {
-            withDecodePriority(handle, block)
-        } finally {
-            metrics.decodeFinished(SystemClock.elapsedRealtime() - startedAt)
         }
     }
 

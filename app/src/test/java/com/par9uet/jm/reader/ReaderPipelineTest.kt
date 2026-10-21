@@ -286,14 +286,6 @@ class ReaderPipelineTest {
     }
 
     @Test
-    fun jumpAndStableDirectionExpandOnlyWithinBound() {
-        assertEquals(3, readerPrefetchDistance(3, jumpDistance = 0, directionStreak = 1))
-        assertEquals(6, readerPrefetchDistance(3, jumpDistance = 4, directionStreak = 1))
-        assertEquals(4, readerPrefetchDistance(3, jumpDistance = 0, directionStreak = 3))
-        assertEquals(12, readerPrefetchDistance(12, jumpDistance = 50, directionStreak = 20))
-    }
-
-    @Test
     fun cacheKeyIsStableAndIncludesScrambleIdentity() {
         val first = ReaderPageKey(123, 4, "https://example/page.webp?t=1", 456, "0")
         val same = ReaderPageKey(123, 4, "https://example/page.webp?t=1", 456, "0")

@@ -2,7 +2,6 @@ package com.par9uet.jm.reader
 
 import android.os.SystemClock
 import com.par9uet.jm.image.JmImageHostHealthManager
-import com.par9uet.jm.image.JmImageHostSnapshot
 import com.par9uet.jm.image.isJmImagePathAllowed
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -15,8 +14,6 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.ConcurrentHashMap
-
-internal typealias ReaderImageHostSnapshot = JmImageHostSnapshot
 
 /** Reader-specific URL rewriting and connection warming over the shared JM host health state. */
 internal class ReaderImageHostManager(
@@ -95,8 +92,6 @@ internal class ReaderImageHostManager(
             }
         }
     }
-
-    fun snapshot(): ReaderImageHostSnapshot = healthManager.snapshot()
 
     fun close() {
         networkObserver.cancel()

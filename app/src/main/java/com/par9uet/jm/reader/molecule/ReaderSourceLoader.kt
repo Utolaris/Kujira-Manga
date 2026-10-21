@@ -1,6 +1,5 @@
 package com.par9uet.jm.reader.molecule
 
-import android.os.SystemClock
 import com.par9uet.jm.reader.MAX_VISIBLE_SOURCE_ATTEMPTS
 import com.par9uet.jm.reader.READER_MAX_SOURCE_BYTES
 import com.par9uet.jm.reader.ReaderBackgroundPreempted
@@ -9,7 +8,6 @@ import com.par9uet.jm.reader.ReaderImageHostManager
 import com.par9uet.jm.reader.ReaderInFlightLease
 import com.par9uet.jm.reader.ReaderInFlightRegistry
 import com.par9uet.jm.reader.ReaderLoadHandle
-import com.par9uet.jm.reader.ReaderMetrics
 import com.par9uet.jm.reader.ReaderNetworkPermit
 import com.par9uet.jm.reader.ReaderNetworkScheduler
 import com.par9uet.jm.reader.ReaderPage
@@ -49,7 +47,6 @@ internal class ReaderSourceLoader(
     private val diskCache: ReaderImageDiskCache,
     private val networkScheduler: ReaderNetworkScheduler,
     private val imageHostManager: ReaderImageHostManager,
-    private val metrics: ReaderMetrics,
     httpClient: OkHttpClient,
     remoteObserver: ReaderRemoteObserver,
 ) {
@@ -70,28 +67,19 @@ internal class ReaderSourceLoader(
 
     suspend fun prefetchSource(page: ReaderPage) {
         withContext(Dispatchers.IO) {
-            metrics.request(ReaderRequestPriority.PREFETCH)
-            val startedAt = SystemClock.elapsedRealtime()
-            try {
-                if (page.localFile?.isFile == true || page.originSrc.startsWith("content://")) return@withContext
-                sourceRequests.request(sourceInFlightKey(page.key), ReaderRequestPriority.PREFETCH) { handle ->
-                    val source = loadSourceFile(
-                        page = page,
-                        priority = ReaderRequestPriority.PREFETCH,
-                        handle = handle,
-                        retryFromDecode = false,
-                    )
-                    if (!source.persistent) {
-                        validateReaderSourceFile(source.file)
-                        diskCache.promoteSourceIfNeeded(source)
-                    }
-                    source
-                }
-            } finally {
-                metrics.requestFinished(
+            if (page.localFile?.isFile == true || page.originSrc.startsWith("content://")) return@withContext
+            sourceRequests.request(sourceInFlightKey(page.key), ReaderRequestPriority.PREFETCH) { handle ->
+                val source = loadSourceFile(
+                    page = page,
                     priority = ReaderRequestPriority.PREFETCH,
-                    elapsedMillis = SystemClock.elapsedRealtime() - startedAt,
+                    handle = handle,
+                    retryFromDecode = false,
                 )
+                if (!source.persistent) {
+                    validateReaderSourceFile(source.file)
+                    diskCache.promoteSourceIfNeeded(source)
+                }
+                source
             }
         }
     }
@@ -136,8 +124,6 @@ internal class ReaderSourceLoader(
         retryFromDecode: Boolean,
     ): ReaderSourceFile {
         diskCache.acquireCachedSource(page.key)?.let { source ->
-            metrics.sourceHit()
-            if (priority == ReaderRequestPriority.PREFETCH) metrics.prefetchCacheHit()
             return source
         }
         return fetchSourceFile(
@@ -200,7 +186,6 @@ internal class ReaderSourceLoader(
             var remainingUrls = if (handle.isVisible) visiblePolicy.urls else urls
             if (handle.isVisible && visiblePolicy.hedgeEnabled) {
                 attemptedUrls += visiblePolicy.urls
-                metrics.hedgeStarted()
                 try {
                     val winner = fetchRemoteHedged(
                         primaryUrl = visiblePolicy.urls[0],
