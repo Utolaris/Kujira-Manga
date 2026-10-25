@@ -23,7 +23,7 @@ class CommentFilterPreferenceTest {
         override fun apply(disguise: LauncherDisguise) = true
     })
 
-    @Test fun `new installs legacy settings and explicit null use the five defaults`() {
+    @Test fun `new installs legacy settings and explicit null use the defaults`() {
         assertEquals(DEFAULT_COMMENT_FILTER_KEYWORDS, manager(Persistence()).blockedCommentKeywords.value)
         listOf("{}", """{"blockedCommentKeywordList":null}""").forEach { json ->
             val decoded = Gson().fromJson(json, LocalSetting::class.java)

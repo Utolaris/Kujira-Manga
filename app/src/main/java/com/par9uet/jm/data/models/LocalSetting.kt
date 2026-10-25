@@ -24,7 +24,7 @@ data class BlockedTagTemplate(
     val tagList: List<String> = listOf(),
 )
 
-val DEFAULT_COMMENT_FILTER_KEYWORDS = listOf("扣群", "加群", "VIP", "可约", "一对一")
+val DEFAULT_COMMENT_FILTER_KEYWORDS = listOf("扣群", "加群", "VIP", "可约", "一对一", "我推荐", "死妈", "司马", "他妈的")
 
 /**
  * Unified persistence DTO for all local settings (one encrypted JSON document). Its shape is
