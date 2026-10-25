@@ -204,21 +204,39 @@ private fun ComicDetailSkeleton(id: Int, headerTopPadding: Dp, bottomReserved: D
         modifier = Modifier.fillMaxSize().verticalScroll(scrollState),
         verticalArrangement = Arrangement.spacedBy(ComicDetailSectionSpacing),
     ) {
-        Box(Modifier.fillMaxWidth()) {
-            CoverBlurredBackground(id, LocalRemoteImageHost.current, Modifier.matchParentSize())
-            Row(
-                modifier = Modifier.padding(top = headerTopPadding, start = 16.dp, end = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                Box(Modifier.width(180.dp).aspectRatio(.75f).detailEntryCover(ready = false)
-                    .clip(MaterialTheme.shapes.small).shimmer())
-                Column(
-                    modifier = Modifier.weight(1f).detailEntryContent(horizontal = true),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) { SkeletonMetadataBars() }
-            }
+        PhoneDetailBackdrop(
+            background = { CoverBlurredBackground(id, LocalRemoteImageHost.current, Modifier.matchParentSize(), imageAspectRatio = .75f) },
+            header = {
+                Row(
+                    modifier = Modifier.padding(top = headerTopPadding, start = 16.dp, end = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Box(Modifier.width(180.dp).aspectRatio(.75f).detailEntryCover(ready = false)
+                        .clip(MaterialTheme.shapes.small).shimmer())
+                    Column(
+                        modifier = Modifier.weight(1f).detailEntryContent(horizontal = true),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) { SkeletonMetadataBars() }
+                }
+            },
+            tags = { TagSkeletonRow(Modifier.padding(horizontal = ComicDetailHorizontalPadding).detailEntryContent()) },
+        )
+    }
+}
+
+/** The phone backdrop includes tags and ends before the independently scrolling comments. */
+@Composable
+internal fun PhoneDetailBackdrop(
+    background: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit,
+    header: @Composable () -> Unit,
+    tags: @Composable () -> Unit,
+) {
+    Box(Modifier.fillMaxWidth()) {
+        background()
+        Column(verticalArrangement = Arrangement.spacedBy(ComicDetailSectionSpacing)) {
+            header()
+            tags()
         }
-        TagSkeletonRow(Modifier.padding(horizontal = ComicDetailHorizontalPadding).detailEntryContent())
     }
 }
 
@@ -771,8 +789,9 @@ fun ComicDetailScreen(
     }
 
     val displayedColumns = isTabletChrome
-    val detailContentBottomPadding = if (displayedColumns) detailBarBottomPadding + 16.dp
-        else detailBarHeight + detailBarBottomPadding
+    val detailContentBottomPadding = detailBarHeight + detailBarBottomPadding
+    val detailBodyBottomInset = detailLayoutBottomInset(tabletEnabled,
+        detailBottomState.mode == DetailBottomMode.COMMENT, navigationBarInset, detailBarHeight)
     GlassCaptureHost(
         modifier = Modifier.fillMaxSize(),
         sourceContent = {
@@ -787,7 +806,7 @@ fun ComicDetailScreen(
                 }
                 requestedComic == null -> {
                     ComicDetailSkeleton(id = id, headerTopPadding = detailHeaderTopPadding,
-                        bottomReserved = detailBarHeight + detailBarBottomPadding + 16.dp, twoColumns = displayedColumns)
+                        bottomReserved = detailBodyBottomInset, twoColumns = displayedColumns)
                 }
                 else -> {
                     val comic = requestedComic
@@ -802,7 +821,7 @@ fun ComicDetailScreen(
                                 ComicDetailAdaptiveLayout(
                                     twoColumns = isTabletLayout,
                                     headerTopPadding = detailHeaderTopPadding,
-                                    bottomReserved = detailBarHeight + detailBarBottomPadding + 16.dp,
+                                    bottomReserved = detailBodyBottomInset,
                                     scrollState = scrollState,
                                     cover = { ComicDetailCover(comic, it) },
                                     metadata = {
@@ -852,8 +871,7 @@ fun ComicDetailScreen(
                                 )
                             } else {
                                 // 手机: animeko 式紧凑 header——小封面 + 标题在右,
-                                // 模糊封面背景垫底并延伸到顶栏后面, 随 header 滚走;
-                                // 下方标签/评论区保持页面纯色背景。
+                                // 背景从顶栏后方覆盖到标签末尾，随封面/标签一起滚走；评论保持页面纯色。
                                 Column(
                                     modifier = Modifier
                                         .widthIn(max = 840.dp)
@@ -865,62 +883,66 @@ fun ComicDetailScreen(
                                         .padding(bottom = detailContentBottomPadding),
                                     verticalArrangement = Arrangement.spacedBy(ComicDetailSectionSpacing),
                                 ) {
-                                    Box(modifier = Modifier.fillMaxWidth()) {
-                                        CoverBlurredBackground(
-                                            comicId = comic.id,
-                                            remoteHost = LocalRemoteImageHost.current,
-                                            modifier = Modifier.matchParentSize(),
-                                        )
-                                        Column(
-                                            modifier = Modifier.padding(top = detailHeaderTopPadding),
-                                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                                        ) {
-                                            Row(
-                                                modifier = Modifier
-                                                    .padding(horizontal = ComicDetailHorizontalPadding + 6.dp),
-                                                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                                    PhoneDetailBackdrop(
+                                        background = {
+                                            CoverBlurredBackground(comic.id, LocalRemoteImageHost.current, Modifier.matchParentSize(), imageAspectRatio = .75f)
+                                        },
+                                        header = {
+                                            Column(
+                                                modifier = Modifier.padding(top = detailHeaderTopPadding),
+                                                verticalArrangement = Arrangement.spacedBy(12.dp),
                                             ) {
-                                                ComicDetailCover(
-                                                    comic = comic,
-                                                    // 120dp 沿对角线放大 1.5 倍: 180dp 宽 / 240dp 高
-                                                    modifier = Modifier.width(compactCoverWidth),
-                                                )
-                                                Column(
-                                                    modifier = Modifier.detailEntryContent(horizontal = true),
-                                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                                Row(
+                                                    modifier = Modifier
+                                                        .padding(horizontal = ComicDetailHorizontalPadding + 6.dp),
+                                                    horizontalArrangement = Arrangement.spacedBy(14.dp),
                                                 ) {
-                                                    ComicTitleAndAuthors(
+                                                    ComicDetailCover(
                                                         comic = comic,
-                                                        onTagSearch = ::searchTag,
-                                                        titleMaxLines = 3,
-                                                        onTitleClick = { showTitleDialog = true },
+                                                        // 120dp 沿对角线放大 1.5 倍: 180dp 宽 / 240dp 高
+                                                        modifier = Modifier.width(compactCoverWidth),
                                                     )
-                                                    ComicCompactStatsRow(comic)
-                                                    // JM 编号移到浏览量下方，点击复制保留
-                                                    ComicJmIdLabel(
-                                                        comicId = comic.id,
-                                                        onClick = {
-                                                            coverDetailScope.launch {
-                                                                clipboard.setClipEntry(
-                                                                    ClipEntry(ClipData.newPlainText("text", comic.id.toString())),
-                                                                )
-                                                                comicDetailViewModel.toast("已复制漫画编码：JM${comic.id}")
-                                                            }
-                                                        },
-                                                    )
-                                                    ComicSubscriptionButton(comic.id, trackingState, subscribe)
+                                                    Column(
+                                                        modifier = Modifier.detailEntryContent(horizontal = true),
+                                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                                                    ) {
+                                                        ComicTitleAndAuthors(
+                                                            comic = comic,
+                                                            onTagSearch = ::searchTag,
+                                                            titleMaxLines = 3,
+                                                            onTitleClick = { showTitleDialog = true },
+                                                        )
+                                                        ComicCompactStatsRow(comic)
+                                                        // JM 编号移到浏览量下方，点击复制保留
+                                                        ComicJmIdLabel(
+                                                            comicId = comic.id,
+                                                            onClick = {
+                                                                coverDetailScope.launch {
+                                                                    clipboard.setClipEntry(
+                                                                        ClipEntry(ClipData.newPlainText("text", comic.id.toString())),
+                                                                    )
+                                                                    comicDetailViewModel.toast("已复制漫画编码：JM${comic.id}")
+                                                                }
+                                                            },
+                                                        )
+                                                        ComicSubscriptionButton(comic.id, trackingState, subscribe)
+                                                    }
                                                 }
                                             }
-                                        }
-                                    }
+                                        },
+                                        tags = {
+                                            Box(Modifier.padding(horizontal = ComicDetailHorizontalPadding).detailEntryContent()) {
+                                                ComicTagSection(comic, isLoading = comicDetailState.isLoading)
+                                            }
+                                        },
+                                    )
                                     Column(
                                         modifier = Modifier.padding(horizontal = ComicDetailHorizontalPadding).detailEntryContent(),
                                         verticalArrangement = Arrangement.spacedBy(ComicDetailSectionSpacing),
                                     ) {
-                                        ComicTagSection(comic, isLoading = comicDetailState.isLoading)
                                         ComicCommentContent(
                                             commentLazyPagingItems = commentLazyPagingItems,
-                                                gridState = commentGridState,
+                                            gridState = commentGridState,
                                             authState = authState,
                                             onLogin = { mainNavController.navigate("login") },
                                             onReply = ::enterReplyMode,

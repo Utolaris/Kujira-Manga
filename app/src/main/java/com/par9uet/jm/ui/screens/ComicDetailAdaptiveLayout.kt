@@ -58,6 +58,10 @@ internal fun constrainDetailContent(viewport: Dp, left: Dp, width: Dp, endInset:
     return visibleLeft to width.coerceIn(0.dp, (available - visibleLeft).coerceAtLeast(0.dp))
 }
 
+/** Split tablet action groups do not own a full-width strip of the comment viewport. */
+internal fun detailLayoutBottomInset(tablet: Boolean, composerVisible: Boolean, navigationInset: Dp, barHeight: Dp): Dp =
+    navigationInset + 8.dp + if (tablet && !composerVisible) 0.dp else barHeight + 16.dp
+
 /** A single cover and scroll column survive rotation. Only their measured geometry changes. */
 @Composable
 internal fun ComicDetailAdaptiveLayout(

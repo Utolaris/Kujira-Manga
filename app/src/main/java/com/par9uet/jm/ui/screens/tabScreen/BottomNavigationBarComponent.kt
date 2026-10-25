@@ -117,9 +117,7 @@ fun PrimaryGlassBottomBar(
                         .padding(4.dp)
                         .clip(RoundedCornerShape(style.cornerRadius))
                         .background(
-                            MaterialTheme.colorScheme.primary.copy(
-                                alpha = style.selectedIndicatorAlpha,
-                            ),
+                            MaterialTheme.colorScheme.primary,
                         ),
                 )
 
@@ -127,9 +125,9 @@ fun PrimaryGlassBottomBar(
                     MainTab.ordered.forEach { tab ->
                         val isSelected = tab == selectedTab
                         val contentColor = if (isSelected) {
-                            MaterialTheme.colorScheme.onSecondaryContainer
+                            MaterialTheme.colorScheme.onPrimary
                         } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
+                            MaterialTheme.colorScheme.primary
                         }
                         Column(
                             modifier = Modifier

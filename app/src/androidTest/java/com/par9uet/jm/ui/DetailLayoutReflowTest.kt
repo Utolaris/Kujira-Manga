@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.par9uet.jm.ui.interaction.DetailReflowMillis
 import com.par9uet.jm.ui.interaction.motionEnabled
+import com.par9uet.jm.ui.screens.detailLayoutBottomInset
 import com.par9uet.jm.ui.screens.ComicDetailAdaptiveLayout
 import com.par9uet.jm.ui.screens.ComicTitleAndAuthors
 import com.par9uet.jm.data.models.Comic
@@ -36,6 +37,28 @@ class DetailLayoutReflowTest {
     private val bounds = mutableMapOf<String, Rect>()
     private val instances = mutableMapOf<String, Int>()
     private lateinit var scroll: ScrollState
+
+    @Test fun tabletCommentsReachTheBottomBetweenFloatingButtonsAndReserveSpaceOnlyForTheComposer() {
+        val composing = mutableStateOf(false)
+        compose.setContent {
+            Fixture(bodyHeight = 1500.dp,
+                bottomReserved = detailLayoutBottomInset(true, composing.value, 0.dp, 64.dp))
+        }
+        val density = compose.activity.resources.displayMetrics.density
+        for (landscape in listOf(false, true)) {
+            compose.runOnIdle { wide = landscape }
+            compose.waitForIdle()
+            for (composer in listOf(false, true, false)) {
+                compose.runOnIdle { composing.value = composer }
+                compose.waitForIdle()
+                compose.runOnIdle { runBlocking { scroll.scrollTo(scroll.maxValue) } }
+                compose.waitForIdle()
+                val expected = (if (composer) 88f else 8f) * density
+                assertEquals("No invisible tablet bottom bar may truncate the comments",
+                    expected, bounds.getValue("root").height - relative("body").bottom, 1f)
+            }
+        }
+    }
 
     @Test fun rotationMovesComponentsThroughIntermediatePositionsWithoutReplacingThem() {
         assumeTrue(motionEnabled())
@@ -191,13 +214,13 @@ class DetailLayoutReflowTest {
         content()
     }
 
-    @Composable private fun Fixture(bodyHeight: Dp = 1500.dp, metadataContent: (@Composable () -> Unit)? = null) {
+    @Composable private fun Fixture(bodyHeight: Dp = 1500.dp, bottomReserved: Dp = 80.dp, metadataContent: (@Composable () -> Unit)? = null) {
         scroll = rememberScrollState()
         Box(Modifier.requiredSize(if (wide) 1000.dp else 600.dp, if (wide) 600.dp else 900.dp)) {
             ComicDetailAdaptiveLayout(
                 twoColumns = wide,
                 headerTopPadding = 80.dp,
-                bottomReserved = 80.dp,
+                bottomReserved = bottomReserved,
                 scrollState = scroll,
                 modifier = Modifier.record("root"),
                 cover = { modifier -> KeepInstance("cover") { Box(modifier.aspectRatio(.75f).background(Color.Red).record("cover")) } },
