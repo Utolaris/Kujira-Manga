@@ -2,9 +2,9 @@
 
 JVM 测试覆盖不了真机行为：文件型 Room、真实文件系统 / SAF、`PdfDocument`、`WorkerParameters`。这些走 `app/src/androidTest`。
 
-> **默认不做。** 日常改动的验证链是 `./gradlew :app:testDebugUnitTest`。
-> 只有用户明确要求，或改动只可能在真机行为上体现（文件型 Room、SAF、`PdfDocument`、
-> `WorkerParameters`、Compose/Glass 运行时）时才跑本文档。详见 [AGENTS.md](../AGENTS.md)。
+> **只有用户明确要求，才能进行真机测试。** 日常改动运行 `./gradlew :app:testDebugUnitTest`。
+> 即使涉及文件型 Room、SAF、`PdfDocument`、`WorkerParameters` 或 Compose/Glass 运行时，
+> 也不得自行启动真机测试；未验证的部分如实说明。详见 [AGENTS.md](../AGENTS.md)。
 >
 > 跑的时候请优先用统一 CLI：`./scripts/android test` / `./scripts/android test-class <FQCN>`，
 > 详见 [android-cli.md](./android-cli.md)。下文是底层脚本细节。
@@ -25,6 +25,13 @@ JVM 测试覆盖不了真机行为：文件型 Room、真实文件系统 / SAF�
 脚本会：`assembleDebug` + `assembleDebugAndroidTest` → 覆盖安装两个 APK → 准备设备 → `am instrument`。只连一台设备时可省略序列号。
 
 默认 `install -r` **保留数据**（登录、设置、下载记录）。覆盖安装失败会直接退出；确认签名/降级问题后再用 `--fresh`。
+
+封面解码专项可分别执行 `./scripts/android test-class com.par9uet.jm.coil.CoverBitmapDecoderTest`
+与 `./scripts/android test-class com.par9uet.jm.coil.CoverDecodeBenchmarkTest`。
+前者验证缩采样、透明度、EXIF、硬件位图、GIF 与不同列数间缓存复用；后者以同一 JPEG、相同目标尺寸和
+硬件位图格式对比原 `BitmapFactory` 与新原生管线，覆盖 2/3/4/6 列。预热后交替顺序，各轮输出
+`CoverDecodeBenchmark` 日志中的 wallMs、cpuMs、decodedBytes。该基准隔离解码，不包含网络、Compose 或滑动帧耗时；
+不能直接当作掉帧率结论。真机执行需用户明确要求。
 
 ## HyperOS / MIUI：必须开「后台弹出界面」
 
@@ -71,14 +78,12 @@ adb shell appops get kujira.manga.debug | grep 10021
 | --- | --- | --- |
 | backup | `BackupRestoreOperationsTest` | 备份编解码 + 下载排队 |
 | cache | `DocumentCacheStorageTest` | SAF 文档 |
-| cache.atom | `CacheFilesDeviceTest` | 真实删除；`reader_pages` 租约目录不被普通清理删掉 |
 | cache.migration | `CacheMigrationDeviceTest` | 文件↔SAF 互迁、旧 ZIP、不可读来源不切目录；下载/迁移**不写** `.nomedia`，用户的漫画在文件管理器里可见 |
 | database | `AppDatabaseMigrationTest` / `FavoriteStoreRealDatabaseTest` | Room migration；文件型 SQLite、中文搜索、账号隔离；各收藏夹共享的同步完成时间在重开数据库后保留 |
 | download | `DownloadContentFilesTest` | 章节页文件读写 |
 | download.export | `PdfExportDeviceTest` | 真实 `PdfDocument` + SAF；失败时用 `DocumentsContract.deleteDocument` 清不完整 PDF |
 | launcher | `LauncherDisguiseInstrumentedTest` | 桌面别名 |
 | network | `DohStartupRaceTest` | DoH 启动竞态 |
-| reader.atom | `LocalChapterFilesDeviceTest` | 三种历史布局、自然排序、ZIP |
 | storage | `SessionPersistenceTest`、`OfficialAuthSessionPersistenceTest` | 会话落盘；身份/JWT/AVS 单记录持久化与退出撤销；独立 preferences 不影响运行账号 |
 | store | `FavoriteStoreSyncTest` | 收藏同步与 Room 事务（测试包仍在 `store`，主源码 `store` 已拆到领域包） |
 | network | `AppHttpClientDoHDeviceTest` | 真实图片健康探测必须调用注入的 DNS，禁止绕过到系统 DNS |
@@ -97,7 +102,14 @@ adb shell appops get kujira.manga.debug | grep 10021
 | ui | `GridColumnSliderDialogTest` | 网格列数复用离散额度滑条、弹窗避开顶部栏、下载中心名称、各行独立选择与确认后保存（合成设置数据） |
 | ui | `CoverTransitionFlowTest` | Glass 分层入场顺序、侧滑进度/取消保持详情不动及确认后完整退场、平板双栏评论滚动保持左侧封面固定、空白区不拖动而封面可拖动回弹、反向返回/来源移除/详情封面离屏/二次触碰及侧滑隔离、阅读返回不重播与触边震动（合成 UI） |
 | ui | `PressFeedbackRenderingTest` | V3 按压取消与收藏心形反馈的像素尺寸（合成 UI） |
+| ui | `SubpixelGridScrollTest` | 通过 UserInput / SideEffect 两种嵌套滚动来源验证真实 LazyGrid 坐标连续性、条目不随余量重组及程序跳转后余量清除；不代表手势或默认惯性验证 |
+| ui | `CoverWorkVisibilityTest` | 真实 PNG 文件经生产可见性解码器在滚动中显示；保留页/离屏可见性及淡入像素（文件源标记为 DISK，不代表 Coil 磁盘缓存命中率验证） |
+| ui | `TabletModalLayoutTest` | 平板横竖窗口均为 75% 宽度、草稿保留、短窗口取消按钮可见及手机设置弹窗两侧间隙 |
 | worker | `DownloadComicWorkerContractTest`、`CacheMigrationWorkerContractTest`、`LocalModeExitNotificationTest` | 真实 `WorkerParameters`；本地模式同步的常驻通知 |
+
+普通文件系统用例在 JVM 的 `CacheFilesTest`、`LocalChapterFilesTest` 中运行，覆盖清理、阅读器缓存保护、历史布局和 ZIP；SAF、Room 和 Compose 仍保留对应 Android 测试。
+
+测试名称只描述实际调用的路径。负向断言先等待任务进入或观察者消费完成；异常检查不能将 `AssertionError` 当作预期失败。`FavoriteSyncGridTest` 用受控协程调度器排空 Room 查询和失效通知，并以真实行变更确认分页源能收到失效。
 
 ## 调试要点
 

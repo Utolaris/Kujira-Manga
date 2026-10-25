@@ -58,7 +58,7 @@ usage() {
 用法：./scripts/run-instrumented-tests.sh [选项] [设备序列号]
 
 选项：
-  -c <类名>     只跑一个测试类，例如 com.par9uet.jm.cache.atom.CacheFilesDeviceTest
+  -c <类名>     只跑一个测试类，例如 com.par9uet.jm.network.AppHttpClientDoHDeviceTest
   -p <包名>     只跑一个包下的全部测试，例如 com.par9uet.jm.database
   -m <方法名>   配合 -c 只跑其中一条用例
   -l            同时抓取用例执行期间的 logcat（写到 build/instrumented-logcat.txt）
@@ -86,7 +86,7 @@ HyperOS / MIUI 需已允许「后台弹出界面」（MIUIOP 10021）；脚本�
   ./scripts/run-instrumented-tests.sh                                  # 全量
   ./scripts/run-instrumented-tests.sh -p com.par9uet.jm.worker         # 一个包
   ./scripts/run-instrumented-tests.sh -c com.par9uet.jm.database.FavoriteStoreRealDatabaseTest -m chineseSearchMatchesTitlesOnRealSqlite
-  ./scripts/run-instrumented-tests.sh --no-build -c com.par9uet.jm.cache.atom.CacheFilesDeviceTest
+  ./scripts/run-instrumented-tests.sh --no-build -c com.par9uet.jm.network.AppHttpClientDoHDeviceTest
   ./scripts/run-instrumented-tests.sh --fresh                          # 干净安装后再跑（会清掉登录数据）
 USAGE
 }

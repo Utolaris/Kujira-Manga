@@ -304,7 +304,7 @@ HyperOS
   ./scripts/android adb-connect 192.168.5.103:42xxx
   ./scripts/android install-debug
   ./scripts/android logcat
-  ./scripts/android test-class com.par9uet.jm.cache.atom.CacheFilesDeviceTest
+  ./scripts/android test-class com.par9uet.jm.network.AppHttpClientDoHDeviceTest
 USAGE
 }
 

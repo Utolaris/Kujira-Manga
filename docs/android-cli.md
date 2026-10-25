@@ -64,7 +64,7 @@ eval "$(./scripts/android signing-env)"   # 导出 KUJIRA_MANGA_RELEASE_*_PASSWO
 
 # 插桩测试（转调 run-instrumented-tests.sh；默认不跑，见 instrumented-tests.md）
 ./scripts/android test
-./scripts/android test-class com.par9uet.jm.cache.atom.CacheFilesDeviceTest
+./scripts/android test-class com.par9uet.jm.network.AppHttpClientDoHDeviceTest
 
 # HyperOS：允许 instrumentation 后台弹窗
 ./scripts/android appops-allow

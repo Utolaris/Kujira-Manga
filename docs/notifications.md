@@ -12,7 +12,7 @@
 右上角对勾将账号的全部通知标为已读，包括未加载的页和当前筛选之外的分类。
 刷新保留当前筛选；重新进入通知页默认回到全部。
 
-未读数量仅在冷启动检查一次，排在 `PostStartupCoordinator` 的其他任务、首页首批内容（含失败降级）及启动收藏同步完成之后。
+未读数量仅在冷启动检查一次，排在 `PostStartupCoordinator` 的其他任务、首页首批内容（含失败降级）及已在进行的收藏同步之后。冷启动不发起收藏同步，同步只在进入收藏页时触发。
 调用轻量数量接口，不预取通知正文；失败静默，后台返回、页面切换与重组不重查。
 成功标记已读后在本地递减数量，一键已读清空红色提示；账号变化立即清空旧提示，迟到响应不得回写。
 
@@ -62,6 +62,6 @@ L3：`NotificationRepository`；L4：`EmbeddedNotificationApi` 与既有图文�
 `NotificationRepositoryTest`、`NotificationViewModelTest` 和 `EmbeddedNotificationApiTest` 覆盖协议签名、
 HTML/追踪数组、数字已读标记、分页、一键已读遍历、重试与账号隔离。
 `NotificationScreenTest` 提供标题/时间、点击已读、标题点按筛选和合集按钮的合成 UI 场景。
-`NotificationUnreadCoordinatorTest` 与 `ColdStartFavoriteSyncTest` 覆盖冷启动只查一次、等待启动收尾、
+`NotificationUnreadCoordinatorTest` 与 `ColdStartFavoriteSyncTest` 覆盖冷启动只查一次、等待启动收尾（含冷启动不发收藏同步）、
 账号隔离和已读时迟到结果保护；`HomeToolbarMenuTest` 覆盖首页标题点按与铃铛未读语义。
 默认执行单测与 `:app:compileDebugAndroidTestKotlin`；UI 测试编译通过不等于真机运行通过。

@@ -19,6 +19,8 @@ release-key
 .workbuddy/
 .codex/
 .ua/
+# dsh-ops creates local locks alongside edited files
+.dsh-ops-*.lock
 .env*
 !.env.example
 
