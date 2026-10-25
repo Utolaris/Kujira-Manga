@@ -1,6 +1,7 @@
 package com.par9uet.jm.ui.glass
 
 import android.graphics.RenderNode
+import android.graphics.Canvas
 import android.os.Build
 import android.os.SystemClock
 import android.view.View
@@ -12,8 +13,8 @@ import com.par9uet.jm.utils.logError
  * Records the one logical source composition shared by every glass surface in a host. It stores
  * only a GPU display list; no bitmap or pixel buffer is allocated.
  *
- * Failure policy: a failed record must NOT latch. Recording happens on the render thread against
- * GPU resources that the reader (large bitmaps under a RenderEffect) can transiently exhaust, and
+ * Recording happens on the UI thread; RenderThread replays the display list. A failed record must
+ * not latch: GPU resources used by the reader can transiently exhaust, and
  * a single failure used to disable blur for the whole host until the screen was recreated — that is
  * exactly the "面板偶尔变成纯色、过一会儿又好了" symptom. Instead the failure is retried after a
  * short backoff, so the glass heals itself.
@@ -55,8 +56,24 @@ internal class GlassCaptureSource(
         dirty = true
     }
 
+    fun release() {
+        if (Build.VERSION.SDK_INT >= 31) renderNodeValue?.discardDisplayList()
+        renderNodeValue = null
+        dirty = true
+    }
+
+    /** Screen content and every glass surface replay this same record; source is visited once. */
+    fun draw(canvas: Canvas, recordSource: (Canvas) -> Unit): Boolean {
+        if (Build.VERSION.SDK_INT < 31 || !canvas.isHardwareAccelerated || !nativeCaptureAvailable) return false
+        if (!renderNode.hasDisplayList()) dirty = true
+        recordIfNeeded(recordSource)
+        if (!nativeCaptureAvailable || !renderNode.hasDisplayList()) return false
+        canvas.drawRenderNode(renderNode)
+        return true
+    }
+
     @RequiresApi(31)
-    fun recordIfNeeded() {
+    private fun recordIfNeeded(recordSource: (Canvas) -> Unit) {
         if (!nativeCaptureAvailable || !dirty || sourceView.width <= 0 || sourceView.height <= 0) {
             return
         }
@@ -66,7 +83,7 @@ internal class GlassCaptureSource(
             val recordingCanvas = renderNode.beginRecording(sourceView.width, sourceView.height)
             onCaptureStart()
             try {
-                sourceView.draw(recordingCanvas)
+                recordSource(recordingCanvas)
             } finally {
                 onCaptureEnd()
                 renderNode.endRecording()

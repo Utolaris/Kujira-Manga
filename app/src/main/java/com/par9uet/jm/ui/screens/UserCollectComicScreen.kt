@@ -14,10 +14,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.text.style.TextAlign
-import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,7 +52,7 @@ internal fun UserCollectComicScreen(
     topContentPadding: Dp = 0.dp,
     bottomContentPadding: Dp = 0.dp,
 ) {
-    val favoritesState by favoritesViewModel.uiState.collectAsState()
+    val favoritesState by favoritesViewModel.gridUiState.collectAsState()
     val collectComicLazyPagingItems = favoritesViewModel.collectComicPager.collectAsLazyPagingItems()
     val selectedFolderId = favoritesState.selectedFolderId
     val collectEditState = favoritesState.selection
@@ -92,12 +90,6 @@ internal fun UserCollectComicScreen(
         itemCount = favoriteItemCount,
         appendComplete = favoriteAppendComplete,
     )
-    var isGridScrolling by remember { mutableStateOf(false) }
-    LaunchedEffect(gridState) {
-        snapshotFlow { gridState.isScrollInProgress }
-            .distinctUntilChanged()
-            .collect { isGridScrolling = it }
-    }
     val pullRevealPadding = 36.dp * pullDownState.progress
     val gridModifier = Modifier
         .fillMaxSize()
@@ -134,7 +126,6 @@ internal fun UserCollectComicScreen(
                 comic = comic,
                 editing = collectEditState.editing,
                 selected = comic.id in collectEditState.selectedComicIds,
-                isScrolling = isGridScrolling,
                 onLongClick = {
                     favoritesViewModel.onIntent(FavoritesIntent.ComicLongPressed(comic.id))
                 },
@@ -148,8 +139,7 @@ internal fun UserCollectComicScreen(
     // 首次登录的全量缓存构建期间（列表尚未提交任何条目）显示等待动画，
     // 普通手动/自动同步不打扰列表。构建完成或已有内容时照常显示网格。
     val showInitialCacheLoader =
-        favoritesState.sync.isSyncing &&
-            favoritesState.sync.isInitialBuild &&
+        favoritesState.isBuildingInitialCache &&
             collectComicLazyPagingItems.itemCount == 0
 
     Box(modifier = Modifier.fillMaxSize()) {

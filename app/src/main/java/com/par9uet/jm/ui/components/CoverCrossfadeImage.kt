@@ -14,7 +14,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
@@ -24,7 +26,10 @@ import coil.compose.AsyncImagePainter
 import coil.compose.rememberAsyncImagePainter
 import coil.decode.DataSource
 import coil.request.ImageRequest
-import com.par9uet.jm.coil.currentCoverImageLoader
+import coil.size.Precision
+import com.par9uet.jm.coil.CoverWorkGate
+import com.par9uet.jm.coil.CoverWorkGateParameter
+import com.par9uet.jm.ui.components.currentCoverImageLoader
 
 /** 封面加载未完成时的占位（透明，父级背景透出）。 */
 private val CoverPlaceholderPainter = ColorPainter(Color.Transparent)
@@ -51,6 +56,7 @@ internal fun CoverCrossfadeImage(
     modifier: Modifier = Modifier,
     durationMillis: Int = 300,
     skipAnimation: Boolean = false,
+    isActive: Boolean = LocalCoverWorkActive.current,
 ) {
     // A memory hit / detail handoff must draw in this frame, not after a LaunchedEffect.
     if (skipAnimation && painter != null) {
@@ -61,14 +67,25 @@ internal fun CoverCrossfadeImage(
     var currentPainter by remember { mutableStateOf<Painter?>(null) }
     val fadeIn = remember { Animatable(1f) }
 
-    LaunchedEffect(painter, skipAnimation) {
+    LaunchedEffect(painter, skipAnimation, isActive) {
         when {
             painter == null -> {
                 underPainter = null
                 currentPainter = null
             }
-            // 同一 painter 重复上屏（如 CDN 回退后的重发布）：不打断进行中的淡入
-            currentPainter == painter -> Unit
+            // Retained/offscreen pages settle once, without ticking an invisible animation or
+            // replaying it when the user returns. Already displayed content stays in place.
+            !isActive -> {
+                underPainter = null
+                currentPainter = painter
+                fadeIn.snapTo(1f)
+            }
+            // A quick hide/show can cancel the hidden effect before it settles. Finish the
+            // existing cover instead of leaving a cancelled fade at partial opacity.
+            currentPainter == painter -> {
+                underPainter = null
+                fadeIn.snapTo(1f)
+            }
             else -> {
                 underPainter = currentPainter
                 currentPainter = painter
@@ -104,7 +121,17 @@ internal fun CoverCrossfadeImage(
                 contentScale = contentScale,
                 modifier = Modifier
                     .matchParentSize()
-                    .graphicsLayer { alpha = fadeIn.value },
+                    .graphicsLayer {
+                        alpha = fadeIn.value
+                        // A BitmapPainter emits one image draw. Modulating that draw keeps the
+                        // same fade without allocating a per-cover offscreen alpha buffer.
+                        // Arbitrary/animated painters retain group alpha for overlapping content.
+                        compositingStrategy = if (current is BitmapPainter) {
+                            CompositingStrategy.ModulateAlpha
+                        } else {
+                            CompositingStrategy.Auto
+                        }
+                    },
             )
         }
     }
@@ -127,7 +154,12 @@ internal fun LocalCoverImage(
     onReady: ((Boolean) -> Unit)? = null,
 ) {
     val context = LocalContext.current
-    val sizeResolver = remember { CoverSizeResolver() }
+    val active = LocalCoverWorkActive.current
+    val visible = LocalCoverInViewport.current
+    val scrolling = LocalComicGridScrolling.current()
+    val workGate = remember(model) { CoverWorkGate(active, visible, scrolling) }
+    SideEffect { workGate.setVisibility(active, visible, scrolling) }
+    val sizeResolver = remember(workGate) { CoverSizeResolver(workGate) }
     var displayedPainter by remember(model) { mutableStateOf<Painter?>(null) }
     var skipFadeIn by remember(model) { mutableStateOf(false) }
     @Suppress("UNUSED_VARIABLE")
@@ -136,6 +168,8 @@ internal fun LocalCoverImage(
             ImageRequest.Builder(context)
                 .data(model)
                 .size(sizeResolver)
+                .precision(Precision.INEXACT)
+                .setParameter(CoverWorkGateParameter, workGate, memoryCacheKey = null)
                 .build()
         },
         imageLoader = imageLoader ?: currentCoverImageLoader(),

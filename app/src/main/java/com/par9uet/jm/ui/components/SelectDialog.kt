@@ -71,7 +71,7 @@ fun SelectDialog(
             // 保留首次出现的顺序与文案。
             val options = remember(selectOptionList) { selectOptionList.distinctBy { it.value } }
             LazyColumn(
-                modifier = Modifier.heightIn(max = maxHeight)
+                modifier = Modifier.weight(1f, fill = false).heightIn(max = maxHeight)
             ) {
                 items(options, key = { it.value }) { option ->
                     Row(

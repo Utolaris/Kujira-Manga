@@ -3,6 +3,8 @@ package com.par9uet.jm.ui.glass
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.RenderNode
+import android.view.View
 import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
@@ -38,6 +40,41 @@ import java.util.concurrent.atomic.AtomicInteger
  * real content change must still refresh the capture (no stale glass).
  */
 class GlassCaptureHostSettleTest {
+    @Test fun sourceDisplayListIsRecordedOnceAndReplayedUntilContentChanges() {
+        org.junit.Assume.assumeTrue(android.os.Build.VERSION.SDK_INT >= 31)
+        compose.runOnUiThread {
+            val view = View(compose.activity).apply { layout(0, 0, 120, 120) }
+            var recordings = 0
+            val source = GlassCaptureSource(view, {}, {})
+            val output = RenderNode("glass-test-output").apply { setPosition(0, 0, 120, 120) }
+            fun frame() {
+                val canvas = output.beginRecording()
+                try {
+                    assertTrue(source.draw(canvas) { recordings++; it.drawColor(Color.RED) })
+                    // A glass region references the exact source node used by the screen.
+                    canvas.drawRenderNode(source.renderNode)
+                } finally { output.endRecording() }
+            }
+            try {
+                frame(); frame()
+                assertEquals(1, recordings)
+                source.markDirty()
+                frame()
+                assertEquals(2, recordings)
+                source.renderNode.discardDisplayList()
+                frame()
+                assertEquals("A lost display list must recover", 3, recordings)
+                val bitmap = Bitmap.createBitmap(120, 120, Bitmap.Config.ARGB_8888)
+                try {
+                    assertTrue("Software drawing must use the normal view path", !source.draw(Canvas(bitmap)) { error("hardware only") })
+                } finally { bitmap.recycle() }
+            } finally {
+                source.renderNode.discardDisplayList()
+                output.discardDisplayList()
+            }
+        }
+    }
+
     @get:Rule
     val compose = createAndroidComposeRule<ComponentActivity>()
 

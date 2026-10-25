@@ -63,7 +63,7 @@ import org.koin.androidx.compose.koinViewModel
 @Composable
 fun ExtractCodeScreen(
     viewModel: ExtractCodeViewModel = koinViewModel(),
-    imageLoader: ImageLoader = com.par9uet.jm.coil.currentCoverImageLoader(),
+    imageLoader: ImageLoader = com.par9uet.jm.ui.components.currentCoverImageLoader(),
 ) {
     val mainNavController = LocalMainNavController.current
     val clipboard = LocalClipboard.current
@@ -90,7 +90,7 @@ fun ExtractCodeScreen(
                 ) {
                     Column(
                         modifier = Modifier
-                            .fillMaxWidth()
+                            .fillMaxWidth().verticalScroll(rememberScrollState())
                             .padding(24.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {

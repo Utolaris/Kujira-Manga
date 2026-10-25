@@ -5,7 +5,7 @@ import coil.ImageLoader
 import coil.disk.DiskCache
 import com.par9uet.jm.cache.CacheBudget
 import com.par9uet.jm.cache.getCommonCacheDir
-import com.par9uet.jm.network.DohManager
+import okhttp3.Dns
 import com.par9uet.jm.network.applyAppHttpDefaults
 import okhttp3.Cache
 import okhttp3.ConnectionPool
@@ -23,11 +23,11 @@ private val cdnHeaderInterceptor = Interceptor { chain ->
 
 /**
  * 封面专用 ImageLoader：独立 Dispatcher，连接池与 CDN 客户端共享。
- * 并发上限：全局 12、每 host 4，避免网格 fling 时打满带宽与 DoH。
+ * 传输层上限：全局 12、每 host 4；带门控参数的封面另由 Fetcher 限制为两路。
  */
 fun createAsyncImageLoader(
     context: Context,
-    dohManager: DohManager,
+    dns: Dns,
     coverDiskCacheMb: Int = CacheBudget.coverDiskCacheMb(CacheBudget.DEFAULT_TOTAL_MB),
     connectionPool: ConnectionPool,
     httpCache: Cache? = null,
@@ -37,11 +37,15 @@ fun createAsyncImageLoader(
         maxRequestsPerHost = 4
     }
     return ImageLoader.Builder(context)
-        .components { add(coil.decode.ImageDecoderDecoder.Factory()) }
+        .components {
+            add(VisibleCoverFetcherFactory())
+            add(VisibleCoverDecoderFactory())
+            add(coil.decode.ImageDecoderDecoder.Factory())
+        }
         .okHttpClient {
             OkHttpClient.Builder()
                 .applyAppHttpDefaults(
-                    dns = dohManager,
+                    dns = dns,
                     connectionPool = connectionPool,
                     cache = httpCache,
                     connectSeconds = 15,

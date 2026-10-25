@@ -1,5 +1,7 @@
 package com.par9uet.jm.ui.screens
 
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
@@ -16,10 +18,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Dns
+import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.PowerSettingsNew
+import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Security
-import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.CircularProgressIndicator
 import com.par9uet.jm.ui.components.MotionFilledTonalButton as FilledTonalButton
 import androidx.compose.material3.Icon
@@ -102,7 +107,7 @@ fun DohSettingScreen(
                 surfaceId = "doh-custom-server-glass-modal",
                 modifier = Modifier.widthIn(max = 460.dp),
             ) {
-                Column(modifier = Modifier.fillMaxWidth().padding(24.dp)) {
+                Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp)) {
                     Text("自定义 DoH", style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(12.dp))
                     OutlinedTextField(
@@ -170,13 +175,14 @@ fun DohSettingScreen(
                             summary = "打开应用后自动恢复 DoH；关闭时可在本页手动开启",
                             checked = doh.autoStart,
                             onCheckedChange = viewModel::setAutoStart,
+                            icon = Icons.Rounded.PowerSettingsNew,
                         )
                         DohSwitchRow(
                             title = "自动选择最低延迟",
                             summary = "启动后在后台测速，自动切到最快的内置线路；关闭后固定使用你选的线路",
                             checked = doh.autoSelectFastest,
                             onCheckedChange = viewModel::setAutoSelectFastest,
-                            icon = Icons.Rounded.Sync,
+                            icon = Icons.Rounded.Speed,
                         )
                         DohSwitchRow(
                             title = "使用设备证书",
@@ -189,6 +195,7 @@ fun DohSettingScreen(
                             title = "优先尝试 IPv6",
                             summary = "关闭时只使用 IPv4，适合没有 IPv6 路由的设备；开启前请确认 VPN 已启用 IPv6",
                             checked = doh.preferIpv6,
+                            icon = Icons.Rounded.Public,
                             onCheckedChange = { enable ->
                                 if (enable) showIpv6Warning = true
                                 else viewModel.setPreferIpv6(false)
@@ -262,7 +269,7 @@ fun DohSettingScreen(
                     onClick = { viewModel.clearCache() },
                     enabled = status.cacheEntryCount > 0,
                 ) {
-                    Icon(Icons.Rounded.Refresh, contentDescription = null)
+                    Icon(Icons.Rounded.CleaningServices, contentDescription = null)
                     Text("清空 DoH 缓存", modifier = Modifier.padding(start = 8.dp))
                 }
             }

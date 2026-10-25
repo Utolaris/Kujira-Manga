@@ -12,8 +12,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,7 +24,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.absolutePadding
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -44,13 +48,22 @@ import com.par9uet.jm.ui.navigation.HierarchicalBackHandler
  *
  * 手机：[MaxSurfaceWidth] 收口（常见手机宽屏普遍小于它，几乎不生效）。
  * 平板：弹窗拉伸到窗口宽度的 [TabletWidthFraction]，不再固定 480dp 收成窄条。
- * 需要更窄或更宽的弹窗自己传 `modifier` 覆盖。
+ * 平板宽度统一由公共层决定；调用方的手机宽度限制不会覆盖这个比例。
  */
 object GlassModalDefaults {
     val MaxSurfaceWidth: Dp = 480.dp
 
     /** 平板上弹窗相对窗口宽度的比例。 */
     const val TabletWidthFraction: Float = 0.75f
+}
+
+/** 每次组合都按当前窗口计算，旋转与分屏不保留之前的宽度。 */
+@Composable
+internal fun tabletModalWidth(): Dp? {
+    if (!LocalTabletLayoutEnabled.current) return null
+    val widthPx = LocalWindowInfo.current.containerSize.width
+    if (widthPx <= 0) return null
+    return with(LocalDensity.current) { widthPx.toDp() } * GlassModalDefaults.TabletWidthFraction
 }
 
 /**
@@ -99,18 +112,20 @@ fun GlassModal(
     val active = transition.currentState || transition.isRunning
     val scrimInteraction = remember { MutableInteractionSource() }
     val surfaceInteraction = remember { MutableInteractionSource() }
-    val isTabletLayout = LocalTabletLayoutEnabled.current
-    val windowWidthPx = LocalWindowInfo.current.containerSize.width
+    val tabletWidth = tabletModalWidth()
     val density = LocalDensity.current
-    val topClearance = with(density) { WindowInsets.statusBars.getTop(this).toDp() } +
+    val safeInsets = WindowInsets.systemBars.union(WindowInsets.displayCutout).union(WindowInsets.ime)
+    val topClearance = with(density) { safeInsets.getTop(this).toDp() } +
         AppGlassTopBarDefaults.ContentHeight + 16.dp
-    val bottomClearance = with(density) { WindowInsets.navigationBars.getBottom(this).toDp() } + 16.dp
+    val bottomClearance = with(density) { safeInsets.getBottom(this).toDp() } + 16.dp
+    val leftClearance = with(density) { safeInsets.getLeft(this, androidx.compose.ui.unit.LayoutDirection.Ltr).toDp() } + 16.dp
+    val rightClearance = with(density) { safeInsets.getRight(this, androidx.compose.ui.unit.LayoutDirection.Ltr).toDp() } + 16.dp
     if (dismissOnBack) {
         HierarchicalBackHandler(enabled = visible && active) {
             onDismissRequest()
         }
     }
-    // 宽度来自 windowWidthPx / 固定 dp，不读 Box 约束；用 Box 避免无用 subcomposition。
+    // 宽度来自当前窗口，不读 Box 约束；用 Box 避免无用 subcomposition。
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -130,14 +145,13 @@ fun GlassModal(
     ) {
         // The full-window scrim still blocks the toolbar. Only the panel is constrained to
         // the safe viewport, so short landscape windows keep chrome and actions accessible.
-        Box(Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp, top = topClearance, bottom = bottomClearance),
+        Box(Modifier.fillMaxSize().absolutePadding(left = leftClearance, right = rightClearance, top = topClearance, bottom = bottomClearance),
             contentAlignment = alignment) {
-            // 平板：按整屏宽的 3/4（悬浮导航不占布局位，仍用窗口宽）；
-            // 手机：固定收口，避免大对话框。
-            val defaultMaxWidth = if (isTabletLayout && windowWidthPx > 0) {
-                with(density) { windowWidthPx.toDp() } * GlassModalDefaults.TabletWidthFraction
+            // 先确定平板的精确宽度，再应用调用方修饰符，避免旧的 widthIn/width 改写 75%。
+            val panelModifier = if (tabletWidth != null) {
+                Modifier.width(tabletWidth).then(modifier)
             } else {
-                GlassModalDefaults.MaxSurfaceWidth
+                modifier.widthIn(max = GlassModalDefaults.MaxSurfaceWidth)
             }
             AnimatedVisibility(
                 visibleState = visibleState,
@@ -146,8 +160,7 @@ fun GlassModal(
             ) {
                 GlassSurface(
                     surfaceId = surfaceId,
-                    modifier = modifier
-                        .widthIn(max = defaultMaxWidth)
+                    modifier = panelModifier
                         .then(
                             if (dismissOnOutsideClick) {
                                 Modifier.clickable(

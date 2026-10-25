@@ -14,6 +14,43 @@ class CoverReturnAnchorsTest {
     private fun anchor(key: Any = Any(), page: String = "list", id: Int = 100,
         bounds: Rect = Rect(220f, 600f, 340f, 760f), visible: Rect = bounds) = CoverAnchor(key, page, id, bounds, visible)
 
+    @Test fun `tracked covers do not materialize geometry until navigation asks and always return current bounds`() {
+        val registry = CoverReturnAnchors()
+        var offset = 0f
+        var geometryReads = 0
+        val keys = List(40) { Any() }
+        keys.forEachIndexed { index, key ->
+            registry.track(key) {
+                geometryReads++
+                anchor(key = key, id = index,
+                    bounds = Rect(20f, 200f + offset, 140f, 360f + offset))
+            }
+        }
+        repeat(240) {
+            offset += .25f
+            keys.forEach { assertFalse(registry.hidden(it)) }
+        }
+        assertEquals(0, geometryReads)
+        assertEquals(260f, registry.visible(keys.first(), "list", viewport)!!.boundsInWindow.top)
+        assertEquals(1, geometryReads)
+        registry.remove(keys.first())
+        assertNull(registry.visible(keys.first(), "list", viewport))
+    }
+
+    @Test fun `tracked geometry can detach or become clipped without leaving a stale return target`() {
+        val registry = CoverReturnAnchors()
+        val key = Any()
+        var current: CoverAnchor? = anchor(key)
+        registry.track(key) { current }
+        registry.pending = "list" to 100
+        assertTrue(registry.hidden(key))
+        current = current!!.copy(visibleBoundsInWindow = Rect.Zero)
+        assertNull(registry.find(frame, "list", viewport))
+        current = null
+        assertNull(registry.visible(key, "list", viewport))
+        assertFalse(registry.hidden(key))
+    }
+
     @Test fun `return uses the current visible layout rather than the old opening coordinates`() {
         val registry = CoverReturnAnchors()
         val changed = anchor(bounds = Rect(16f, 120f, 136f, 280f))

@@ -14,6 +14,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.geometry.Rect
 import com.par9uet.jm.ui.interaction.coverSourceBounds
+import com.par9uet.jm.ui.interaction.CoverSourceBounds
 import com.par9uet.jm.ui.models.LocalCoverNavigator
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,10 +40,7 @@ fun Comic(
     val mainNavController = LocalMainNavController.current
     val detailOpener = LocalComicDetailOpener.current
     val coverNavigator = LocalCoverNavigator.current
-    var coverBounds by remember(comic.id) { mutableStateOf<Rect?>(null) }
-    // 宿主显式传入或 CompositionLocal 均可；任一为真即延迟封面上屏。
-    val localGridScrolling = LocalComicGridScrolling.current
-    val effectiveScrolling = isScrolling || localGridScrolling
+    val coverBounds = remember(comic.id) { CoverSourceBounds() }
 
     Card(
         modifier = modifier.combinedClickable(
@@ -56,7 +54,7 @@ fun Comic(
                         if (detailOpener != null) detailOpener.open(comic)
                         else mainNavController.navigate("comicDetail/${comic.id}")
                     }
-                    if (coverNavigator != null) coverNavigator.open(comic, coverBounds, open) else open()
+                    if (coverNavigator != null) coverNavigator.open(comic, coverBounds.inRoot(), open) else open()
                 }
             },
             onLongClick = {
@@ -76,8 +74,8 @@ fun Comic(
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Box {
-                ComicCoverImage(comic = comic, isScrolling = effectiveScrolling,
-                    modifier = Modifier.coverSourceBounds(comic.id) { coverBounds = it })
+                ComicCoverImage(comic = comic, isScrolling = isScrolling,
+                    modifier = Modifier.coverSourceBounds(comic.id, coverBounds))
                 if (editing && selected) {
                     Checkbox(
                         checked = true,

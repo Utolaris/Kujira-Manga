@@ -269,11 +269,11 @@ class CoverTransitionFlowTest {
                         popExitTransition = { ExitTransition.None }) {
                         composable("list") {
                             val opener = LocalCoverNavigator.current
-                            var bounds by remember { mutableStateOf<Rect?>(null) }
+                            val bounds = remember { com.par9uet.jm.ui.interaction.CoverSourceBounds() }
                             Box(Modifier.fillMaxSize().background(Color.LightGray)) {
                                 if (sourceVisible) MotionButton(modifier = Modifier.padding(30.dp).size(120.dp, 160.dp)
-                                    .coverSourceBounds(100) { bounds = it }, onClick = {
-                                    opener!!.open(Comic.create(100, "测试漫画", emptyList()), bounds) { nav.navigate("detail") }
+                                    .coverSourceBounds(100, bounds), onClick = {
+                                    opener!!.open(Comic.create(100, "测试漫画", emptyList()), bounds.inRoot()) { nav.navigate("detail") }
                                 }) { Text("source-cover") }
                             }
                         }

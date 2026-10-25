@@ -39,7 +39,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
-import com.par9uet.jm.coil.currentCoverImageLoader
+import com.par9uet.jm.ui.components.currentCoverImageLoader
 import com.par9uet.jm.coil.CoverImageHostResolver
 import com.par9uet.jm.coil.nextCoverCandidateUrl
 import com.par9uet.jm.image.classifyImageHostFailure

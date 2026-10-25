@@ -27,27 +27,28 @@ import com.par9uet.jm.ui.models.CoverAnchorRegistry
 import com.par9uet.jm.ui.models.CoverReturnFrame
 import com.par9uet.jm.ui.models.CoverReturnHost
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
 internal class CoverReturnAnchors : CoverAnchorRegistry {
-    private val anchors = mutableStateMapOf<Any, CoverAnchor>()
+    private val anchors = HashMap<Any, () -> CoverAnchor?>()
     var hiddenKey by mutableStateOf<Any?>(null)
     var pending by mutableStateOf<Pair<String, Int>?>(null)
-    override fun update(anchor: CoverAnchor) { anchors[anchor.key] = anchor }
+    override fun update(anchor: CoverAnchor) { track(anchor.key) { anchor } }
+    override fun track(key: Any, source: () -> CoverAnchor?) { anchors[key] = source }
     override fun remove(key: Any) { anchors.remove(key) }
     override fun hidden(key: Any): Boolean = hiddenKey === key || pending?.let { (page, comic) ->
-        anchors[key]?.let { it.pageKey == page && it.comicId == comic }
+        anchors[key]?.invoke()?.let { it.pageKey == page && it.comicId == comic }
     } == true
 
-    fun visible(key: Any, pageKey: String?, viewport: Rect): CoverAnchor? = anchors[key]?.takeIf {
+    fun visible(key: Any, pageKey: String?, viewport: Rect): CoverAnchor? = anchors[key]?.invoke()?.takeIf {
         it.pageKey == pageKey && it.boundsInWindow.width > 0f && it.boundsInWindow.height > 0f &&
             it.visibleBoundsInWindow.intersect(viewport).let { rect -> rect.width > 0f && rect.height > 0f }
     }
 
     fun source(comicId: Int, pageKey: String?, viewport: Rect, near: Rect?): CoverAnchor? =
-        anchors.values.filter { it.comicId == comicId && visible(it.key, pageKey, viewport) != null }
+        anchors.values.asSequence().mapNotNull { it() }
+            .filter { it.comicId == comicId && visible(it.key, pageKey, viewport) != null }
             .minByOrNull { (it.boundsInWindow.center - (near?.center ?: viewport.center)).getDistanceSquared() }
 
     fun anyVisible(pageKey: String?, viewport: Rect) = anchors.keys.any { visible(it, pageKey, viewport) != null }
@@ -55,7 +56,8 @@ internal class CoverReturnAnchors : CoverAnchorRegistry {
     fun find(frame: CoverReturnFrame, pageKey: String?, viewport: Rect): CoverAnchor? {
         if (pageKey == null || pageKey != frame.sourcePageKey || frame.comicId == null) return null
         val near = frame.sourceBounds?.center?.plus(viewport.topLeft) ?: viewport.center
-        return anchors.values.filter { it.comicId == frame.comicId && visible(it.key, pageKey, viewport) != null }
+        return anchors.values.asSequence().mapNotNull { it() }
+            .filter { it.comicId == frame.comicId && visible(it.key, pageKey, viewport) != null }
             .minByOrNull { (it.boundsInWindow.center - near).getDistanceSquared() }
     }
 }
@@ -82,6 +84,17 @@ internal class CoverReturns(
     var coverAlpha by mutableFloatStateOf(1f)
         private set
 
+    private suspend fun awaitVisibleAnchor(frame: CoverReturnFrame, viewport: Rect): CoverAnchor? {
+        while (true) {
+            val page = currentPageKey()
+            val anchor = anchors.find(frame, page, viewport)
+            if (anchor != null || anchors.anyVisible(page, viewport)) return anchor
+            // Coordinates are deliberately not snapshot state. Observe layout only while an
+            // actual return is waiting for its destination, never during ordinary scrolling.
+            withFrameNanos { }
+        }
+    }
+
     override fun close(frame: CoverReturnFrame, after: () -> Unit) {
         if (this.frame != null) return
         this.frame = frame
@@ -99,9 +112,7 @@ internal class CoverReturns(
                 withFrameNanos { }
                 val viewport = Rect(position(), Size(frame.viewport.width.toFloat(), frame.viewport.height.toFloat()))
                 var anchor = if (flying) withTimeoutOrNull(160) {
-                    snapshotFlow {
-                        anchors.find(frame, currentPageKey(), viewport) to anchors.anyVisible(currentPageKey(), viewport)
-                    }.first { it.first != null || it.second }.first
+                    awaitVisibleAnchor(frame, viewport)
                 } else null
                 anchors.hiddenKey = anchor?.key
                 anchors.pending = null

@@ -25,11 +25,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
 
@@ -48,6 +46,7 @@ fun <T : Any> PullRefreshAndLoadMoreGrid(
     animateItems: Boolean = false,
     itemContent: @Composable ((item: T) -> Unit),
 ) {
+    val visibleCoverKeys = rememberVisibleCoverKeys(gridState)
     val refreshState = lazyPagingItems.loadState.refresh
     var userRefreshRequested by remember(lazyPagingItems) { mutableStateOf(false) }
     LaunchedEffect(refreshState) {
@@ -55,12 +54,7 @@ fun <T : Any> PullRefreshAndLoadMoreGrid(
     }
     // Paging 首次订阅、返回页面和重连也会进入 Loading；只有真实下拉才显示顶部转圈。
     val isRefreshing = userRefreshRequested && refreshState is LoadState.Loading
-    var isGridScrolling by remember { mutableStateOf(false) }
-    LaunchedEffect(gridState) {
-        snapshotFlow { gridState.isScrollInProgress }
-            .distinctUntilChanged()
-            .collect { isGridScrolling = it }
-    }
+    val isGridScrolling = remember(gridState) { { gridState.isScrollInProgress } }
     val gridContent: @Composable () -> Unit = {
         LazyVerticalGrid(
             // 不要 fillMaxSize：在 heightIn(max) 父级里会把列表强行撑到上限，
@@ -109,26 +103,28 @@ fun <T : Any> PullRefreshAndLoadMoreGrid(
             } else {
                 emptyList()
             }
+            // 同一 key 同时用于布局与封面可见性；顶部错误项不影响漫画的视口判断。
+            val itemKey: (Int) -> Any = { index ->
+                val item = lazyPagingItems.peek(index)
+                when {
+                    item == null -> "paging_placeholder_$index"
+                    animateItems -> stableKeys[index]!!
+                    else -> "${key(item)}#$index"
+                }
+            }
             items(
                 lazyPagingItems.itemCount,
                 // 业务 id 可能在分页膨胀/竞态下重复；LazyGrid 对重复 key 会直接崩溃。
-                key = { index ->
-                    val item = lazyPagingItems.peek(index)
-                    when {
-                        item == null -> "paging_placeholder_$index"
-                        animateItems -> stableKeys[index]!!
-                        else -> "${key(item)}#$index"
-                    }
-                },
+                key = itemKey,
+                contentType = { if (lazyPagingItems.peek(it) == null) "placeholder" else "content" },
             ) { index ->
                 val item = lazyPagingItems[index]
                 if (item != null && itemVisible(item)) {
-                    if (animateItems) {
-                        Box(modifier = Modifier.animateItem()) {
+                    CoverViewportItem(visibleCoverKeys, itemKey(index)) {
+                        val itemModifier = if (animateItems) Modifier.animateItem() else Modifier
+                        Box(modifier = itemModifier) {
                             itemContent(item)
                         }
-                    } else {
-                        itemContent(item)
                     }
                 }
             }

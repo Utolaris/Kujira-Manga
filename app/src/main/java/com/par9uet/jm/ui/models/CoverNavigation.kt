@@ -38,6 +38,7 @@ data class CoverAnchor(
 
 interface CoverAnchorRegistry {
     fun update(anchor: CoverAnchor)
+    fun track(key: Any, source: () -> CoverAnchor?)
     fun remove(key: Any)
     fun hidden(key: Any): Boolean
 }

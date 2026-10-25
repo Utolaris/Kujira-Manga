@@ -376,6 +376,7 @@ internal class GlassCaptureHostView(context: Context) :
     }
 
     fun dispose() {
+        sourceCapture.release()
         sourceContentState.value = null
         overlayContentState.value = null
         registeredSurfaces.clear()
@@ -393,17 +394,19 @@ internal class GlassCaptureHostView(context: Context) :
         invalidate()
     }
 
-    /** Draws source first, records it once, then draws all native glass views before Compose UI. */
+    /** Records the source once, replays it for the screen, then draws glass and sharp foreground. */
     override fun dispatchDraw(canvas: Canvas) {
         val time = drawingTime
-        drawChild(canvas, sourceComposeView, time)
+        var sourceDrawn = false
         if (
             backdropMode == GlassBackdropMode.Blur &&
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && registeredSurfaces.isNotEmpty()
         ) {
             // Idle hosts (no glass surfaces) must not re-record the full-screen source.
             val generationBefore = sourceCapture.generation
-            sourceCapture.recordIfNeeded()
+            sourceDrawn = sourceCapture.draw(canvas) { recordingCanvas ->
+                drawChild(recordingCanvas, sourceComposeView, time)
+            }
             if (sourceCapture.generation != generationBefore) {
                 // Backdrop views only notice a new source generation while drawing, so they
                 // must be redrawn in this same frame to keep the glass in sync.
@@ -414,6 +417,7 @@ internal class GlassCaptureHostView(context: Context) :
                 }
             }
         }
+        if (!sourceDrawn) drawChild(canvas, sourceComposeView, time)
         backdropViews.values.forEach { view ->
             if (view.visibility != View.GONE) {
                 drawChild(canvas, view, time)

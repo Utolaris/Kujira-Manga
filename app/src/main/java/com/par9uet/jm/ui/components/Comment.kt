@@ -1,5 +1,6 @@
 package com.par9uet.jm.ui.components
 
+import android.content.ClipData
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,16 +16,37 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.fromHtml
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.par9uet.jm.data.models.Comment
+import com.par9uet.jm.core.ToastManager
 import com.par9uet.jm.ui.models.LocalRemoteImageHost
+import kotlinx.coroutines.launch
+import org.koin.compose.getKoin
+
+@Composable
+internal fun rememberCommentCopyAction(content: String): () -> Unit {
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
+    val toastManager: ToastManager = getKoin().get()
+    val text = remember(content) { content.toSafeAnnotatedComment().text }
+    return {
+        scope.launch {
+            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("评论内容", text)))
+            toastManager.showAsync("已复制评论内容")
+        }
+    }
+}
 
 @Composable
 fun Comment(

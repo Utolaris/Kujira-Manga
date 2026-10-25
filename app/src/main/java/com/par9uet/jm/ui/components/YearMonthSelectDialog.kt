@@ -94,6 +94,7 @@ fun YearMonthSelectDialog(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .weight(1f, fill = false)
                     .heightIn(max = maxHeight),
             ) {
                 YearMonthOptionColumn(

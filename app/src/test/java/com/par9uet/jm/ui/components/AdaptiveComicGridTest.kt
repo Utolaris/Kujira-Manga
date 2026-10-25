@@ -21,6 +21,13 @@ class AdaptiveComicGridTest {
                             density.calculateCrossAxisCellSizes(width, spacing).toList()
                         }
                         assertEquals("scale=$scale minimum=$minimum columns=$columns width=$widthDp", regular, waterfall)
+                        val minimumPx = with(density) { minimum.roundToPx() }
+                        val expectedColumns = if (columns > 0) columns else
+                            ((width + spacing) / (minimumPx + spacing)).coerceAtLeast(1)
+                        assertEquals(expectedColumns, regular.size)
+                        assertEquals(width, regular.sum() + spacing * (regular.size - 1))
+                        org.junit.Assert.assertTrue(regular.all { it > 0 })
+                        org.junit.Assert.assertTrue(regular.max() - regular.min() <= 1)
                     }
                 }
             }

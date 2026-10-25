@@ -15,7 +15,7 @@ import org.junit.Test
 class ScrollAwareNavigationStateTest {
     @Test
     fun verticalDragAndFlingHideUntilHalfASecondAfterLastMotion() = runTest {
-        val state = ScrollAwareNavigationState(backgroundScope)
+        val state = ScrollAwareNavigationState(backgroundScope) { testScheduler.currentTime }
         assertTrue(state.visible)
         assertEquals(Offset.Zero, state.onPreScroll(Offset(0f, -20f), NestedScrollSource.UserInput))
         assertFalse(state.visible)
@@ -34,8 +34,45 @@ class ScrollAwareNavigationStateTest {
 
     @Test
     fun horizontalPagingDoesNotHideNavigation() = runTest {
-        val state = ScrollAwareNavigationState(backgroundScope)
+        val state = ScrollAwareNavigationState(backgroundScope) { testScheduler.currentTime }
         assertEquals(Offset.Zero, state.onPreScroll(Offset(20f, 0f), NestedScrollSource.UserInput))
+        assertTrue(state.visible)
+    }
+
+    @Test
+    fun slowInertialFramesReuseOneWaiterAndDoNotConsumeScroll() = runTest {
+        val state = ScrollAwareNavigationState(backgroundScope) { testScheduler.currentTime }
+        state.onPreScroll(Offset(0f, -1f), NestedScrollSource.UserInput)
+        runCurrent()
+        val waiter = backgroundScope.coroutineContext[kotlinx.coroutines.Job]!!.children.single()
+        repeat(240) {
+            advanceTimeBy(8)
+            assertEquals(Offset.Zero, state.onPreScroll(Offset(0f, -.25f), NestedScrollSource.SideEffect))
+            runCurrent()
+            assertFalse(state.visible)
+            assertTrue(waiter === backgroundScope.coroutineContext[kotlinx.coroutines.Job]!!.children.single())
+        }
+        advanceTimeBy(499)
+        runCurrent()
+        assertFalse(state.visible)
+        advanceTimeBy(1)
+        runCurrent()
+        assertTrue(state.visible)
+    }
+
+    @Test
+    fun disposingHiddenNavigationCancelsWaiterAndRestoresItsNextVisibleState() = runTest {
+        val state = ScrollAwareNavigationState(backgroundScope) { testScheduler.currentTime }
+        state.onPreScroll(Offset(0f, -1f), NestedScrollSource.UserInput)
+        runCurrent()
+        state.dispose()
+        runCurrent()
+        assertTrue(state.visible)
+        assertTrue(backgroundScope.coroutineContext[kotlinx.coroutines.Job]!!.children.none())
+        state.onPreScroll(Offset(0f, -1f), NestedScrollSource.UserInput)
+        assertFalse(state.visible)
+        advanceTimeBy(500)
+        runCurrent()
         assertTrue(state.visible)
     }
 }

@@ -1,13 +1,10 @@
 package com.par9uet.jm.coil
 
 import android.content.Context
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import coil.ImageLoader
 import com.par9uet.jm.cache.CacheBudget
-import com.par9uet.jm.network.DohManager
-import com.par9uet.jm.storage.LocalSettingManager
+import okhttp3.Dns
+import com.par9uet.jm.storage.CoverCachePreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,7 +14,6 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import okhttp3.Cache
 import okhttp3.ConnectionPool
-import org.koin.compose.getKoin
 
 /**
  * 持有当前封面 ImageLoader。磁盘缓存上限跟随「缓存控制」总预算，
@@ -29,21 +25,22 @@ import org.koin.compose.getKoin
  */
 class CoverImageLoaderHolder(
     private val context: Context,
-    private val dohManager: DohManager,
-    private val localSettingManager: LocalSettingManager,
+    private val dns: Dns,
+    private val preferences: CoverCachePreferences,
     private val connectionPool: ConnectionPool,
     private val httpCache: Cache?,
     scope: CoroutineScope,
+    val foregroundWork: com.par9uet.jm.core.concurrent.ForegroundWork,
 ) {
     private fun coverMb(): Int = CacheBudget.coverDiskCacheMb(
-        totalMb = localSettingManager.cacheBudgetMb.value,
-        downloadExempt = localSettingManager.downloadExemptFromCacheLimit.value,
+        totalMb = preferences.cacheBudgetMb.value,
+        downloadExempt = preferences.downloadExemptFromCacheLimit.value,
     )
 
     private val _loader = MutableStateFlow(
         createAsyncImageLoader(
             context = context,
-            dohManager = dohManager,
+            dns = dns,
             coverDiskCacheMb = coverMb(),
             connectionPool = connectionPool,
             httpCache = httpCache,
@@ -54,8 +51,8 @@ class CoverImageLoaderHolder(
     init {
         scope.launch {
             kotlinx.coroutines.flow.combine(
-                localSettingManager.cacheBudgetMb,
-                localSettingManager.downloadExemptFromCacheLimit,
+                preferences.cacheBudgetMb,
+                preferences.downloadExemptFromCacheLimit,
             ) { budget, exempt -> CacheBudget.coverDiskCacheMb(budget, exempt) }
                 .drop(1)
                 .distinctUntilChanged()
@@ -75,19 +72,11 @@ class CoverImageLoaderHolder(
         val previous = _loader.value
         _loader.value = createAsyncImageLoader(
             context = context,
-            dohManager = dohManager,
+            dns = dns,
             coverDiskCacheMb = mb,
             connectionPool = connectionPool,
             httpCache = httpCache,
         )
         runCatching { previous.shutdown() }
     }
-}
-
-/** Compose 侧取当前封面 ImageLoader（磁盘缓存设置变更后自动换实例）。 */
-@Composable
-fun currentCoverImageLoader(): ImageLoader {
-    val holder: CoverImageLoaderHolder = getKoin().get()
-    val loader by holder.loader.collectAsState()
-    return loader
 }

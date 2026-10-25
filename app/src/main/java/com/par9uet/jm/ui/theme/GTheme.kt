@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import com.par9uet.jm.data.models.COLOR_PALETTE_PRESET_MONET
 import com.par9uet.jm.storage.AppearancePreferences
+import com.par9uet.jm.ui.interaction.ProvideScrollEdgeFeedback
 import org.koin.compose.getKoin
 
 val LocalExtendedColors = staticCompositionLocalOf<ExtendedColorScheme> {
@@ -90,11 +91,13 @@ fun AppTheme(
             typography = AppTypography,
             shapes = AppShapes,
         ) {
-            Surface(
-                modifier = Modifier.fillMaxSize(),
-                color = colorScheme.background,
-                content = content
-            )
+            ProvideScrollEdgeFeedback {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = colorScheme.background,
+                    content = content
+                )
+            }
         }
     }
 }

@@ -14,11 +14,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.paging.PagingSource
+import com.par9uet.jm.data.models.Comic
 import androidx.paging.Pager
+import androidx.paging.LoadState
 import androidx.paging.PagingConfig
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.room.Room
@@ -40,18 +44,25 @@ import androidx.navigation.compose.rememberNavController
 import com.par9uet.jm.ui.theme.LocalExtendedColors
 import com.par9uet.jm.ui.theme.extendedColorSchemeFor
 import java.util.concurrent.atomic.AtomicInteger
-import kotlinx.coroutines.runBlocking
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class FavoriteSyncGridTest {
     @get:Rule
     val compose = createAndroidComposeRule<ComponentActivity>()
+    private val roomDispatcher = StandardTestDispatcher()
     private val database = Room.inMemoryDatabaseBuilder(
         ApplicationProvider.getApplicationContext(), AppDatabase::class.java,
-    ).build()
+    ).setQueryCoroutineContext(roomDispatcher).build()
     private val store = FavoriteStore(
         database, database.favoriteComicDao(), database.favoriteFolderDao(),
         database.favoriteFolderMembershipDao(), database.favoriteMetadataDao(),
@@ -71,7 +82,7 @@ class FavoriteSyncGridTest {
         val full = FavoriteMetadataPayload(11, "详情完整标题", "详情完整简介", listOf("详情作者"), emptyList(), emptyList(), emptyList())
         val items = (11..70).map { item.copy(albumId = it) }
         val metadata = items.map { full.copy(albumId = it.albumId) }
-        runBlocking {
+        runTest(roomDispatcher) {
             store.replaceAllSnapshot(7, items, mapOf(0 to "全部"), metadata, 100, 100, emptyMap())
         }
         val sourcesCreated = AtomicInteger()
@@ -79,10 +90,14 @@ class FavoriteSyncGridTest {
         val coverMounts = AtomicInteger()
         val coverDisposals = AtomicInteger()
         val progress = mutableIntStateOf(0)
+        val pagingIdle = AtomicBoolean(false)
+        lateinit var initialSource: PagingSource<Int, Comic>
         val pager = Pager(PagingConfig(pageSize = 20, initialLoadSize = 20)) {
             sourcesCreated.incrementAndGet()
             // 本地收藏分页已收口到 FavoriteLocalQuery.pagingSource，不再有中间包装类。
-            store.pagingSource(7, emptyList(), "", emptySet(), emptySet(), 0, TagFilterLogic.AND)
+            store.pagingSource(7, emptyList(), "", emptySet(), emptySet(), 0, TagFilterLogic.AND).also {
+                if (sourcesCreated.get() == 1) initialSource = it
+            }
         }.flow
         val loader = ImageLoader.Builder(compose.activity).components {
             add { chain ->
@@ -94,6 +109,10 @@ class FavoriteSyncGridTest {
         val resolver = CoverImageHostResolver(knownHosts = listOf("covers.example"))
         compose.setContent {
             val pagingItems = pager.collectAsLazyPagingItems()
+            val initialLoadComplete = pagingItems.itemCount >= 20 &&
+                pagingItems.loadState.refresh is LoadState.NotLoading &&
+                pagingItems.loadState.append is LoadState.NotLoading
+            SideEffect { pagingIdle.set(initialLoadComplete) }
             val completed = progress.intValue
             val pagerState = rememberPagerState(initialPage = 1) { 3 }
             val navController = rememberNavController()
@@ -139,27 +158,29 @@ class FavoriteSyncGridTest {
                 }
             }
         }
-        // waitForIdle() has no timeout: if another app steals focus on a real device the
-        // activity stops drawing and the runner hangs forever. Prefer timed waitUntil.
-        compose.waitUntil(10_000) { imageRequests.get() > 0 }
+        compose.waitUntil(10_000) {
+            roomDispatcher.scheduler.advanceUntilIdle()
+            pagingIdle.get() && imageRequests.get() > 0
+        }
         compose.waitUntil(10_000) { coverMounts.get() > 0 }
+        compose.waitForIdle()
         val initialMounts = coverMounts.get()
         val initialRequests = imageRequests.get()
-        var progressed = false
-        compose.runOnIdle { progress.intValue++; progressed = true }
-        compose.waitUntil(10_000) { progressed }
-        compose.waitUntil(10_000) { coverMounts.get() >= initialMounts }
+        compose.runOnIdle { progress.intValue++ }
+        compose.waitForIdle()
         assertEquals(initialMounts, coverMounts.get())
         assertEquals(initialRequests, imageRequests.get())
-        runBlocking {
+        runTest(roomDispatcher) {
             store.reconcileLightweightSnapshot(7, 0, items, mapOf(0 to "全部"), 200)
             metadata.forEach { store.applyMetadata(7, it, 200) }
             store.markSyncSuccess(7, 0, 200)
         }
-        var progressedAgain = false
-        compose.runOnIdle { progress.intValue++; progressedAgain = true }
-        compose.waitUntil(10_000) { progressedAgain }
-        compose.waitUntil(10_000) { sourcesCreated.get() >= 1 }
+        // Drain the scheduler shared by Room queries and invalidation observers. Merely
+        // seeing the old source count would allow a delayed invalidation to pass unnoticed.
+        roomDispatcher.scheduler.advanceUntilIdle()
+        assertFalse("Unchanged sync must not invalidate the original Room source", initialSource.invalid)
+        compose.runOnIdle { progress.intValue++ }
+        compose.waitForIdle()
         assertEquals(
             "Sync must not recreate the Room source; mounts=${coverMounts.get()}/$initialMounts, " +
                 "disposals=${coverDisposals.get()}, requests=${imageRequests.get()}/$initialRequests",
@@ -168,5 +189,13 @@ class FavoriteSyncGridTest {
         assertEquals("Visible covers must remain composed", 0, coverDisposals.get())
         assertEquals(initialMounts, coverMounts.get())
         assertEquals("Visible covers must keep the completed image request", initialRequests, imageRequests.get())
+
+        // Positive control: the same observer must detect a real row change after this barrier.
+        runTest(roomDispatcher) {
+            val comic = database.favoriteComicDao().getByIds(7, listOf(11)).single()
+            database.favoriteComicDao().upsert(comic.copy(title = "changed"))
+        }
+        roomDispatcher.scheduler.advanceUntilIdle()
+        assertTrue("Real writes must reach the original source", initialSource.invalid)
     }
 }

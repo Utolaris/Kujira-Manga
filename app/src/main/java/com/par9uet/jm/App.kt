@@ -1,5 +1,7 @@
 package com.par9uet.jm
 
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import com.par9uet.jm.session.ClipboardDetectionSession
 import android.content.Context
 import android.view.WindowManager
@@ -105,9 +107,9 @@ fun App(
     val unlockedAfterLeave = remember { mutableStateOf(false) }
     var sessionNsfwDismissed by remember { mutableStateOf(nsfwWarningDismissed) }
 
-    // Only the small local state needed to choose the first safe screen is loaded here. All
-    // network, history, launcher, notification, and account work waits for the first frame to be
-    // handed to the user, so background tasks never compete with first-frame CPU/disk work.
+    // 这里只读选首屏所需的小块本地状态。网络、历史、图标入口、通知渠道与账号工作都等首帧
+    // 交还给用户之后，由 PostStartupCoordinator 启动，不和首帧的 CPU/磁盘工作抢资源。
+    // 同一作用域内先声明先启动：下面这个 effect 先于绘制完成回调与权限请求运行。
     LaunchedEffect(Unit) {
         withFrameNanos { }
         postStartupCoordinator.start()
@@ -177,8 +179,8 @@ fun App(
     val showNsfwDialog = !securityLoadBlocked && !showAppLock && !showOnboarding &&
         !sessionNsfwDismissed && !nsfwWarningDismissed
 
-    // Mark the first real screen for startup traces. Permission prompts are scheduled after that
-    // frame and never compete with the onboarding or app-lock screen.
+    // 首帧后上报绘制完成并请求通知权限。它与上面的启动 effect 同一作用域、后声明，
+    // 因此在启动链开跑之后才执行；引导页与锁屏页不提权。
     val context = LocalContext.current
     var localModeColdNoticeShown by remember { mutableStateOf(false) }
     LaunchedEffect(showOnboarding, showAppLock, securityLoadBlocked) {
@@ -189,7 +191,7 @@ fun App(
                 activity.requestNotificationPermissionIfNeeded()
                 if (!localModeColdNoticeShown && connectionModeStatus.isLocalMode) {
                     localModeColdNoticeShown = true
-                    toastManager.showAsync("当前处于本地模式（实验性）")
+                    toastManager.showAsync("当前处于本地收藏模式")
                 }
             }
         }
@@ -452,8 +454,8 @@ private fun MainAppContent(
                     com.par9uet.jm.ui.glass.GlassConfirmDialog(
                         visible = nightLocalModePromptAccountId != null,
                         title = "登录态频繁失效",
-                        message = "夜间风控可能导致登录被踢。可切换到本地模式（实验性），继续使用收藏与历史（仅存本地）。",
-                        confirmText = "进入本地模式（实验性）",
+                        message = "夜间风控可能导致登录被踢。可切换到本地收藏模式，继续使用收藏与历史（仅存本地）。",
+                        confirmText = "进入本地收藏模式",
                         dismissText = "暂不",
                         onConfirm = {
                             val accountId = nightLocalModePromptAccountId
@@ -528,7 +530,7 @@ private fun ClipboardDetectedComicDialog(
     onDismiss: () -> Unit,
     onNavigate: (Int) -> Unit,
     remoteConfigPreferences: RemoteConfigPreferences = getKoin().get(),
-    imageLoader: ImageLoader = com.par9uet.jm.coil.currentCoverImageLoader(),
+    imageLoader: ImageLoader = com.par9uet.jm.ui.components.currentCoverImageLoader(),
 ) {
     val remoteHost by remoteConfigPreferences.remoteImageHost.collectAsState()
     GlassModal(
@@ -539,7 +541,7 @@ private fun ClipboardDetectedComicDialog(
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxWidth().verticalScroll(rememberScrollState())
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {

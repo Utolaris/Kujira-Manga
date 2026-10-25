@@ -19,6 +19,7 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -39,7 +40,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -640,7 +641,7 @@ internal fun ComicSubscriptionButton(id: Int, state: ComicTrackingState, onClick
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ComicDetailScreen(
     id: Int,
@@ -739,7 +740,8 @@ fun ComicDetailScreen(
         WindowInsets.navigationBars.getBottom(this).toDp()
     }
     val statusBarInset = with(LocalDensity.current) {
-        WindowInsets.statusBars.getTop(this).toDp()
+        // 阅读器退出时状态栏可能仍隐藏；首帧就为顶部按钮和正文保留完整空间。
+        WindowInsets.statusBarsIgnoringVisibility.getTop(this).toDp()
     }
     val detailTopContentPadding = statusBarInset + AppGlassTopBarDefaults.ContentHeight
     // 顶部浮动玻璃钮（50dp）底边到下方 header 内容的间距，与封面块到 tag 组的 16dp 一致。
@@ -1132,7 +1134,7 @@ fun ComicDetailScreen(
                 surfaceId = "comic-detail-title-glass",
             ) {
                 Column(
-                    modifier = Modifier.fillMaxWidth().padding(24.dp),
+                    modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Text(
@@ -1173,6 +1175,7 @@ fun ComicDetailScreen(
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .weight(1f, fill = false)
                                 .heightIn(max = 400.dp)
                                 .verticalScroll(rememberScrollState()),
                         )

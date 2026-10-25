@@ -20,7 +20,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import com.par9uet.jm.coil.CoverImageHostResolver
-import com.par9uet.jm.coil.currentCoverImageLoader
+import com.par9uet.jm.ui.components.currentCoverImageLoader
 import com.par9uet.jm.coil.jmCoverCacheKey
 import org.koin.compose.getKoin
 

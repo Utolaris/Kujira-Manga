@@ -80,6 +80,7 @@ import androidx.paging.compose.LazyPagingItems
 import com.par9uet.jm.data.models.Comment
 import com.par9uet.jm.session.SessionReadiness
 import com.par9uet.jm.ui.components.Comment
+import com.par9uet.jm.ui.components.rememberCommentCopyAction
 import com.par9uet.jm.ui.components.CommentSkeleton
 import com.par9uet.jm.ui.components.PullRefreshAndLoadMoreGrid
 import com.par9uet.jm.ui.glass.GlassSurface
@@ -103,6 +104,7 @@ private fun ReplyComment(
     comment: Comment,
     onReply: () -> Unit,
 ) {
+    val copyComment = rememberCommentCopyAction(comment.content)
     val annotatedString = buildAnnotatedString {
         withStyle(
             SpanStyle(
@@ -116,7 +118,7 @@ private fun ReplyComment(
         append(AnnotatedString.fromHtml(htmlString = comment.content).trim())
     }
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = copyComment),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -147,6 +149,7 @@ private fun CommentWithAction(
     comment: Comment,
     onReply: (Comment) -> Unit,
 ) {
+    val copyComment = rememberCommentCopyAction(comment.content)
     var repliesExpanded by remember { mutableStateOf(false) }
     val replyCount = comment.replyCommentList.size
     val expandRotation by animateFloatAsState(
@@ -155,7 +158,7 @@ private fun CommentWithAction(
         label = "comment-replies-expand-icon",
     )
 
-    Comment(comment) {
+    Comment(comment, onClick = copyComment) {
         Column {
             TextButton(
                 modifier = Modifier.height(30.dp),

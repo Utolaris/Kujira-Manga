@@ -25,8 +25,11 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -67,6 +70,8 @@ import com.par9uet.jm.ui.screens.HomeGlassTopBar
 import com.par9uet.jm.ui.screens.FavoritesModalHost
 import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.ui.models.LocalTabletLayoutEnabled
+import com.par9uet.jm.ui.components.LocalCoverWorkActive
+import com.par9uet.jm.ui.components.isCoverPageVisible
 import com.par9uet.jm.ui.screens.resolveHomeCategoryTitle
 import com.par9uet.jm.ui.screens.UserCollectComicScreen
 import com.par9uet.jm.ui.screens.UserScreen
@@ -114,7 +119,7 @@ fun TabScreen(
     val homeCategoryMenuState = rememberGlassAnchoredMenuState()
     val homeMoreMenuState = rememberGlassAnchoredMenuState()
     val favoritesFolderMenuState = rememberGlassAnchoredMenuState()
-    val favoritesState by favoritesViewModel.uiState.collectAsState()
+    val favoritesState by favoritesViewModel.folderUiState.collectAsState()
     val selectedFavoriteFolderId = favoritesState.selectedFolderId
     val favoriteFolderList = favoritesState.folders
 
@@ -211,6 +216,9 @@ fun TabScreen(
         val navigationVisibility = remember(useNavigationRail, selectedTab) {
             ScrollAwareNavigationState(coroutineScope)
         }
+        DisposableEffect(navigationVisibility, hideNavigation) {
+            onDispose { navigationVisibility.dispose() }
+        }
         val anchoredMenuMaxHeight = maxHeight * 0.56f
         val glassStyle = GlassStyle.Default
         val navigationBarInset = with(LocalDensity.current) {
@@ -245,28 +253,35 @@ fun TabScreen(
                 beyondViewportPageCount = MainTab.ordered.lastIndex,
                 userScrollEnabled = true,
             ) { page ->
-                when (MainTab.fromIndex(page)) {
-                    MainTab.Home -> HomeScreen(
-                        isActive = selectedTab == MainTab.Home,
-                        topContentPadding = homeTopContentPadding,
-                        bottomContentPadding = contentBottomPadding,
-                        pullDownState = homePullDownState,
-                        onPullDownSearch = onHomeSearch,
-                    )
-                    MainTab.Collect -> if (canShowAuthenticatedUi) {
-                        UserCollectComicScreen(
-                            favoritesViewModel = favoritesViewModel,
-                            pullDownState = favoritesPullDownState,
-                            topContentPadding = favoritesTopContentPadding,
+                val coverWorkActive by remember(pagerState, page) {
+                    derivedStateOf {
+                        isCoverPageVisible(page, pagerState.currentPage, pagerState.currentPageOffsetFraction)
+                    }
+                }
+                CompositionLocalProvider(LocalCoverWorkActive provides coverWorkActive) {
+                    when (MainTab.fromIndex(page)) {
+                        MainTab.Home -> HomeScreen(
+                            isActive = selectedTab == MainTab.Home,
+                            topContentPadding = homeTopContentPadding,
                             bottomContentPadding = contentBottomPadding,
+                            pullDownState = homePullDownState,
+                            onPullDownSearch = onHomeSearch,
+                        )
+                        MainTab.Collect -> if (canShowAuthenticatedUi) {
+                            UserCollectComicScreen(
+                                favoritesViewModel = favoritesViewModel,
+                                pullDownState = favoritesPullDownState,
+                                topContentPadding = favoritesTopContentPadding,
+                                bottomContentPadding = contentBottomPadding,
+                            )
+                        }
+                        MainTab.Settings -> UserScreen(
+                            topContentPadding = settingsTopContentPadding,
+                            bottomContentPadding = contentBottomPadding,
+                            startContentPadding = settingsStartPadding,
+                            endContentPadding = settingsEndPadding,
                         )
                     }
-                    MainTab.Settings -> UserScreen(
-                        topContentPadding = settingsTopContentPadding,
-                        bottomContentPadding = contentBottomPadding,
-                        startContentPadding = settingsStartPadding,
-                        endContentPadding = settingsEndPadding,
-                    )
                 }
             }
         }
@@ -448,7 +463,9 @@ fun TabScreen(
             GlassCaptureHost(
                 modifier = Modifier.fillMaxSize(),
                 sourceContent = {
-                    pagerContent(Modifier.fillMaxSize().nestedScroll(navigationVisibility))
+                    pagerContent(Modifier.fillMaxSize().then(
+                        if (hideNavigation) Modifier else Modifier.nestedScroll(navigationVisibility)
+                    ))
                 },
                 overlayContent = {
                     Box(modifier = Modifier.fillMaxSize()) {

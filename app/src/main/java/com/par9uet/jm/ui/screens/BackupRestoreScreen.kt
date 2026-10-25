@@ -82,6 +82,7 @@ private val protectionOptionList = listOf(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@Deprecated("设置页的备份控制入口已隐藏，保留旧备份兼容能力。")
 internal fun BackupRestoreScreen(
     viewModel: BackupRestoreViewModel = koinViewModel(),
 ) {

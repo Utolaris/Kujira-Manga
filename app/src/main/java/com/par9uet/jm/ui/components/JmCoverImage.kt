@@ -1,6 +1,7 @@
 package com.par9uet.jm.ui.components
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
@@ -24,10 +25,13 @@ import coil.compose.rememberAsyncImagePainter
 import coil.decode.DataSource
 import coil.request.ImageRequest
 import coil.size.Dimension
+import coil.size.Precision
 import coil.size.Size
 import coil.size.SizeResolver
 import com.par9uet.jm.BuildConfig
 import com.par9uet.jm.coil.CoverImageHostResolver
+import com.par9uet.jm.coil.CoverWorkGate
+import com.par9uet.jm.coil.CoverWorkGateParameter
 import com.par9uet.jm.coil.jmCoverCacheKey
 import com.par9uet.jm.coil.nextCoverCandidateUrl
 import com.par9uet.jm.image.ImageHostFailureKind
@@ -53,10 +57,18 @@ internal fun JmCoverImage(
     resolver: CoverImageHostResolver = getKoin().get(),
 ) {
     val context = LocalContext.current
+    val pageActive = LocalCoverWorkActive.current
+    val inViewport = LocalCoverInViewport.current
+    val scrolling = isScrolling || LocalComicGridScrolling.current()
+    val workGate = remember(comicId) {
+        CoverWorkGate(active = pageActive, visible = inViewport, scrolling = scrolling)
+    }
+    SideEffect { workGate.setVisibility(pageActive, inViewport, scrolling) }
+    val workVisible by workGate.changes.collectAsState(initial = workGate.isReady)
     val loaderHolder: com.par9uet.jm.coil.CoverImageLoaderHolder = getKoin().get()
     val holderLoader by loaderHolder.loader.collectAsState()
     val activeImageLoader = imageLoader ?: holderLoader
-    val scrollingState = rememberUpdatedState(isScrolling)
+    val scrollingState = rememberUpdatedState(scrolling)
     val networkGeneration by resolver.networkGeneration.collectAsState()
     val candidateUrls = remember(comicId, remoteHost, networkGeneration) {
         resolver.coverUrls(comicId, remoteHost)
@@ -67,24 +79,29 @@ internal fun JmCoverImage(
     val candidateUrl = nextCoverCandidateUrl(candidateUrls, attemptedUrls)
     val cacheKey = remember(comicId) { jmCoverCacheKey(comicId) }
     val displayGate = remember(comicId, candidateUrl) { CoverImageDisplayGate() }
+    var requestFinished by remember(comicId, candidateUrl) { mutableStateOf(false) }
     // 网络恢复或 CDN 切换仍是同一本漫画：保留已显示封面，等新结果就绪再过渡。
     // 只有漫画身份变化才清空，避免回前台换候选地址时闪回透明占位。
     var displayedCover by remember(comicId) { mutableStateOf<DisplayedCover?>(null) }
-    val sizeResolver = remember { CoverSizeResolver() }
+    val sizeResolver = remember(workGate) { CoverSizeResolver(workGate) }
     val request = remember(context, candidateUrl, cacheKey, sizeResolver) {
         candidateUrl?.let { url ->
             ImageRequest.Builder(context)
                 .data(url)
                 .memoryCacheKey(cacheKey)
                 .diskCacheKey(cacheKey)
+                .setParameter(CoverWorkGateParameter, workGate, memoryCacheKey = null)
+                // A larger cached bitmap is valid for a smaller grid cell. Also avoid CPU
+                // upscaling when the server's cover is smaller than the display slot.
+                .precision(Precision.INEXACT)
                 // Keep the same request size that AsyncImage derives from the grid item.
                 .size(sizeResolver)
                 .build()
         }
     }
 
-    // The request painter stays remembered so Coil can finish and cache the image while the
-    // grid is moving. Only the selected painter below participates in the draw path.
+    // Keep the request remembered across tab switches: an in-flight download can finish without
+    // restarting. Size resolution gates new requests; the decoder rechecks visibility after fetch.
     @Suppress("UNUSED_VARIABLE")
     val requestPainter = rememberAsyncImagePainter(
         model = request,
@@ -93,6 +110,7 @@ internal fun JmCoverImage(
         onState = { state ->
             when (state) {
                 is AsyncImagePainter.State.Success -> {
+                    requestFinished = true
                     val loadedUrl = candidateUrl
                     if (loadedUrl != null) {
                         if (state.result.dataSource == DataSource.NETWORK) {
@@ -100,15 +118,16 @@ internal fun JmCoverImage(
                             // 只标记主机健康，不写入 Reader 排序使用的延迟 EWMA。
                             resolver.recordHealthy(loadedUrl)
                         }
-                        if (shouldDeferCoverResult(scrollingState.value, state.result.dataSource)) {
-                            displayGate.deferSuccess(state.painter)
+                        if ((!workGate.isReady && !state.result.dataSource.isMemorySource()) ||
+                            shouldDeferCoverResult(scrollingState.value, state.result.dataSource)
+                        ) {
+                            displayGate.deferSuccess(state.painter, state.result.dataSource)
                         } else {
-                            // Memory cache hits are cheap to publish even during a fling.
+                            // Cached covers remain drawable during a fling, including disk hits.
                             displayGate.clearDeferredPainter()
                             displayedCover = DisplayedCover(
                                 painter = state.painter,
-                                // 内存缓存命中瞬时上屏；磁盘/网络命中淡入 300ms。
-                                animate = !state.result.dataSource.isMemorySource(),
+                                animate = shouldAnimateCoverResult(scrollingState.value, state.result.dataSource),
                             )
                         }
                         if (BuildConfig.DEBUG) {
@@ -121,6 +140,7 @@ internal fun JmCoverImage(
                     }
                 }
                 is AsyncImagePainter.State.Error -> {
+                    requestFinished = true
                     val failedUrl = candidateUrl
                     if (failedUrl != null) {
                         val failureKind = classifyImageHostFailure(state.result.throwable)
@@ -144,18 +164,29 @@ internal fun JmCoverImage(
                         }
                     }
                 }
-                else -> Unit
+                else -> { requestFinished = false }
             }
         },
     )
 
-    // Publish a completed non-memory result once after the fling. The painter is reused directly,
-    // so settling the grid does not create a second request or a burst of cache lookups.
-    // 期刊发表必然来自磁盘/网络（内存命中不走 defer），所以这里统一带淡入。
-    LaunchedEffect(isScrolling, displayGate) {
-        if (!isScrolling) {
-            displayGate.takeDeferredPainter()?.let { painter ->
-                displayedCover = DisplayedCover(painter, animate = true)
+    val foregroundWork = loaderHolder.foregroundWork
+    SideEffect {
+        foregroundWork.update(workGate, pageActive && inViewport &&
+            (scrolling || (candidateUrl != null && !requestFinished)))
+    }
+    DisposableEffect(foregroundWork, workGate) {
+        onDispose { foregroundWork.update(workGate, false) }
+    }
+
+    // Reuse completed painters after a visibility change. Cached results may be published while
+    // scrolling; network results still wait for the fling to settle. No second request is needed.
+    LaunchedEffect(scrolling, workVisible, displayGate) {
+        if (workVisible) {
+            displayGate.takeDeferredCover(scrolling)?.let { result ->
+                displayedCover = DisplayedCover(
+                    result.painter,
+                    animate = shouldAnimateCoverResult(scrolling, result.dataSource),
+                )
             }
         }
     }
@@ -166,6 +197,7 @@ internal fun JmCoverImage(
         skipAnimation = onReady != null || displayedCover?.animate == false,
         contentDescription = contentDescription,
         contentScale = contentScale,
+        isActive = workVisible,
         modifier = modifier.then(sizeResolver),
     )
 }
@@ -174,19 +206,23 @@ internal fun JmCoverImage(
 private data class DisplayedCover(val painter: Painter, val animate: Boolean)
 
 internal fun shouldDeferCoverResult(isScrolling: Boolean, dataSource: DataSource): Boolean =
-    isScrolling && !dataSource.isMemorySource()
+    isScrolling && dataSource == DataSource.NETWORK
+
+internal fun shouldAnimateCoverResult(isScrolling: Boolean, dataSource: DataSource): Boolean =
+    !dataSource.isMemorySource() && !(isScrolling && dataSource == DataSource.DISK)
 
 /**
  * The public AsyncImage API keeps this resolver internal, so mirror its grid-size behavior here.
  * 供 [JmCoverImage] 与 [LocalCoverImage] 共用：裸 model 的 rememberAsyncImagePainter 会挂起等待
  * drawSize（官方文档明示），必须显式给请求 size 才不会死锁。
  */
-internal class CoverSizeResolver : SizeResolver, LayoutModifier {
+internal class CoverSizeResolver(private val workGate: CoverWorkGate? = null) : SizeResolver, LayoutModifier {
     private val currentConstraints = MutableStateFlow(Constraints(0, 0, 0, 0))
 
-    override suspend fun size(): Size = currentConstraints
-        .mapNotNull { it.toCoilSizeOrNull() }
-        .first()
+    override suspend fun size(): Size {
+        workGate?.awaitReady()
+        return currentConstraints.mapNotNull { it.toCoilSizeOrNull() }.first()
+    }
 
     override fun MeasureScope.measure(
         measurable: Measurable,
@@ -217,21 +253,24 @@ private fun Constraints.toCoilSizeOrNull(): Size? {
     return Size(width, height)
 }
 
-/** Tracks a completed painter without putting it into the draw path until scrolling settles. */
-internal class CoverImageDisplayGate {
-    private var deferredPainter: Painter? = null
+internal data class CompletedCover(val painter: Painter, val dataSource: DataSource)
 
-    fun deferSuccess(painter: Painter) {
-        deferredPainter = painter
+/** Retains the source so a cached result does not inherit the network-only scroll delay. */
+internal class CoverImageDisplayGate {
+    private var deferredCover: CompletedCover? = null
+
+    fun deferSuccess(painter: Painter, dataSource: DataSource = DataSource.NETWORK) {
+        deferredCover = CompletedCover(painter, dataSource)
     }
 
-    fun takeDeferredPainter(): Painter? {
-        val painter = deferredPainter
-        deferredPainter = null
-        return painter
+    fun takeDeferredCover(isScrolling: Boolean = false): CompletedCover? {
+        val result = deferredCover ?: return null
+        if (shouldDeferCoverResult(isScrolling, result.dataSource)) return null
+        deferredCover = null
+        return result
     }
 
     fun clearDeferredPainter() {
-        deferredPainter = null
+        deferredCover = null
     }
 }

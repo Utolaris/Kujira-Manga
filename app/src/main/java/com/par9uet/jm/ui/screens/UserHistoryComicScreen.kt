@@ -22,7 +22,6 @@ import androidx.compose.material3.Text
 import com.par9uet.jm.ui.components.MotionTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -49,7 +48,6 @@ import com.par9uet.jm.ui.models.ListPositionKeyHistory
 import com.par9uet.jm.ui.interaction.rememberRestoringGridState
 import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.UserViewModel
-import kotlinx.coroutines.flow.distinctUntilChanged
 import org.koin.compose.viewmodel.koinActivityViewModel
 
 @Composable
@@ -258,12 +256,7 @@ private fun HistoryComicGrid(
         key = "$ListPositionKeyHistory|remote",
         itemCount = state.items.size,
     )
-    var isGridScrolling by remember { mutableStateOf(false) }
-    LaunchedEffect(gridState) {
-        snapshotFlow { gridState.isScrollInProgress }
-            .distinctUntilChanged()
-            .collect { isGridScrolling = it }
-    }
+    val isGridScrolling = remember(gridState) { { gridState.isScrollInProgress } }
     CompositionLocalProvider(LocalComicGridScrolling provides isGridScrolling) {
         LazyVerticalGrid(
             state = gridState,

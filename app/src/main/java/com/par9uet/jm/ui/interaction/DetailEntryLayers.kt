@@ -33,17 +33,38 @@ import com.par9uet.jm.ui.models.LocalCoverAnchors
 import com.par9uet.jm.ui.models.LocalCoverPageKey
 import androidx.compose.runtime.remember
 
-/** Register only real, currently composed covers; disposed or clipped items cannot be return targets. */
+/** Geometry is read only by navigation; scrolling updates a plain layout reference. */
+internal class CoverSourceBounds {
+    private var coordinates: LayoutCoordinates? = null
+
+    fun update(coordinates: LayoutCoordinates) { this.coordinates = coordinates }
+
+    fun inRoot(): Rect? = coordinates?.takeIf { it.isAttached }?.coverBoundsInRoot()
+
+    fun anchor(key: Any, pageKey: String?, comicId: Int): CoverAnchor? {
+        val current = coordinates?.takeIf { it.isAttached } ?: return null
+        val full = Rect(current.localToWindow(Offset.Zero),
+            current.localToWindow(Offset(current.size.width.toFloat(), current.size.height.toFloat())))
+        return CoverAnchor(key, pageKey, comicId, full, current.boundsInWindow())
+    }
+}
+
+private class CoverSourceRegistration { var registered = false }
+
+/** Register once after layout; disposed or clipped items cannot be return targets. */
 @Composable
-internal fun Modifier.coverSourceBounds(comicId: Int, onBounds: (Rect) -> Unit): Modifier {
+internal fun Modifier.coverSourceBounds(comicId: Int, bounds: CoverSourceBounds): Modifier {
     val anchors = LocalCoverAnchors.current
     val pageKey = LocalCoverPageKey.current ?: (LocalLifecycleOwner.current as? NavBackStackEntry)?.id
     val key = remember(comicId, pageKey) { Any() }
+    val registration = remember(anchors, key, bounds) { CoverSourceRegistration() }
     DisposableEffect(anchors, key) { onDispose { anchors?.remove(key) } }
     return onGloballyPositioned {
-        onBounds(it.coverBoundsInRoot())
-        val full = Rect(it.localToWindow(Offset.Zero), it.localToWindow(Offset(it.size.width.toFloat(), it.size.height.toFloat())))
-        anchors?.update(CoverAnchor(key, pageKey, comicId, full, it.boundsInWindow()))
+        bounds.update(it)
+        if (!registration.registered) {
+            anchors?.track(key) { bounds.anchor(key, pageKey, comicId) }
+            registration.registered = true
+        }
     }.drawWithContent { if (anchors?.hidden(key) != true) drawContent() }
 }
 

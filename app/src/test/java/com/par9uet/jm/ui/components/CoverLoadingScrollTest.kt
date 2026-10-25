@@ -10,16 +10,6 @@ import org.junit.Test
 
 class CoverLoadingScrollTest {
     @Test
-    fun `completed painter remains pending until it can be published`() {
-        val deferredPainter = ColorPainter(Color.Red)
-        val gate = CoverImageDisplayGate()
-
-        gate.deferSuccess(deferredPainter)
-
-        assertSame(deferredPainter, gate.takeDeferredPainter())
-    }
-
-    @Test
     fun `network completion is deferred only while scrolling`() {
         assertTrue(shouldDeferCoverResult(true, DataSource.NETWORK))
         assertFalse(shouldDeferCoverResult(false, DataSource.NETWORK))
@@ -32,13 +22,33 @@ class CoverLoadingScrollTest {
     }
 
     @Test
+    fun `disk cache completion is immediately drawable without fading during scrolling`() {
+        assertFalse(shouldDeferCoverResult(true, DataSource.DISK))
+        assertFalse(shouldAnimateCoverResult(true, DataSource.DISK))
+        assertTrue(shouldAnimateCoverResult(false, DataSource.DISK))
+        assertFalse(shouldAnimateCoverResult(false, DataSource.MEMORY_CACHE))
+    }
+
+    @Test
+    fun `disk result completed while hidden can be published on a scrolling page`() {
+        val gate = CoverImageDisplayGate()
+        val painter = ColorPainter(Color.Red)
+        gate.deferSuccess(painter, DataSource.DISK)
+        val result = gate.takeDeferredCover(isScrolling = true)
+        assertSame(painter, result?.painter)
+        assertSame(DataSource.DISK, result?.dataSource)
+        assertSame(null, gate.takeDeferredCover())
+    }
+
+    @Test
     fun `deferred painter is released after scrolling settles`() {
         val gate = CoverImageDisplayGate()
         val painter = ColorPainter(Color.Red)
 
         gate.deferSuccess(painter)
 
-        assertSame(painter, gate.takeDeferredPainter())
-        assertSame(null, gate.takeDeferredPainter())
+        assertSame(null, gate.takeDeferredCover(isScrolling = true))
+        assertSame(painter, gate.takeDeferredCover(isScrolling = false)?.painter)
+        assertSame(null, gate.takeDeferredCover())
     }
 }

@@ -61,7 +61,6 @@ internal class GlassBackdropView(
     )
     private var source: GlassCaptureSource? = null
     private var sourceView: View? = null
-    private var lastSourceGeneration = -1
     private var sourceRegionDirty = true
     private var geometryDirty = true
     private var nativeRenderState: NativeGlassRenderState? = createNativeRenderState(style)
@@ -111,7 +110,6 @@ internal class GlassBackdropView(
     fun setSource(newSource: GlassCaptureSource, newSourceView: View) {
         source = newSource
         sourceView = newSourceView
-        lastSourceGeneration = -1
         sourceRegionDirty = true
         invalidate()
     }
@@ -172,7 +170,7 @@ internal class GlassBackdropView(
             sharedSource != null &&
             sharedSource.nativeCaptureAvailable &&
             hardwareAccelerated &&
-            (sourceRegionDirty || lastSourceGeneration != sharedSource.generation)
+            (sourceRegionDirty || (Build.VERSION.SDK_INT >= 31 && nativeRenderState?.renderNode?.hasDisplayList() != true))
         ) {
             recordSourceRegion(sharedSource)
         }
@@ -182,8 +180,7 @@ internal class GlassBackdropView(
             sharedSource != null &&
             sourceAvailable &&
             hardwareAccelerated &&
-            !sourceRegionDirty &&
-            lastSourceGeneration == sharedSource.generation
+            !sourceRegionDirty && sourceHasContent
         ) {
             drawNativeBackdrop(canvas)
         }
@@ -259,7 +256,8 @@ internal class GlassBackdropView(
                 sourceTop = captureTopInSource,
                 sourceNode = sharedSource.renderNode,
             )
-            lastSourceGeneration = sharedSource.generation
+            // The region references the shared RenderNode, so new source content is visible
+            // automatically. Re-record this transform only when geometry/source/style changes.
             sourceRegionDirty = false
             if (nativeFailureStreak > 0) {
                 nativeFailureStreak = 0

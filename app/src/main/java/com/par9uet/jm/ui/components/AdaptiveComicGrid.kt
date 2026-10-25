@@ -9,10 +9,10 @@ import androidx.compose.ui.unit.dp
 import com.par9uet.jm.ui.models.LocalTabletLayoutEnabled
 
 /**
- * 分页/首页网格滚动中标志。由 [PullRefreshAndLoadMoreGrid] 等列表宿主写入，
- * [Comic]/封面据此延迟网络结果上屏，避免 fling 时逐张替换 painter 掉帧。
+ * 稳定的滚动状态读取端口，只在封面组件内调用，避免滚动起止重组整张卡片。
+ * 宿主传递读取函数，不在网格层订阅布尔值；封面据此延迟网络结果上屏。
  */
-val LocalComicGridScrolling = compositionLocalOf { false }
+val LocalComicGridScrolling = compositionLocalOf<() -> Boolean> { { false } }
 
 /**
  * 当前布局下漫画网格的自适应最小单元格：平板布局用更大格子，

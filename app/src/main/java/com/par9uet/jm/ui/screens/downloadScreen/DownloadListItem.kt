@@ -59,7 +59,7 @@ private fun GroupCoverImage(
     coverPath: String,
     title: String,
     modifier: Modifier = Modifier,
-    imageLoader: ImageLoader = com.par9uet.jm.coil.currentCoverImageLoader()
+    imageLoader: ImageLoader = com.par9uet.jm.ui.components.currentCoverImageLoader()
 ) {
     if (coverPath.isNotBlank()) {
         LocalCoverImage(
@@ -85,12 +85,12 @@ fun DownloadCoverGridItem(
     onLongClick: () -> Unit
 ) {
     val navigator = LocalCoverNavigator.current
-    var coverBounds by remember(group.id) { mutableStateOf<Rect?>(null) }
+    val coverBounds = remember(group.id) { com.par9uet.jm.ui.interaction.CoverSourceBounds() }
     Card(
         modifier = modifier.combinedClickable(
             onClick = {
                 if (!editing && navigator != null) {
-                    navigator.open(Comic.create(group.id, group.name, group.authorList), coverBounds, onClick)
+                    navigator.open(Comic.create(group.id, group.name, group.authorList), coverBounds.inRoot(), onClick)
                 } else onClick()
             },
             onLongClick = onLongClick
@@ -114,7 +114,7 @@ fun DownloadCoverGridItem(
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(14.dp))
                         .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                        .coverSourceBounds(group.id) { coverBounds = it }
+                        .coverSourceBounds(group.id, coverBounds)
                 )
                 Text(
                     text = group.name,
@@ -161,12 +161,12 @@ fun DownloadRowItem(
     onCancel: () -> Unit
 ) {
     val navigator = LocalCoverNavigator.current
-    var coverBounds by remember(group.id) { mutableStateOf<Rect?>(null) }
+    val coverBounds = remember(group.id) { com.par9uet.jm.ui.interaction.CoverSourceBounds() }
     Card(
         modifier = modifier.combinedClickable(
             onClick = {
                 if (!editing && navigator != null) {
-                    navigator.open(Comic.create(group.id, group.name, group.authorList), coverBounds, onClick)
+                    navigator.open(Comic.create(group.id, group.name, group.authorList), coverBounds.inRoot(), onClick)
                 } else onClick()
             },
             onLongClick = onLongClick
@@ -195,7 +195,7 @@ fun DownloadRowItem(
                     .aspectRatio(3f / 4f)
                     .clip(RoundedCornerShape(10.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                        .coverSourceBounds(group.id) { coverBounds = it }
+                        .coverSourceBounds(group.id, coverBounds)
             )
             Column(
                 modifier = Modifier.weight(1f),

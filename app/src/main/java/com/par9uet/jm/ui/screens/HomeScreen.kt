@@ -28,13 +28,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import com.par9uet.jm.ui.components.MotionTextButton as TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -47,6 +47,9 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleStartEffect
 import com.par9uet.jm.ui.components.Comic
 import com.par9uet.jm.ui.components.ComicSkeleton
+import com.par9uet.jm.ui.components.CoverViewportItem
+import com.par9uet.jm.ui.components.LocalComicGridScrolling
+import com.par9uet.jm.ui.components.rememberVisibleCoverKeys
 import com.par9uet.jm.ui.components.adaptiveComicGridCells
 import com.par9uet.jm.ui.components.comicGridMinCellSize
 import com.par9uet.jm.ui.glass.AppGlassTopBar
@@ -59,7 +62,6 @@ import com.par9uet.jm.ui.interaction.rememberPullDownActionState
 import com.par9uet.jm.ui.interaction.rememberRestoringGridState
 import com.par9uet.jm.ui.viewModel.HomeViewModel
 import com.par9uet.jm.contentfilter.filterBlockedTags
-import kotlinx.coroutines.flow.distinctUntilChanged
 import org.koin.compose.viewmodel.koinActivityViewModel
 
 private const val TEXT_SEARCH = "\u641c\u7d22"
@@ -133,19 +135,16 @@ internal fun HomeScreen(
         key = "$ListPositionKeyHome|${selectedCategoryId ?: -1}",
         itemCount = comicList.size,
     )
-    var isGridScrolling by remember { mutableStateOf(false) }
-    LaunchedEffect(gridState) {
-        snapshotFlow { gridState.isScrollInProgress }
-            .distinctUntilChanged()
-            .collect { isGridScrolling = it }
-    }
+    val visibleCoverKeys = rememberVisibleCoverKeys(gridState)
+    val isGridScrolling = remember(gridState) { { gridState.isScrollInProgress } }
     val pullDownModifier = Modifier.pullDownToAction(
         state = pullDownState,
         isAtTop = { !gridState.canScrollBackward },
         onTrigger = onPullDownSearch,
     )
 
-    LaunchedEffect(preferenceRecommendEnabled) {
+    val appLanguage by homeViewModel.appLanguage.collectAsState()
+    LaunchedEffect(preferenceRecommendEnabled, appLanguage) {
         homeViewModel.refreshHome()
     }
     LifecycleStartEffect(homeViewModel, isActive) {
@@ -165,22 +164,23 @@ internal fun HomeScreen(
         return
     }
 
-    LazyVerticalGrid(
-        modifier = pullDownModifier.fillMaxSize(),
-        state = gridState,
-        columns = adaptiveComicGridCells(
-            columns = miscSettings.gridColumns.home,
-            minSize = gridMinCellSize,
-        ),
-        verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Top),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(
-            start = 12.dp,
-            end = 12.dp,
-            top = topContentPadding + pullRevealPadding,
-            bottom = 16.dp + bottomContentPadding,
-        )
-    ) {
+    CompositionLocalProvider(LocalComicGridScrolling provides isGridScrolling) {
+        LazyVerticalGrid(
+            modifier = pullDownModifier.fillMaxSize(),
+            state = gridState,
+            columns = adaptiveComicGridCells(
+                columns = miscSettings.gridColumns.home,
+                minSize = gridMinCellSize,
+            ),
+            verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Top),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(
+                start = 12.dp,
+                end = 12.dp,
+                top = topContentPadding + pullRevealPadding,
+                bottom = 16.dp + bottomContentPadding,
+            )
+        ) {
             if (selectedState?.isLoading == true && currentContent.isEmpty()) {
                 items(CATEGORY_LOADING_SKELETON_COUNT) {
                     ComicSkeleton()
@@ -212,7 +212,11 @@ internal fun HomeScreen(
                 }
             }
             items(items = comicList, key = { it.id }) {
-                Comic(comic = it, isScrolling = isGridScrolling)
+                CoverViewportItem(visibleCoverKeys, it.id) {
+                    Comic(
+                        comic = it,
+                    )
+                }
             }
             if (comicList.isEmpty() && !(selectedState?.isLoading == true) &&
                 !(selectedState?.isError == true)
@@ -247,6 +251,7 @@ internal fun HomeScreen(
                 }
             }
         }
+    }
 }
 
 

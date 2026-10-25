@@ -53,7 +53,7 @@ fun UserHistoryCommentScreen(
                 columns = GridCells.Fixed(1),
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(
-                    top = topContentPadding,
+                    top = topContentPadding + 12.dp,
                     bottom = bottomContentPadding,
                 ),
             ) {

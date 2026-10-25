@@ -1,5 +1,7 @@
 package com.par9uet.jm.ui.screens
 
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import android.content.ClipData
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -452,7 +454,7 @@ private fun ReleaseDialog(
         modifier = Modifier
             .widthIn(max = 520.dp)
             .fillMaxWidth()
-            .padding(horizontal = 24.dp),
+            .then(if (com.par9uet.jm.ui.models.LocalTabletLayoutEnabled.current) Modifier else Modifier.padding(horizontal = 24.dp)),
     ) {
         Column(
             modifier = Modifier
@@ -556,11 +558,11 @@ private fun UpdateDownloadDialog(
         modifier = Modifier
             .widthIn(max = 480.dp)
             .fillMaxWidth()
-            .padding(horizontal = 24.dp),
+            .then(if (com.par9uet.jm.ui.models.LocalTabletLayoutEnabled.current) Modifier else Modifier.padding(horizontal = 24.dp)),
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxWidth().verticalScroll(rememberScrollState())
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
