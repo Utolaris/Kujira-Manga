@@ -1,5 +1,8 @@
 package com.par9uet.jm.ui.interaction
 
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.runtime.Composable
@@ -117,4 +120,39 @@ internal fun restoreTargetIndex(
     if (wanted == null || itemCount <= 0) return null
     if (!appendComplete && itemCount <= wanted.index) return null
     return wanted.index.coerceAtMost(itemCount - 1)
+}
+
+/** Static settings pages restore immediately, using the same process memory as the comic grids. */
+@Composable
+fun rememberRestoringScrollState(
+    key: String,
+    memory: ListPositionMemory = LocalListPositionMemory.current,
+): ScrollState {
+    val state = remember(key, memory) { ScrollState(memory.position(key)?.offset ?: 0) }
+    LaunchedEffect(key, memory, state) {
+        snapshotFlow { state.value }.collect { memory.save(key, 0, it) }
+    }
+    DisposableEffect(key, memory, state) {
+        onDispose { memory.save(key, 0, state.value) }
+    }
+    return state
+}
+
+@Composable
+fun rememberRestoringListState(
+    key: String,
+    memory: ListPositionMemory = LocalListPositionMemory.current,
+): LazyListState {
+    val state = remember(key, memory) {
+        val position = memory.position(key)
+        LazyListState(position?.index ?: 0, position?.offset ?: 0)
+    }
+    LaunchedEffect(key, memory, state) {
+        snapshotFlow { state.firstVisibleItemIndex to state.firstVisibleItemScrollOffset }
+            .collect { (index, offset) -> memory.save(key, index, offset) }
+    }
+    DisposableEffect(key, memory, state) {
+        onDispose { memory.save(key, state.firstVisibleItemIndex, state.firstVisibleItemScrollOffset) }
+    }
+    return state
 }

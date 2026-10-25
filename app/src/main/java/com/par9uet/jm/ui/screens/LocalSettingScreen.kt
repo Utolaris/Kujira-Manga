@@ -31,7 +31,6 @@ import androidx.compose.material.icons.rounded.Bookmarks
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.ContentPaste
-import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.TabletMac
 import androidx.compose.material.icons.rounded.Dns
@@ -41,6 +40,7 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.Navigation
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SystemUpdate
@@ -82,7 +82,6 @@ import com.par9uet.jm.data.models.APP_LANGUAGE_SIMPLIFIED
 import com.par9uet.jm.data.models.APP_LANGUAGE_TRADITIONAL
 import com.par9uet.jm.data.models.AVAILABLE_APIS
 import com.par9uet.jm.data.models.AVAILABLE_APP_LANGUAGES
-import com.par9uet.jm.data.models.AVAILABLE_THEMES
 import com.par9uet.jm.data.models.LauncherDisguise
 import com.par9uet.jm.ui.navigation.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.SettingsUiState
@@ -95,7 +94,6 @@ import com.par9uet.jm.ui.glass.GlassModal
 
 private sealed class SettingType {
     object Api : SettingType()
-    object Theme : SettingType()
     object LauncherDisguise : SettingType()
     object PrefetchCount : SettingType()
     object ReadMode : SettingType()
@@ -107,12 +105,6 @@ private sealed class SettingType {
 private const val NOTIFICATION_ON_WITH_NAME = "on_with_name"
 private const val NOTIFICATION_ON_WITHOUT_NAME = "on_without_name"
 private const val NOTIFICATION_OFF = "off"
-
-private val themeTextMap = mapOf(
-    "auto" to "\u8ddf\u968f\u7cfb\u7edf",
-    "light" to "\u65e5\u95f4\u6a21\u5f0f",
-    "dark" to "\u591c\u95f4\u6a21\u5f0f",
-)
 
 private val appLanguageTextMap = mapOf(
     APP_LANGUAGE_SIMPLIFIED to "简体中文",
@@ -129,7 +121,7 @@ internal fun settingsDialogWidth(screenWidth: Dp): Dp =
     (screenWidth - settingsPageHorizontalPadding * 2).coerceAtLeast(1.dp)
 
 @Composable
-private fun Modifier.settingsDialogWidth(): Modifier {
+internal fun Modifier.settingsDialogWidth(): Modifier {
     val density = LocalDensity.current
     val pageWidth = with(density) { LocalWindowInfo.current.containerSize.width.toDp() }
     return width(settingsDialogWidth(pageWidth))
@@ -179,7 +171,7 @@ fun LocalSettingScreen(
             com.par9uet.jm.ui.glass.GlassConfirmDialog(
                 visible = showForceRefreshConfirm,
                 title = "强制刷新收藏夹",
-                message = "如果您认为收藏夹内容存在异常，可以执行此流程，这将会强制让收藏夹和远端对齐，本地的尚未同步的收藏漫画可能丢失。使用此功能将关闭本地模式（实验性）。",
+                message = "如果您认为收藏夹内容存在异常，可以执行此流程，这将会强制让收藏夹和远端对齐，本地的尚未同步的收藏漫画可能丢失。使用此功能将关闭本地收藏模式。",
                 confirmText = "执行",
                 dismissText = "取消",
                 onConfirm = {
@@ -191,8 +183,7 @@ fun LocalSettingScreen(
             )
             LocalModeHelpDialog(
                 visible = showLocalModeHelp,
-                onConfirm = { dontShowAgain ->
-                    if (dontShowAgain) settingsViewModel.dismissLocalModeHelp()
+                onConfirm = {
                     showLocalModeHelp = false
                     settingsViewModel.enterLocalMode()
                 },
@@ -201,7 +192,7 @@ fun LocalSettingScreen(
             com.par9uet.jm.ui.glass.GlassConfirmDialog(
                 visible = showExitLocalModeConfirm,
                 title = "切换到网络模式",
-                message = "将结束本地模式（实验性），重新登录并同步本地收藏。同步期间可退出设置或将应用放到后台，但暂时不能修改收藏夹；完成后才切换到网络模式。本地模式期间的历史观看会被远端覆盖。",
+                message = "将结束本地收藏模式，重新登录并同步本地收藏。同步期间可退出设置或将应用放到后台，但暂时不能修改收藏夹；完成后才切换到网络模式。本地收藏模式期间的历史观看会被远端覆盖。",
                 confirmText = "开始同步",
                 onConfirm = {
                     showExitLocalModeConfirm = false
@@ -219,7 +210,7 @@ fun LocalSettingScreen(
                 modifier = Modifier.settingsDialogWidth(),
                 surfaceId = "cache-path-dialog",
             ) {
-                Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("缓存路径", style = MaterialTheme.typography.titleLarge)
                     Text(
                         "自定义缓存路径在部分手机上可能导致你的漫画被系统识别为照片，从而出现在相册中",
@@ -245,6 +236,9 @@ fun LocalSettingScreen(
         },
     ) { topContentPadding, bottomContentPadding ->
         LazyColumn(
+            state = com.par9uet.jm.ui.interaction.rememberRestoringListState(
+                com.par9uet.jm.ui.models.ListPositionKeyLocalSettings,
+            ),
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
                 start = settingsPageHorizontalPadding,
@@ -256,10 +250,7 @@ fun LocalSettingScreen(
         ) {
             item {
                 SettingsSection(title = "\u663e\u793a") {
-                    SettingsRow(Icons.Rounded.DarkMode, "\u4e3b\u9898", themeTextMap[ui.theme].orEmpty()) {
-                        openSetting(SettingType.Theme)
-                    }
-                    SettingsRow(
+                    SettingsNavigationRow(
                         icon = Icons.Rounded.Palette,
                         title = "\u8c03\u8272\u677f",
                         value = when (ui.colorPalette.presetId) {
@@ -270,7 +261,7 @@ fun LocalSettingScreen(
                     ) {
                         mainNavController.navigate("colorPalette")
                     }
-                    SettingsRow(Icons.Rounded.Image, "\u56fe\u6807\u4f2a\u88c5", LauncherDisguise.fromId(ui.launcherDisguiseId).label) {
+                    SettingsNavigationRow(Icons.Rounded.Image, "\u56fe\u6807\u4f2a\u88c5", LauncherDisguise.fromId(ui.launcherDisguiseId).label) {
                         openSetting(SettingType.LauncherDisguise)
                     }
                     SettingsSwitchRow(
@@ -281,19 +272,19 @@ fun LocalSettingScreen(
                     )
                     // null = 未显式设置：跟随平板布局开关（平板默认隐藏，手机默认显示）。
                     SettingsSwitchRow(
-                        icon = Icons.Rounded.VisibilityOff,
+                        icon = Icons.Rounded.Navigation,
                         title = "隐藏导航按钮",
                         value = ui.hideNavigationButtons ?: (ui.tabletLayoutEnabled == true),
                         onCheckedChange = settingsViewModel::setHideNavigationButtons
                     )
-                    SettingsRow(
+                    SettingsNavigationRow(
                         Icons.Rounded.GridView,
                         "\u7f51\u683c\u5217\u6570",
                         "\u9996\u9875 ${gridColumnsText(ui.gridColumns.home)} \u00b7 \u6536\u85cf ${gridColumnsText(ui.gridColumns.collect)} \u00b7 \u7f13\u5b58 ${gridColumnsText(ui.gridColumns.download)} \u00b7 \u5386\u53f2 ${gridColumnsText(ui.gridColumns.history)} \u00b7 \u641c\u7d22 ${gridColumnsText(ui.gridColumns.search)}"
                     ) {
                         openSetting(SettingType.AllGridColumns)
                     }
-                    SettingsRow(
+                    SettingsNavigationRow(
                         Icons.Rounded.Translate,
                         "内容语言",
                         appLanguageTextMap[ui.appLanguage].orEmpty()
@@ -304,14 +295,14 @@ fun LocalSettingScreen(
             }
             item {
                 SettingsSection(title = "内容过滤") {
-                    SettingsRow(Icons.Rounded.VisibilityOff, "评论过滤", "命中任意关键词即隐藏") {
+                    SettingsNavigationRow(Icons.Rounded.VisibilityOff, "评论过滤", "命中任意关键词即隐藏") {
                         mainNavController.navigate("commentFilter")
                     }
                 }
             }
             item {
                 SettingsSection(title = "\u9690\u79c1") {
-                    SettingsRow(
+                    SettingsNavigationRow(
                         icon = Icons.Rounded.Lock,
                         title = "\u5e94\u7528\u9501",
                         value = appLockStatusText
@@ -324,7 +315,7 @@ fun LocalSettingScreen(
                         value = ui.clipboardAutoDetectEnabled,
                         onCheckedChange = settingsViewModel::setClipboardAutoDetectEnabled
                     )
-                    SettingsRow(
+                    SettingsNavigationRow(
                         Icons.Rounded.Download,
                         "\u7f13\u5b58\u8def\u5f84",
                         if (cachePath.active) "\u6b63\u5728\u8fc1\u79fb · ${cachePath.progress}%"
@@ -338,31 +329,30 @@ fun LocalSettingScreen(
                 SettingsSection(title = "\u8fde\u63a5") {
                     SettingsSwitchRow(
                         icon = Icons.Rounded.CloudOff,
-                        title = "本地模式（实验性）",
+                        title = "本地收藏模式",
                         value = isLocalMode,
                         enabled = !isSyncingLocalFavorites,
                         valueText = if (isSyncingLocalFavorites) {
                             localModeExitStage ?: "正在准备同步"
-                        } else null,
+                        } else "收藏更改暂存在本机，退出模式时尝试同步",
+                        valueMaxLines = 2,
                         onCheckedChange = { enabled ->
                             if (isSyncingLocalFavorites) return@SettingsSwitchRow
                             if (!enabled) {
                                 showExitLocalModeConfirm = true
-                            } else if (!settingsViewModel.localModeHelpDismissed.value) {
-                                showLocalModeHelp = true
                             } else {
-                                settingsViewModel.enterLocalMode()
+                                showLocalModeHelp = true
                             }
                         }
                     )
-                    SettingsRow(
+                    SettingsNavigationRow(
                         Icons.Rounded.Api,
                         "网络推荐节点",
                         ui.apiEndpoint
                     ) {
                         openSetting(SettingType.Api)
                     }
-                    SettingsRow(
+                    SettingsNavigationRow(
                         Icons.Rounded.Dns,
                         "DoH 加密 DNS",
                         if (ui.doh.enabled) {
@@ -382,7 +372,7 @@ fun LocalSettingScreen(
                     ) {
                         mainNavController.navigate("dohSetting")
                     }
-                    SettingsRow(
+                    SettingsNavigationRow(
                         Icons.Rounded.CloudSync,
                         "\u5f3a\u5236\u5237\u65b0\u6536\u85cf\u5939",
                         if (favoriteSyncState.isSyncing && favoriteSyncState.isForceRefresh) {
@@ -400,33 +390,31 @@ fun LocalSettingScreen(
             }
             item {
                 SettingsSection(title = "\u9605\u8bfb") {
-                    SettingsRow(Icons.Rounded.Tune, "\u56fe\u7247\u9884\u52a0\u8f7d", prefetchText(ui.prefetchCount)) {
+                    SettingsNavigationRow(Icons.Rounded.Tune, "\u56fe\u7247\u9884\u52a0\u8f7d", prefetchText(ui.prefetchCount)) {
                         openSetting(SettingType.PrefetchCount)
                     }
-                    SettingsRow(Icons.AutoMirrored.Rounded.MenuBook, "\u9605\u8bfb\u6a21\u5f0f", readModeText(ui.readMode)) {
+                    SettingsNavigationRow(Icons.AutoMirrored.Rounded.MenuBook, "\u9605\u8bfb\u6a21\u5f0f", readModeText(ui.readMode)) {
                         openSetting(SettingType.ReadMode)
                     }
                 }
             }
             item {
                 SettingsSection(title = "\u901a\u77e5") {
-                    SettingsRow(Icons.Rounded.Notifications, "\u901a\u77e5\u7ba1\u7406", notificationText(ui.notification)) {
+                    SettingsNavigationRow(Icons.Rounded.Notifications, "\u901a\u77e5\u7ba1\u7406", notificationText(ui.notification)) {
                         openSetting(SettingType.NotificationManagement)
                     }
                 }
             }
             item {
                 SettingsSection(title = "\u5176\u4ed6") {
-                    SettingsRow(Icons.Rounded.BugReport, "\u67e5\u770b\u65e5\u5fd7", "\u8c03\u8bd5\u548c\u9519\u8bef\u4fe1\u606f") {
+                    SettingsNavigationRow(Icons.Rounded.BugReport, "\u67e5\u770b\u65e5\u5fd7", "\u8c03\u8bd5\u548c\u9519\u8bef\u4fe1\u606f") {
                         mainNavController.navigate("logViewer")
                     }
-                    SettingsRow(Icons.Rounded.CleaningServices, "缓存控制", "总额度、分项配额与下载豁免") {
+                    SettingsNavigationRow(Icons.Rounded.CleaningServices, "缓存控制", "总额度、分项配额与下载豁免") {
                         mainNavController.navigate("cacheCleanup")
                     }
-                    SettingsRow(Icons.Rounded.CloudSync, "\u6570\u636e\u5907\u4efd", "\u5907\u4efd\u4e0e\u6062\u590d\u5e94\u7528\u8bbe\u7f6e") {
-                        mainNavController.navigate("backupRestore")
-                    }
-                    SettingsRow(Icons.Rounded.SystemUpdate, "\u68c0\u67e5\u66f4\u65b0", "\u67e5\u770b GitHub Release \u6700\u65b0\u7248\u672c") {
+                    // Deprecated：备份控制入口已隐藏，旧备份页面及兼容代码暂时保留。
+                    SettingsNavigationRow(Icons.Rounded.SystemUpdate, "\u68c0\u67e5\u66f4\u65b0", "\u67e5\u770b GitHub Release \u6700\u65b0\u7248\u672c") {
                         mainNavController.navigate("checkUpdate")
                     }
                 }
@@ -462,9 +450,6 @@ private fun SettingSelectDialogContent(
     }
     val apiSelectOptionList by remember(AVAILABLE_APIS) {
         derivedStateOf { AVAILABLE_APIS.map { SelectOption(it.removePrefix("https://"), it) } }
-    }
-    val themeSelectOptionList by remember(AVAILABLE_THEMES) {
-        derivedStateOf { AVAILABLE_THEMES.map { SelectOption(themeTextMap[it].orEmpty(), it) } }
     }
     val launcherDisguiseOptionList by remember {
         derivedStateOf { LauncherDisguise.entries.map { SelectOption(it.label, it.id) } }
@@ -512,7 +497,6 @@ private fun SettingSelectDialogContent(
         modifier = Modifier.settingsDialogWidth(),
         selectOptionList = when (settingType) {
             is SettingType.Api -> apiSelectOptionList
-            is SettingType.Theme -> themeSelectOptionList
             is SettingType.LauncherDisguise -> launcherDisguiseOptionList
             is SettingType.PrefetchCount -> prefetchCountOptionList
             is SettingType.ReadMode -> readModeOptionList
@@ -522,7 +506,6 @@ private fun SettingSelectDialogContent(
         onSelect = {
             when (settingType) {
                 is SettingType.Api -> settingsViewModel.selectApi(it)
-                is SettingType.Theme -> settingsViewModel.selectTheme(it)
                 is SettingType.LauncherDisguise -> settingsViewModel.selectLauncherDisguise(it)
                 is SettingType.PrefetchCount -> settingsViewModel.setPrefetchCount(it.toIntOrNull() ?: 0)
                 is SettingType.ReadMode -> settingsViewModel.setReadMode(it)
@@ -676,7 +659,7 @@ private fun SettingsSection(
 }
 
 @Composable
-private fun SettingsRow(
+internal fun SettingsNavigationRow(
     icon: ImageVector,
     title: String,
     value: String,
@@ -704,12 +687,14 @@ private fun SettingsSwitchRow(
     value: Boolean,
     enabled: Boolean = true,
     valueText: String? = null,
+    valueMaxLines: Int = 1,
     onCheckedChange: (Boolean) -> Unit
 ) {
     SettingsBaseRow(
         icon = icon,
         title = title,
         value = valueText ?: if (value) "\u5f00\u542f" else "\u5173\u95ed",
+        valueMaxLines = valueMaxLines,
         onClick = { if (enabled) onCheckedChange(!value) },
         trailingContent = {
             Switch(
@@ -727,6 +712,7 @@ private fun SettingsBaseRow(
     title: String,
     value: String,
     onClick: () -> Unit,
+    valueMaxLines: Int = 1,
     trailingContent: @Composable () -> Unit
 ) {
     ListItem(
@@ -755,7 +741,7 @@ private fun SettingsBaseRow(
         supportingContent = {
             Text(
                 text = value,
-                maxLines = 1,
+                maxLines = valueMaxLines,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -796,7 +782,6 @@ private fun notificationText(notification: com.par9uet.jm.storage.CacheNotificat
 private fun settingTitle(type: SettingType): String {
     return when (type) {
         is SettingType.Api -> "\u7f51\u7edc\u63a8\u8350\u8282\u70b9"
-        is SettingType.Theme -> "\u4e3b\u9898"
         is SettingType.LauncherDisguise -> "\u56fe\u6807\u4f2a\u88c5"
         is SettingType.PrefetchCount -> "\u56fe\u7247\u9884\u52a0\u8f7d"
         is SettingType.ReadMode -> "\u9605\u8bfb\u6a21\u5f0f"
@@ -809,7 +794,6 @@ private fun settingTitle(type: SettingType): String {
 private fun settingValue(type: SettingType, ui: SettingsUiState): String {
     return when (type) {
         is SettingType.Api -> ui.apiEndpoint
-        is SettingType.Theme -> ui.theme
         is SettingType.LauncherDisguise -> LauncherDisguise.fromId(ui.launcherDisguiseId).id
         is SettingType.PrefetchCount -> "${ui.prefetchCount}"
         is SettingType.ReadMode -> ui.readMode

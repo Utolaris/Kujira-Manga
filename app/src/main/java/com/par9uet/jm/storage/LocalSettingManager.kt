@@ -62,7 +62,6 @@ class LocalSettingManager(
     override val prefetchCount = _projectingState { it.prefetchCount }
     override val onboardingCompleted = _projectingState { it.onboardingCompleted }
     override val nsfwWarningDismissed = _projectingState { it.nsfwWarningDismissed }
-    override val localModeHelpDismissed = _projectingState { it.localModeHelpDismissed }
     override val cacheNotification = _projectingState(::toCacheNotificationSetting)
     override val misc = _projectingState(::toMiscSettingsState)
     override val appLock = _projectingState(::toAppLockState)
@@ -186,9 +185,6 @@ class LocalSettingManager(
 
     fun dismissNsfwWarning() =
         updateSetting { it.copy(nsfwWarningDismissed = true) }
-
-    fun dismissLocalModeHelp() =
-        updateSetting { it.copy(localModeHelpDismissed = true) }
 
     fun applyTheme(theme: String) =
         updateSetting { it.copy(theme = theme) }

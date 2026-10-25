@@ -114,7 +114,8 @@ data class LocalSetting(
     val localModeEnteredAtByAccount: Map<Int, Long>? = emptyMap(),
     // 夜间 401 弹窗去重（本地日期 yyyy-MM-dd）。Gson 缺字段会写 null，读取方必须 orEmpty。
     val nightLocalModePromptDate: String? = null,
-    // 手动开启本地模式前的说明弹窗：true = 用户点过「不再显示」。
+    // 仅兼容旧设置与备份；每次开启本地收藏模式都确认，不再读取此标记。
+    @Deprecated("本地收藏模式每次开启都需要确认")
     val localModeHelpDismissed: Boolean = false,
     // 全局高斯模糊水平 0-100；50 = 平衡（默认）。旧 JSON 缺字段时由存储层回填 50。
     val glassBlurLevel: Int = 50,

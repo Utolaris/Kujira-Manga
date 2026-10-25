@@ -48,6 +48,8 @@ const val ListPositionKeyHistory: String = "history"
 const val ListPositionKeyFavorites: String = "favorites"
 const val ListPositionKeyWeek: String = "week"
 const val ListPositionKeyDinner: String = "dinner"
+const val ListPositionKeySettings: String = "settings"
+const val ListPositionKeyLocalSettings: String = "settings|local"
 
 /**
  * 搜索结果页的位置 key。

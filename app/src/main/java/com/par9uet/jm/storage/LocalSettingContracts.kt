@@ -50,7 +50,6 @@ interface ReaderPreferences {
 interface AppExperiencePreferences {
     val onboardingCompleted: StateFlow<Boolean>
     val nsfwWarningDismissed: StateFlow<Boolean>
-    val localModeHelpDismissed: StateFlow<Boolean>
 }
 
 /** Explicit persistence boundary used by backup export; UI features should use narrow flows. */

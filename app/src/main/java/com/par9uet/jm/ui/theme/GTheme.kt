@@ -102,7 +102,7 @@ fun AppTheme(
     }
 }
 
-private fun applyPaletteOverride(
+internal fun applyPaletteOverride(
     base: ColorScheme,
     presetId: String,
     isDark: Boolean,
@@ -116,30 +116,25 @@ private fun applyPaletteOverride(
     val error = customOverride(3)?.toColorOrNull() ?: Color(presetColors[3])
     // 浅色模式下容器色应叠加在白色上产生浅色调，深色模式叠加在黑色上产生深色调
     val containerBase = if (isDark) Color.Black else Color.White
-    val onContainerColor = if (isDark) Color.White else Color.Black
     return base.copy(
         primary = primary,
-        onPrimary = if (primary.luminance() > 0.5f) Color.Black else Color.White,
+        onPrimary = readableContentColor(primary),
         primaryContainer = primary.copy(alpha = 0.3f).compositeOver(containerBase),
-        onPrimaryContainer = if (isDark) primary else onContainerColor,
+        onPrimaryContainer = readableContentColor(primary.copy(alpha = 0.3f).compositeOver(containerBase)),
         inversePrimary = primary,
         secondary = secondary,
-        onSecondary = if (secondary.luminance() > 0.5f) Color.Black else Color.White,
+        onSecondary = readableContentColor(secondary),
         secondaryContainer = secondary.copy(alpha = 0.3f).compositeOver(containerBase),
-        onSecondaryContainer = if (isDark) secondary else onContainerColor,
+        onSecondaryContainer = readableContentColor(secondary.copy(alpha = 0.3f).compositeOver(containerBase)),
         tertiary = tertiary,
-        onTertiary = if (tertiary.luminance() > 0.5f) Color.Black else Color.White,
+        onTertiary = readableContentColor(tertiary),
         tertiaryContainer = tertiary.copy(alpha = 0.3f).compositeOver(containerBase),
-        onTertiaryContainer = if (isDark) tertiary else onContainerColor,
+        onTertiaryContainer = readableContentColor(tertiary.copy(alpha = 0.3f).compositeOver(containerBase)),
         error = error,
-        onError = if (error.luminance() > 0.5f) Color.Black else Color.White,
+        onError = readableContentColor(error),
         errorContainer = error.copy(alpha = 0.3f).compositeOver(containerBase),
-        onErrorContainer = if (isDark) error else onContainerColor,
+        onErrorContainer = readableContentColor(error.copy(alpha = 0.3f).compositeOver(containerBase)),
     )
-}
-
-private fun Color.luminance(): Float {
-    return 0.299f * red + 0.587f * green + 0.114f * blue
 }
 
 private fun Color.compositeOver(background: Color): Color {

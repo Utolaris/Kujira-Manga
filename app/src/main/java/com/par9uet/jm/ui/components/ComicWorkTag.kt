@@ -13,7 +13,8 @@ fun ComicWorkTag(label: String) {
     AssistChip(
         border = null,
         colors = AssistChipDefaults.assistChipColors(
-            containerColor = ExtendedTheme.colors.workTag.colorContainer
+            containerColor = ExtendedTheme.colors.workTag.colorContainer,
+            labelColor = ExtendedTheme.colors.workTag.onColorContainer
         ),
         onClick = {
             mainNavController.navigate("comicSearchResult/$label")

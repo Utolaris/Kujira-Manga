@@ -131,10 +131,6 @@ class SettingsViewModel(
     val commentFilterKeywords = localSettingManager.blockedCommentKeywords
     val colorPalette: StateFlow<ColorPaletteState> = appearancePreferences.colorPalette
     val glassBlurLevel: StateFlow<Int> = appearancePreferences.glassBlurLevel
-    val localModeHelpDismissed: StateFlow<Boolean> = localSettingManager.localModeHelpDismissed
-
-    fun dismissLocalModeHelp() = localSettingManager.dismissLocalModeHelp()
-
     fun addCommentFilterKeyword(keyword: String): Boolean {
         if (keyword.isBlank()) return false
         val saved = localSettingManager.addCommentFilterKeyword(keyword)

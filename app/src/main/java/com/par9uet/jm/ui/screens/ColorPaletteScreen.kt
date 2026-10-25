@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Colorize
 import androidx.compose.material.icons.rounded.RestartAlt
@@ -42,6 +43,7 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import com.par9uet.jm.ui.components.MotionTextButton as TextButton
+import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -54,6 +56,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.geometry.CornerRadius
@@ -70,10 +73,19 @@ import com.par9uet.jm.data.models.COLOR_PALETTE_PRESET_MONET
 import com.par9uet.jm.ui.theme.ColorPreset
 import com.par9uet.jm.ui.theme.toColorOrNull
 import com.par9uet.jm.ui.theme.colorPresets
+import com.par9uet.jm.ui.components.SelectDialog
+import com.par9uet.jm.ui.components.SelectOption
+import com.par9uet.jm.data.models.AVAILABLE_THEMES
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.glass.GlassModal
 import com.par9uet.jm.ui.viewModel.SettingsViewModel
 import org.koin.compose.viewmodel.koinViewModel
+
+private val themeLabels = mapOf(
+    "auto" to "跟随系统",
+    "light" to "日间模式",
+    "dark" to "夜间模式",
+)
 
 private enum class ColorSlot(val label: String) {
     Primary("主色"),
@@ -91,34 +103,30 @@ fun ColorPaletteScreen(
     settingsViewModel: SettingsViewModel = koinViewModel(),
 ) {
     val colorPalette by settingsViewModel.colorPalette.collectAsState()
-    val context = LocalContext.current
-
+    val ui by settingsViewModel.uiState.collectAsState()
+    var showThemeMenu by remember { mutableStateOf(false) }
     var editingSlot by remember { mutableStateOf<ColorSlot?>(null) }
-
-    val currentPreset = colorPresets.firstOrNull { it.id == colorPalette.presetId }
-    // 当前生效的四色：自动取色时从动态色获取，其余从预设/自定义获取
-    val effectiveColors = remember(colorPalette) {
-        if (colorPalette.presetId == COLOR_PALETTE_PRESET_MONET &&
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-        ) {
-            val ds = dynamicLightColorScheme(context)
-            listOf(ds.primary, ds.secondary, ds.tertiary, ds.error)
-        } else {
-            val presetColors = currentPreset?.colors ?: colorPresets[0].colors
-            listOf(
-                colorPalette.customPrimary?.toColorOrNull() ?: Color(presetColors[0].toInt()),
-                colorPalette.customSecondary?.toColorOrNull() ?: Color(presetColors[1].toInt()),
-                colorPalette.customTertiary?.toColorOrNull() ?: Color(presetColors[2].toInt()),
-                colorPalette.customError?.toColorOrNull() ?: Color(presetColors[3].toInt()),
-            )
-        }
-    }
+    // Show exactly the active roles, including dark mode, Monet and custom overrides.
+    val scheme = MaterialTheme.colorScheme
+    val effectiveColors = listOf(scheme.primary, scheme.secondary, scheme.tertiary, scheme.error)
     val hasCustomOverride = colorPalette.hasCustomOverride
     val glassBlurLevel by settingsViewModel.glassBlurLevel.collectAsState()
 
     CommonScaffold(
         title = "调色板",
         overlayContent = {
+            SelectDialog(
+                visible = showThemeMenu,
+                title = "主题",
+                value = ui.theme,
+                modifier = Modifier.settingsDialogWidth(),
+                selectOptionList = AVAILABLE_THEMES.map { SelectOption(themeLabels.getValue(it), it) },
+                onSelect = {
+                    settingsViewModel.selectTheme(it)
+                    showThemeMenu = false
+                },
+                onDismissRequest = { showThemeMenu = false },
+            )
             val pickerSlot = editingSlot ?: ColorSlot.Primary
             ColorPickerDialog(
                 visible = editingSlot != null,
@@ -214,6 +222,13 @@ fun ColorPaletteScreen(
                         level = glassBlurLevel,
                         onLevelChange = { settingsViewModel.setGlassBlurLevel(it) },
                     )
+                }
+            }
+            item {
+                Section(title = "外观") {
+                    SettingsNavigationRow(Icons.Rounded.DarkMode, "主题", themeLabels[ui.theme].orEmpty()) {
+                        showThemeMenu = true
+                    }
                 }
             }
         }
@@ -362,7 +377,8 @@ private fun PresetGrid(
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         // 自动取色（仅 Android 12+）
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val dynamicScheme = remember { dynamicLightColorScheme(context) }
+            val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+            val dynamicScheme = if (isDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
             // 存 ARGB long（与 colorPresets 一致）；ColorPreset 展示侧用 Color(Int) 还原。
             // 不能用 primary.value.toLong()：那是 Compose packed ColorLong，再 Color(Long) 会偏色/近乎透明。
             val monetPreset = ColorPreset(
@@ -455,7 +471,8 @@ private fun PresetItem(
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                preset.colors.forEach { c ->
+                val colors = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) preset.darkColors else preset.colors
+                colors.forEach { c ->
                     Box(
                         modifier = Modifier
                             .size(28.dp)

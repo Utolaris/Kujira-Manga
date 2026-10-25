@@ -10,27 +10,32 @@ internal data class ColorPreset(
     val darkColors: List<Long> = colors,
 )
 
-/** Preset colors shared by the settings preview and the active app theme. */
+/**
+ * Four Material roles adapted from the referenced palettes (primary, secondary, tertiary, error).
+ * Light accents are deepened where necessary for text on light surfaces; IDs retain saved choices.
+ * Sources: linear.app/brand, vercel.com/geist/colors, raycast.com/press,
+ * draculatheme.com/spec (Alucard/Dracula), catppuccin.com/palette (Latte/Mocha).
+ */
 internal val colorPresets = listOf(
-    ColorPreset(COLOR_PALETTE_PRESET_DEFAULT, "默认蓝",
-        colors = listOf(0xFF4F5F7F, 0xFF5A5D72, 0xFF75546F, 0xFFBA1A1A),
-        darkColors = listOf(0xFFB8C7EF, 0xFFC2C5DD, 0xFFE4BAD8, 0xFFFFB4AB),
+    ColorPreset(COLOR_PALETTE_PRESET_DEFAULT, "Linear",
+        colors = listOf(0xFF5C68D0, 0xFF62666D, 0xFF7953BD, 0xFFC93345),
+        darkColors = listOf(0xFFA5ADFF, 0xFFB4BCD0, 0xFFC6A7FF, 0xFFFF8A99),
     ),
-    ColorPreset("ocean", "海洋青",
-        colors = listOf(0xFF00696D, 0xFF4A6364, 0xFF48607E, 0xFFBA1A1A),
-        darkColors = listOf(0xFF37C9CD, 0xFFB1CBCB, 0xFFB0C8E8, 0xFFFFB4AB),
+    ColorPreset("ocean", "Vercel",
+        colors = listOf(0xFF0064E2, 0xFF666666, 0xFF7C00C9, 0xFFD60020),
+        darkColors = listOf(0xFF50A8FF, 0xFFA1A1A1, 0xFFC472FB, 0xFFFF5E63),
     ),
-    ColorPreset("sunset", "日落橙",
-        colors = listOf(0xFF8C5000, 0xFF735C2D, 0xFF9C4146, 0xFFBA1A1A),
-        darkColors = listOf(0xFFFFB866, 0xFFE0C68F, 0xFFFFB3B5, 0xFFFFB4AB),
+    ColorPreset("sunset", "Raycast",
+        colors = listOf(0xFFBA3F4A, 0xFF5F6170, 0xFF7653A6, 0xFFB42318),
+        darkColors = listOf(0xFFFF6363, 0xFFB9BBC6, 0xFFC6A0F6, 0xFFFF9B8E),
     ),
-    ColorPreset("forest", "森林绿",
-        colors = listOf(0xFF2E6B3E, 0xFF4F6352, 0xFF38656A, 0xFFBA1A1A),
-        darkColors = listOf(0xFF7CDFA0, 0xFFB6CCBC, 0xFFA0D0D3, 0xFFFFB4AB),
+    ColorPreset("forest", "Dracula",
+        colors = listOf(0xFF644AC9, 0xFF036A96, 0xFFA3144D, 0xFFCB3A2A),
+        darkColors = listOf(0xFFBD93F9, 0xFF8BE9FD, 0xFFFF79C6, 0xFFFF5555),
     ),
-    ColorPreset("lavender", "薰衣紫",
-        colors = listOf(0xFF6750A4, 0xFF625B71, 0xFF7D5260, 0xFFBA1A1A),
-        darkColors = listOf(0xFFD0BCFF, 0xFFCCC2DC, 0xFFEFB8C8, 0xFFFFB4AB),
+    ColorPreset("lavender", "Catppuccin",
+        colors = listOf(0xFF8839EF, 0xFF1E66F5, 0xFF11757B, 0xFFD20F39),
+        darkColors = listOf(0xFFCBA6F7, 0xFF89B4FA, 0xFF94E2D5, 0xFFF38BA8),
     ),
 )
 

@@ -45,6 +45,7 @@ import androidx.compose.material3.Text
 import com.par9uet.jm.ui.components.MotionTextButton as TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -69,6 +70,7 @@ import com.par9uet.jm.ui.components.SearchFieldSurface
 import com.par9uet.jm.ui.components.searchFieldColors
 import com.par9uet.jm.ui.glass.GlassConfirmDialog
 import com.par9uet.jm.ui.glass.GlassModal
+import com.par9uet.jm.ui.glass.tabletModalWidth
 import com.par9uet.jm.ui.navigation.LocalMainNavController
 
 /** 移动收藏夹列表：固定行高，最多可见 5 行，其余靠滑动。 */
@@ -155,6 +157,18 @@ internal fun FavoritesModalHost(favoritesViewModel: FavoritesViewModel) {
 
     val activeModal = favoritesState.modal
 
+    GlassConfirmDialog(
+        visible = activeModal is FavoritesModal.LocalSync,
+        title = "本地收藏模式",
+        message = favoritesState.pendingComicCount?.let {
+            "当前有 $it 部漫画的收藏更改尚未同步到云端。开始同步将退出本地收藏模式；同步失败时保留本地更改和模式，可稍后重试。"
+        } ?: "暂时无法读取未同步的漫画数量。可以尝试同步并退出本地收藏模式；同步失败时保留本地更改和模式。",
+        confirmText = "同步并退出",
+        onConfirm = { favoritesViewModel.onIntent(FavoritesIntent.LocalSyncConfirmed) },
+        onDismiss = { favoritesViewModel.onIntent(FavoritesIntent.ModalDismissed) },
+        surfaceId = "favorites-local-sync-confirm",
+    )
+
     val needsLogin = favoritesState.sync.errorKind == NetworkErrorKind.Authentication
     GlassConfirmDialog(
         visible = favoritesState.syncErrorVisible && activeModal == null,
@@ -182,7 +196,7 @@ internal fun FavoritesModalHost(favoritesViewModel: FavoritesViewModel) {
         },
         surfaceId = "favorites-create-folder-glass-modal",
     ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(24.dp)) {
+        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp)) {
             Text("新建收藏夹", style = MaterialTheme.typography.titleLarge)
             Spacer(modifier = Modifier.height(12.dp))
             OutlinedTextField(
@@ -240,6 +254,7 @@ internal fun FavoritesModalHost(favoritesViewModel: FavoritesViewModel) {
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .weight(1f, fill = false)
                     .heightIn(max = ManageFolderVisibleHeight),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -363,7 +378,7 @@ internal fun FavoritesModalHost(favoritesViewModel: FavoritesViewModel) {
         },
         surfaceId = "favorites-rename-folder-glass-modal",
     ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(24.dp)) {
+        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp)) {
             Text("重命名收藏夹", style = MaterialTheme.typography.titleLarge)
             Spacer(modifier = Modifier.height(12.dp))
             OutlinedTextField(
@@ -466,6 +481,7 @@ private fun FilterDialog(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        sheetMaxWidth = tabletModalWidth() ?: BottomSheetDefaults.SheetMaxWidth,
         // 必须低于 SearchFieldSurface 的 surfaceContainerHigh，否则搜索框与 sheet 同色糊成一片，
         // 看起来像「没有搜索框」；首页搜索页的底是 background，卡片因此才显形。
         containerColor = MaterialTheme.colorScheme.surface,
@@ -688,6 +704,7 @@ private fun MoveFolderDialog(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .weight(1f, fill = false)
                         .heightIn(max = MoveFolderRowHeight * MoveFolderVisibleRows),
                 ) {
                     items(availableFolders.entries.toList(), key = { it.key }) { (folderId, folderName) ->

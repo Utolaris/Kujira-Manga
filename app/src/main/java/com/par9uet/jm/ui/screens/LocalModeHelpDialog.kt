@@ -1,5 +1,7 @@
 package com.par9uet.jm.ui.screens
 
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,14 +18,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.par9uet.jm.ui.glass.GlassModal
 
-/**
- * 手动开启本地模式前的说明弹窗。
- * 「不再显示」会记住不再弹；「确定」仅本次确认。两者都会继续开启本地模式。
- */
+/** 每次手动开启本地收藏模式前都需要确认。 */
 @Composable
 fun LocalModeHelpDialog(
     visible: Boolean,
-    onConfirm: (dontShowAgain: Boolean) -> Unit,
+    onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     GlassModal(
@@ -34,18 +33,17 @@ fun LocalModeHelpDialog(
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxWidth().verticalScroll(rememberScrollState())
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                text = "本地模式（实验性）",
+                text = "本地收藏模式",
                 style = MaterialTheme.typography.headlineSmall,
             )
             Text(
-                text = "本地模式（实验性）是面对夜间账号风控时的妥协手段。开启后历史记录单独处理，您收藏的漫画会在关闭本地模式时同步到云端。" +
-                    "如果您手动点击收藏夹的同步按钮，这会结束本地模式，并且立刻同步到远端。" +
-                    "该功能仍在实验阶段，行为可能随版本调整。",
+                text = "收藏更改暂存在本机，退出模式时尝试同步。" +
+                    "点击收藏页左上角的未同步数量，可查看并确认同步；同步成功后退出本地收藏模式。",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -56,13 +54,13 @@ fun LocalModeHelpDialog(
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
             ) {
                 TextButton(
-                    onClick = { onConfirm(true) },
+                    onClick = onDismiss,
                     modifier = Modifier.heightIn(min = 44.dp),
                 ) {
-                    Text("不再显示")
+                    Text("取消")
                 }
                 TextButton(
-                    onClick = { onConfirm(false) },
+                    onClick = onConfirm,
                     modifier = Modifier.heightIn(min = 44.dp),
                 ) {
                     Text("确定")

@@ -10,7 +10,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
+import com.par9uet.jm.ui.interaction.rememberRestoringScrollState
+import com.par9uet.jm.ui.models.ListPositionKeySettings
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -339,7 +340,7 @@ fun UserScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(rememberRestoringScrollState(ListPositionKeySettings))
             .padding(
                 start = startContentPadding,
                 top = 16.dp + topContentPadding,
