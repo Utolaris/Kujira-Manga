@@ -57,15 +57,17 @@ class ReaderPipelineTest {
         val promoted = kotlinx.coroutines.CompletableDeferred<Unit>()
         val release = kotlinx.coroutines.CompletableDeferred<Unit>()
 
+        val entered = kotlinx.coroutines.CompletableDeferred<Unit>()
         val prefetch = async {
             registry.request("page", ReaderRequestPriority.PREFETCH) { handle ->
+                entered.complete(Unit)
                 handle.awaitVisible()
                 promoted.complete(Unit)
                 release.await()
                 "ready"
             }
         }
-        delay(20L)
+        withTimeout(1_000L) { entered.await() }
         val visible = async(start = CoroutineStart.UNDISPATCHED) {
             registry.request("page", ReaderRequestPriority.VISIBLE) { error("duplicate loader") }
         }
@@ -84,19 +86,24 @@ class ReaderPipelineTest {
         runBlocking {
             val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
             val registry = ReaderInFlightRegistry<String, Int>(scope)
+            val entered = kotlinx.coroutines.CompletableDeferred<Unit>()
+            val release = kotlinx.coroutines.CompletableDeferred<Unit>()
             val prefetch = async {
                 registry.request("page-a", ReaderRequestPriority.PREFETCH) { handle ->
+                    entered.complete(Unit)
                     handle.awaitVisible()
+                    release.await()
                     1
                 }
             }
-            delay(20L)
-            val firstVisible = async {
+            withTimeout(1_000L) { entered.await() }
+            val firstVisible = async(start = CoroutineStart.UNDISPATCHED) {
                 registry.request("page-a", ReaderRequestPriority.VISIBLE) { error("duplicate loader") }
             }
-            val secondVisible = async {
+            val secondVisible = async(start = CoroutineStart.UNDISPATCHED) {
                 registry.request("page-a", ReaderRequestPriority.VISIBLE) { error("duplicate loader") }
             }
+            release.complete(Unit)
             assertEquals(1, firstVisible.await())
             assertEquals(1, secondVisible.await())
             assertEquals(1, prefetch.await())
@@ -193,13 +200,15 @@ class ReaderPipelineTest {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val registry = ReaderInFlightRegistry<String, Int>(scope, cancellationGraceMillis = 10L)
         val calls = AtomicInteger()
+        val entered = kotlinx.coroutines.CompletableDeferred<Unit>()
         val prefetch = launch {
             registry.request("page", ReaderRequestPriority.PREFETCH) {
+                entered.complete(Unit)
                 calls.incrementAndGet()
                 awaitCancellation()
             }
         }
-        delay(20L)
+        withTimeout(1_000L) { entered.await() }
         assertTrue(registry.cancelPrefetch("page"))
         prefetch.join()
 
@@ -303,12 +312,11 @@ class ReaderPipelineTest {
             val limiter = ReaderDynamicLimiter(1)
             limiter.acquire()
             val acquired = kotlinx.coroutines.CompletableDeferred<Unit>()
-            val waiter = launch {
+            val waiter = launch(start = CoroutineStart.UNDISPATCHED) {
                 limiter.withPermit {
                     acquired.complete(Unit)
                 }
             }
-            delay(40L)
             assertFalse(acquired.isCompleted)
             limiter.updateLimit(2)
             withTimeout(1_000L) { acquired.await() }

@@ -15,129 +15,51 @@ import java.net.UnknownHostException
 import javax.net.ssl.SSLException
 import javax.net.ssl.SSLHandshakeException
 
-class ImageHostFailureClassifierTest {
+import org.junit.runner.RunWith
+import org.junit.runners.Parameterized
 
-    @Test
-    fun http404IsResourceFailure() {
-        assertEquals(
-            ImageHostFailureKind.RESOURCE_FAILURE,
-            classifyImageHostFailure(RuntimeException("HTTP 404"), httpCodeHint = 404),
-        )
+@RunWith(Parameterized::class)
+internal class ImageHostFailureClassifierTest(
+    private val name: String,
+    private val error: Throwable?,
+    private val httpCode: Int?,
+    private val expected: ImageHostFailureKind,
+) {
+    @Test fun classifiesFailure() {
+        assertEquals(name, expected, classifyImageHostFailure(error, httpCodeHint = httpCode))
     }
 
-    @Test
-    fun http410IsResourceFailure() {
-        assertEquals(
-            ImageHostFailureKind.RESOURCE_FAILURE,
-            classifyImageHostFailure(RuntimeException("HTTP 410"), httpCodeHint = 410),
+    companion object {
+        @JvmStatic @Parameterized.Parameters(name = "{0}")
+        fun cases(): List<Array<Any?>> = listOf(
+            arrayOf("HTTP 404", RuntimeException("HTTP 404"), 404, ImageHostFailureKind.RESOURCE_FAILURE),
+            arrayOf("HTTP 410", RuntimeException("HTTP 410"), 410, ImageHostFailureKind.RESOURCE_FAILURE),
+            arrayOf("HTTP 403", null, 403, ImageHostFailureKind.RESOURCE_FAILURE),
+            arrayOf("bitmap decode", IllegalStateException("BitmapFactory returned null"), null, ImageHostFailureKind.RESOURCE_FAILURE),
+            arrayOf("decode", RuntimeException("Failed to decode image"), null, ImageHostFailureKind.RESOURCE_FAILURE),
+            arrayOf("truncated resource", EOFException("stream closed"), null, ImageHostFailureKind.RESOURCE_FAILURE),
+            arrayOf("timeout", SocketTimeoutException("timeout"), null, ImageHostFailureKind.HOST_FAILURE),
+            arrayOf("connect", ConnectException("connection refused"), null, ImageHostFailureKind.HOST_FAILURE),
+            arrayOf("DNS", UnknownHostException("cdn.example"), null, ImageHostFailureKind.HOST_FAILURE),
+            arrayOf("route", NoRouteToHostException("no route"), null, ImageHostFailureKind.HOST_FAILURE),
+            arrayOf("reset", SocketException("connection reset"), null, ImageHostFailureKind.HOST_FAILURE),
+            arrayOf("handshake", SSLHandshakeException("handshake failed"), null, ImageHostFailureKind.HOST_FAILURE),
+            arrayOf("TLS", SSLException("tls error"), null, ImageHostFailureKind.HOST_FAILURE),
+            arrayOf("wrapped timeout", IllegalStateException("load failed", SocketTimeoutException("read timed out")), null, ImageHostFailureKind.HOST_FAILURE),
+            arrayOf("HTTP 500", null, 500, ImageHostFailureKind.HOST_FAILURE),
+            arrayOf("HTTP 502", null, 502, ImageHostFailureKind.HOST_FAILURE),
+            arrayOf("HTTP 429", null, 429, ImageHostFailureKind.HOST_FAILURE),
+            arrayOf("cancelled", CancellationException("navigated away"), null, ImageHostFailureKind.CANCELLED),
+            arrayOf("wrapped cancellation", RuntimeException(CancellationException("job cancelled")), null, ImageHostFailureKind.CANCELLED),
+            arrayOf("cancellation before HTTP", CancellationException("cancelled"), 500, ImageHostFailureKind.CANCELLED),
+            arrayOf("unknown", IllegalArgumentException("weird"), null, ImageHostFailureKind.UNKNOWN),
+            arrayOf("no error", null, null, ImageHostFailureKind.UNKNOWN),
+            arrayOf("unknown IO", IOException("unspecified I/O failure"), null, ImageHostFailureKind.UNKNOWN),
         )
     }
+}
 
-    @Test
-    fun otherHttp4xxIsResourceFailure() {
-        assertEquals(
-            ImageHostFailureKind.RESOURCE_FAILURE,
-            classifyImageHostFailure(null, httpCodeHint = 403),
-        )
-    }
-
-    @Test
-    fun decodeFailureIsResourceFailure() {
-        assertEquals(
-            ImageHostFailureKind.RESOURCE_FAILURE,
-            classifyImageHostFailure(IllegalStateException("BitmapFactory returned null")),
-        )
-        assertEquals(
-            ImageHostFailureKind.RESOURCE_FAILURE,
-            classifyImageHostFailure(RuntimeException("Failed to decode image")),
-        )
-    }
-
-    @Test
-    fun timeoutIsHostFailure() {
-        assertEquals(
-            ImageHostFailureKind.HOST_FAILURE,
-            classifyImageHostFailure(SocketTimeoutException("timeout")),
-        )
-    }
-
-    @Test
-    fun connectFailureIsHostFailure() {
-        assertEquals(
-            ImageHostFailureKind.HOST_FAILURE,
-            classifyImageHostFailure(ConnectException("connection refused")),
-        )
-        assertEquals(
-            ImageHostFailureKind.HOST_FAILURE,
-            classifyImageHostFailure(UnknownHostException("cdn.example")),
-        )
-        assertEquals(
-            ImageHostFailureKind.HOST_FAILURE,
-            classifyImageHostFailure(NoRouteToHostException("no route")),
-        )
-        assertEquals(
-            ImageHostFailureKind.HOST_FAILURE,
-            classifyImageHostFailure(SocketException("connection reset")),
-        )
-    }
-
-    @Test
-    fun truncatedSingleResourceIsConservative() {
-        assertEquals(
-            ImageHostFailureKind.RESOURCE_FAILURE,
-            classifyImageHostFailure(EOFException("stream closed")),
-        )
-    }
-
-    @Test
-    fun sslFailureIsHostFailure() {
-        assertEquals(
-            ImageHostFailureKind.HOST_FAILURE,
-            classifyImageHostFailure(SSLHandshakeException("handshake failed")),
-        )
-        assertEquals(
-            ImageHostFailureKind.HOST_FAILURE,
-            classifyImageHostFailure(SSLException("tls error")),
-        )
-    }
-
-    @Test
-    fun http5xxIsHostFailure() {
-        assertEquals(
-            ImageHostFailureKind.HOST_FAILURE,
-            classifyImageHostFailure(null, httpCodeHint = 500),
-        )
-        assertEquals(
-            ImageHostFailureKind.HOST_FAILURE,
-            classifyImageHostFailure(null, httpCodeHint = 502),
-        )
-    }
-
-    @Test
-    fun http429IsTemporaryHostFailure() {
-        assertEquals(
-            ImageHostFailureKind.HOST_FAILURE,
-            classifyImageHostFailure(null, httpCodeHint = 429),
-        )
-    }
-
-    @Test
-    fun cancellationIsNeverAPenalty() {
-        assertEquals(
-            ImageHostFailureKind.CANCELLED,
-            classifyImageHostFailure(CancellationException("navigated away")),
-        )
-        // 包装在其它异常里的取消也要识别
-        assertEquals(
-            ImageHostFailureKind.CANCELLED,
-            classifyImageHostFailure(RuntimeException(CancellationException("job cancelled"))),
-        )
-        assertEquals(
-            ImageHostFailureKind.CANCELLED,
-            classifyImageHostFailure(CancellationException("cancelled"), httpCodeHint = 500),
-        )
-    }
-
+class ImageHostFailureCauseChainTest {
     @Test
     fun directAndWrappedCancellationArePropagatable() {
         val direct = CancellationException("direct")
@@ -147,26 +69,6 @@ class ImageHostFailureClassifierTest {
         assertTrue(wrapped.isCancellation())
         assertSame(direct, direct.cancellationExceptionOrNull())
         assertSame(direct, wrapped.cancellationExceptionOrNull())
-    }
-
-    @Test
-    fun wrappedIoExceptionIsFoundThroughCauseChain() {
-        val wrapped = IllegalStateException("load failed", SocketTimeoutException("read timed out"))
-
-        assertEquals(ImageHostFailureKind.HOST_FAILURE, classifyImageHostFailure(wrapped))
-    }
-
-    @Test
-    fun unknownErrorIsConservative() {
-        assertEquals(
-            ImageHostFailureKind.UNKNOWN,
-            classifyImageHostFailure(IllegalArgumentException("weird")),
-        )
-        assertEquals(ImageHostFailureKind.UNKNOWN, classifyImageHostFailure(null))
-        assertEquals(
-            ImageHostFailureKind.UNKNOWN,
-            classifyImageHostFailure(IOException("unspecified I/O failure")),
-        )
     }
 
     @Test

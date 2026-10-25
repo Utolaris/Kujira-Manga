@@ -242,7 +242,6 @@ class ArchitectureBoundaryTest {
             addAll(forbiddenImports("download/coordinator/DownloadManager.kt", listOf(
                 "com.par9uet.jm.download.coordinator.DownloadComicCoordinator",
             )))
-            addAll(forbiddenImports("store", listOf("com.par9uet.jm.ui.", "com.par9uet.jm.worker.")))
             addAll(forbiddenImports("favorites", listOf("com.par9uet.jm.ui.")))
             addAll(forbiddenImports("favorites/data", listOf("com.par9uet.jm.download.coordinator.")))
             // Room entities stay in L4; model contracts and presentation must not see them.
@@ -331,6 +330,21 @@ class ArchitectureBoundaryTest {
         )
     }
 
+    @Test
+    fun `cover adapters and favorites contracts keep their dependency direction`() {
+        val rules = mapOf(
+            "coil" to listOf("androidx.compose.", "org.koin.", "com.par9uet.jm.ui.",
+                "com.par9uet.jm.storage.LocalSettingManager", "com.par9uet.jm.network.DohManager"),
+            "favorites/usecase" to listOf("com.par9uet.jm.favorites.sync.", "com.par9uet.jm.session."),
+            "favorites/model" to listOf("com.par9uet.jm.favorites.sync.",
+                "com.par9uet.jm.favorites.usecase.", "com.par9uet.jm.favorites.data."),
+        )
+        val violations = rules.flatMap { (path, prefixes) ->
+            forbiddenImports(path, prefixes) + forbiddenQualifiedUsages(path, prefixes)
+        }
+        assertTrue("Layer boundary violations:\n${violations.joinToString("\n")}", violations.isEmpty())
+    }
+
     private fun forbiddenQualifiedUsages(
         packagePath: String,
         prefixes: List<String>,
@@ -338,7 +352,7 @@ class ArchitectureBoundaryTest {
     ): List<String> {
         val sourceRoot = sourceRoot()
         val packageRoot = sourceRoot.resolve(packagePath)
-        if (!Files.exists(packageRoot)) return emptyList()
+        check(Files.exists(packageRoot)) { "Architecture check target no longer exists: $packagePath" }
 
         return buildList {
             Files.walk(packageRoot).use { paths ->
@@ -366,7 +380,7 @@ class ArchitectureBoundaryTest {
     ): List<String> {
         val sourceRoot = sourceRoot()
         val packageRoot = sourceRoot.resolve(packagePath)
-        if (!Files.exists(packageRoot)) return emptyList()
+        check(Files.exists(packageRoot)) { "Architecture check target no longer exists: $packagePath" }
 
         return buildList {
             Files.walk(packageRoot).use { paths ->

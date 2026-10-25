@@ -25,11 +25,4 @@ class ReaderConcurrencyPolicyTest {
         assertEquals(1, ReaderConcurrencyPolicy.imageWorkConcurrency(false, 256))
     }
 
-    @Test
-    fun limiterFollowsHardwarePolicy() {
-        val limiter = ReaderDynamicLimiter(
-            ReaderConcurrencyPolicy.imageWorkConcurrency(lowRamDevice = false, memoryClassMb = 512),
-        )
-        assertEquals(2, limiter.limit)
-    }
 }

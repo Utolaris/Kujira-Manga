@@ -1,6 +1,8 @@
 package com.par9uet.jm.worker
 
 import android.content.Context
+import android.content.ContextWrapper
+import java.io.File
 import android.provider.DocumentsContract
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -43,10 +45,19 @@ import org.junit.runner.RunWith
 class CacheMigrationWorkerContractTest {
     private lateinit var context: Context
     private lateinit var database: AppDatabase
+    private lateinit var base: Context
+    private val preferenceNames = mutableSetOf<String>()
 
     @Before
     fun setUp() {
-        context = InstrumentationRegistry.getInstrumentation().targetContext
+        base = InstrumentationRegistry.getInstrumentation().targetContext
+        val token = "migration-worker-${UUID.randomUUID()}"
+        context = object : ContextWrapper(base) {
+            override fun getApplicationContext(): Context = this
+            override fun getCacheDir() = File(base.cacheDir, token).apply { mkdirs() }
+            override fun getSharedPreferences(name: String, mode: Int) =
+                base.getSharedPreferences("$token-$name", mode).also { preferenceNames += "$token-$name" }
+        }
         database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
         setDownloadTreeUri(context, "")
     }
@@ -54,7 +65,8 @@ class CacheMigrationWorkerContractTest {
     @After
     fun tearDown() {
         database.close()
-        setDownloadTreeUri(context, "")
+        preferenceNames.forEach(base::deleteSharedPreferences)
+        context.cacheDir.deleteRecursively()
     }
 
     @Test

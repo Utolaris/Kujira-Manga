@@ -134,7 +134,7 @@ class ExtractCodeViewModelTest {
         advanceUntilIdle()
 
         // 取消不是失败：不得落入「获取漫画详情异常」分支。
-        assertTrue(messages.none { it.contains("获取漫画详情") })
+        assertEquals(listOf(777), repository.requestedIds)
         assertTrue(messages.isEmpty())
     }
 

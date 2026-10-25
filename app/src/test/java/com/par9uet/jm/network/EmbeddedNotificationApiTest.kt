@@ -45,28 +45,43 @@ class EmbeddedNotificationApiTest {
         }.build()
         val client = JmApiClient(config, http, context.cookieManager, context.domainManager)
         try {
-            assertTrue(executeNotificationRequest(client, "GET", "notifications", mapOf("type" to "comic_follow", "page" to "2")).contains("list"))
+            assertEquals("""{"total":0,"list":[]}""", executeNotificationRequest(client, "GET", "notifications", mapOf("type" to "comic_follow", "page" to "2")))
             assertEquals("comic_follow", requests.last().url.queryParameter("type"))
             assertEquals("2", requests.last().url.queryParameter("page"))
             assertEquals("true", executeNotificationRequest(client, "GET", "album_sertracking", mapOf("id" to "123")))
             executeNotificationRequest(client, "POST", "album_sertracking", mapOf("id" to "123"))
             assertEquals("POST", requests.last().method)
-            val body = requests.last().body as MultipartBody
-            val text = Buffer().apply { body.writeTo(this) }.readUtf8()
-            assertTrue(text.contains("name=\"id\"")); assertTrue(text.contains("123"))
+            assertEquals("/album_sertracking", requests.last().url.encodedPath)
+            assertMultipartFields(requests.last(), mapOf("id" to "123"))
             executeNotificationRequest(client, "POST", "notifications", mapOf("id" to "notice-1", "read" to "1"))
-            val readBody = Buffer().apply { requests.last().body!!.writeTo(this) }.readUtf8()
-            assertTrue(readBody.contains("name=\"read\"")); assertTrue(readBody.contains("notice-1"))
-            assertTrue(executeNotificationRequest(client, "GET", "notifications/unreadCount", emptyMap()).contains("site_notice"))
+            assertEquals("POST", requests.last().method)
+            assertEquals("/notifications", requests.last().url.encodedPath)
+            assertMultipartFields(requests.last(), mapOf("id" to "notice-1", "read" to "1"))
+            assertEquals("""{"comic_follow":2,"site_notice":1}""", executeNotificationRequest(client, "GET", "notifications/unreadCount", emptyMap()))
             assertEquals("/notifications/unreadCount", requests.last().url.encodedPath)
             assertNull(requests.last().url.query)
-            assertNotNull(runCatching { executeNotificationRequest(client, "POST", "notifications/unreadCount", emptyMap()) }.exceptionOrNull())
+            val requestCount = requests.size
+            val invalidMethod = runCatching { executeNotificationRequest(client, "POST", "notifications/unreadCount", emptyMap()) }.exceptionOrNull()
+            assertTrue(invalidMethod is IllegalArgumentException)
+            assertEquals("Rejected methods must not reach transport", requestCount, requests.size)
             code = 401
-            assertNotNull(runCatching { executeNotificationRequest(client, "GET", "notifications", emptyMap()) }.exceptionOrNull())
+            assertTrue(runCatching { executeNotificationRequest(client, "GET", "notifications", emptyMap()) }.exceptionOrNull() is Exception)
         } finally {
             client.close(); executor.shutdownNow()
             context.client.dispatcher.executorService.shutdownNow(); context.client.connectionPool.evictAll()
             http.dispatcher.executorService.shutdownNow(); http.connectionPool.evictAll()
         }
+    }
+
+    private fun assertMultipartFields(request: Request, expected: Map<String, String>) {
+        assertNull(request.url.query)
+        val body = request.body as MultipartBody
+        assertEquals(expected.size, body.parts.size)
+        val fields = body.parts.associate { part ->
+            val disposition = requireNotNull(part.headers?.get("Content-Disposition"))
+            val name = requireNotNull(Regex("name=\"([^\"]+)\"").find(disposition)).groupValues[1]
+            name to Buffer().apply { part.body.writeTo(this) }.readUtf8()
+        }
+        assertEquals(expected, fields)
     }
 }

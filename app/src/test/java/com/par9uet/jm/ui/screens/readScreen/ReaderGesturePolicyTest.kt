@@ -128,7 +128,8 @@ class ReaderGesturePolicyTest {
         val state = ReaderZoomState()
         val size = IntSize(width = 300, height = 600)
         state.updateViewportSize(size.width, size.height)
-        state.applyTransform(zoomChange = 2f, panChange = Offset.Zero)
+        state.applyTransform(zoomChange = 2f, panChange = Offset(20f, 30f))
+        assertTrue(state.offset != Offset.Zero)
 
         assertFalse(resetZoomFromCenterDoubleTap(state, Offset(20f, 300f), size))
         assertTrue(state.isZoomed)

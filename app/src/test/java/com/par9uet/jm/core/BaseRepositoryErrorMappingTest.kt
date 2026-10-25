@@ -84,15 +84,16 @@ class BaseRepositoryErrorMappingTest {
 
     @Test
     fun cancellationIsNeverSwallowedIntoAnError() = runTest {
+        val cancellation = CancellationException("cancelled")
         val apiCallFailure = runCatching {
-            repository.safeApiCall<String> { throw CancellationException("cancelled") }
+            repository.safeApiCall<String> { throw cancellation }
         }
-        assertTrue(apiCallFailure.exceptionOrNull() is CancellationException)
+        assertSame(cancellation, apiCallFailure.exceptionOrNull())
 
         val embeddedFailure = runCatching {
-            repository.embedded("内置操作") { throw CancellationException("cancelled") }
+            repository.embedded("内置操作") { throw cancellation }
         }
-        assertTrue(embeddedFailure.exceptionOrNull() is CancellationException)
+        assertPropagatedAcrossDispatcher(cancellation, embeddedFailure.exceptionOrNull())
     }
 
     @Test
@@ -100,6 +101,7 @@ class BaseRepositoryErrorMappingTest {
         val structured = NetWorkResult.Error(
             message = "登录会话已失效，请重新登录",
             authFailure = AuthFailure.InvalidCredentials,
+            kind = NetworkErrorKind.Authentication,
         )
         val result = repository.embedded("内置操作") { throw SessionRecoveryException(structured) }
         // The whole point of SessionRecoveryException: no re-wrap, no lost classification.
@@ -120,10 +122,31 @@ class BaseRepositoryErrorMappingTest {
     }
 
     @Test
+    fun embeddedOrdinaryExceptionBecomesFailureWithItsOperationPrefix() = runTest {
+        val result = repository.embedded("测试失败") { throw IllegalStateException("boom") }
+        assertEquals("测试失败：boom", (result as NetWorkResult.Error).message)
+    }
+
+    @Test
+    fun fatalJvmErrorsPropagateThroughBothCallBoundaries() = runTest {
+        val fatal = LinkageError("linkage")
+        assertPropagatedAcrossDispatcher(fatal, runCatching { repository.embedded<String>("测试失败") { throw fatal } }.exceptionOrNull())
+        assertSame(fatal, runCatching { repository.safeApiCall<String> { throw fatal } }.exceptionOrNull())
+    }
+
+    @Test
     fun embeddedFailuresKeepTheOperationPrefix() = runTest {
         val result = repository.embedded("内置 API 获取历史漫画失败") { throw IOException("boom") }
         result as NetWorkResult.Error
-        assertTrue(result.message.startsWith("内置 API 获取历史漫画失败"))
-        assertTrue(result.message.contains("boom"))
+        assertEquals("内置 API 获取历史漫画失败：boom", result.message)
     }
+
+    private fun assertPropagatedAcrossDispatcher(original: Throwable, actual: Throwable?) {
+        assertEquals(original.javaClass, actual?.javaClass)
+        assertEquals(original.message, actual?.message)
+        // Coroutine stacktrace recovery may copy an exception across withContext and
+        // retain the original as its cause. Both forms preserve the thrown failure.
+        assertTrue("Must propagate the original failure or its recovered copy", actual === original || actual?.cause === original)
+    }
+
 }

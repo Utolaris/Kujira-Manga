@@ -41,6 +41,7 @@ class DownloadComicWorkerContractTest {
     private lateinit var database: AppDatabase
     private val reported = mutableListOf<Report>()
     private var coverError: Throwable? = null
+    private val contentCalls = mutableListOf<String>()
 
     private data class Report(val batchId: String, val batchTotal: Int, val comicId: Int, val success: Boolean)
 
@@ -50,6 +51,7 @@ class DownloadComicWorkerContractTest {
         database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
         reported.clear()
         coverError = null
+        contentCalls.clear()
     }
 
     @After
@@ -114,6 +116,7 @@ class DownloadComicWorkerContractTest {
                         coverOwnerId: Int,
                         remoteHost: String,
                     ): String {
+                        contentCalls += "cover:${downloadTask.id}"
                         coverError?.let { throw it }
                         return ""
                     }
@@ -121,9 +124,11 @@ class DownloadComicWorkerContractTest {
                     override suspend fun downloadPages(
                         downloadTask: DownloadComic,
                         onProgress: suspend (Float) -> Unit,
-                    ) = Unit
+                    ) { contentCalls += "pages:${downloadTask.id}" }
 
-                    override suspend fun complete(downloadTask: DownloadComic) = Unit
+                    override suspend fun complete(downloadTask: DownloadComic) {
+                        contentCalls += "complete:${downloadTask.id}"
+                    }
                 },
                 object : DownloadFeedback {
                     override fun start(groupId: Int) = Unit
@@ -145,7 +150,19 @@ class DownloadComicWorkerContractTest {
         val result = createWorker(9001, "batch-a", 3, 0).doWork()
 
         assertTrue(result is ListenableWorker.Result.Success)
-        assertTrue("已完成的任务不应再触发下载", reported.isEmpty())
+        assertTrue("已完成的任务不应再触发下载管线", contentCalls.isEmpty())
+        assertTrue("已完成的任务不应重复报告", reported.isEmpty())
+    }
+
+    @Test
+    fun pendingTaskRunsTheContentPipelineOnceInOrder() = runBlocking {
+        insertTask(9005, DownloadStatus.PENDING)
+
+        val result = createWorker(9005, "batch-success", 2, 0).doWork()
+
+        assertTrue(result is ListenableWorker.Result.Success)
+        assertEquals(listOf("cover:9005", "pages:9005", "complete:9005"), contentCalls)
+        assertEquals(listOf(Report("batch-success", 2, 9005, true)), reported)
     }
 
     @Test
@@ -174,8 +191,9 @@ class DownloadComicWorkerContractTest {
         insertTask(9003, DownloadStatus.PENDING)
         coverError = IllegalStateException("device-network-down")
 
-        createWorker(9003, null, 2, 9).doWork()
+        val result = createWorker(9003, null, 2, 9).doWork()
 
+        assertTrue(result is ListenableWorker.Result.Failure)
         assertEquals("", reported.single().batchId)
     }
 

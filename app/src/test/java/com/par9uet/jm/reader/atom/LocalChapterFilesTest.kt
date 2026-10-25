@@ -45,6 +45,7 @@ class LocalChapterFilesTest {
             zip.delete()
             assertEquals(images, files.images(11, null))
             assertEquals(emptyList<String>(), files.images(404, null))
+            assertEquals(emptyList<String>(), files.images(404, task("missing")))
         } finally { root.deleteRecursively() }
     }
 
@@ -62,6 +63,29 @@ class LocalChapterFilesTest {
             assertThrows(java.io.IOException::class.java) { files.images(11, task(zip.path)) }
             assertFalse(File(root, "11").exists())
             assertEquals(listOf("bad.zip"), root.list()!!.toList())
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun `alphabetic pages fall back to name order and an empty chapter falls back to legacy`() {
+        val root = Files.createTempDirectory("local-reader-fallback").toFile()
+        try {
+            val current = File(root, "current").apply { mkdirs() }
+            val legacy = File(root, "11").apply { mkdirs() }
+            listOf("b.webp", "a.webp", "c.webp").forEach { File(legacy, it).writeText("data") }
+            File(current, "config.json").writeText("{}")
+            val files = DeviceLocalChapterFiles(root) { current }
+            assertEquals(listOf("a.webp", "b.webp", "c.webp"), files.images(11, task()).map { File(it).name })
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun `archive without images leaves neither chapter nor staging directory`() {
+        val root = Files.createTempDirectory("local-reader-empty-zip").toFile()
+        try {
+            val zip = File(root, "empty.zip")
+            ZipOutputStream(zip.outputStream()).use { }
+            val files = DeviceLocalChapterFiles(root) { File(root, "missing") }
+            assertTrue(files.images(11, task(zip.path)).isEmpty())
+            assertEquals(listOf("empty.zip"), root.list()!!.toList())
         } finally { root.deleteRecursively() }
     }
 }

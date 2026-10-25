@@ -109,10 +109,13 @@ class AppLockAtomicMutationTest {
     }
 
     @Test
-    fun `setAppLockEnabled without credentials keeps lock off`() {
+    fun `lock can only be enabled after a credential exists`() {
         manager.setAppLockEnabled(true)
 
         assertFalse(manager.appLock.value.enabled)
+        manager.setPassword("1234", 4)
+        manager.setAppLockEnabled(true)
+        assertTrue(manager.appLock.value.enabled)
     }
 
     @Test
@@ -129,5 +132,7 @@ class AppLockAtomicMutationTest {
         assertFalse(appLock.hasCredential)
         assertEquals(APP_LOCK_UNLOCK_MODE_PASSWORD, appLock.unlockMode)
         assertEquals(writesBefore + 1, persisted.size)
+        assertTrue(persisted.last().appLockPassword.isBlank())
+        assertTrue(persisted.last().appLockPattern.isBlank())
     }
 }

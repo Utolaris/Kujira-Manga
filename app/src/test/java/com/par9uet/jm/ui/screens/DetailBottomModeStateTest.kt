@@ -20,7 +20,7 @@ class DetailBottomModeStateTest {
 
     @Test
     fun cancelReturnsToActions() {
-        val state = DetailBottomModeState().enterComment().cancel()
+        val state = DetailBottomModeState().enterReply(7).cancel()
         assertEquals(DetailBottomMode.ACTIONS, state.mode)
         assertNull(state.replyTargetId)
     }
@@ -30,20 +30,6 @@ class DetailBottomModeStateTest {
         val state = DetailBottomModeState().enterReply(42)
         assertEquals(DetailBottomMode.COMMENT, state.mode)
         assertEquals(42, state.replyTargetId)
-    }
-
-    @Test
-    fun sendSuccessReturnsToActionsAndClearsReply() {
-        val state = DetailBottomModeState().enterReply(7).cancel()
-        assertEquals(DetailBottomMode.ACTIONS, state.mode)
-        assertNull(state.replyTargetId)
-    }
-
-    @Test
-    fun sendFailureKeepsCommentModeAndReply() {
-        val state = DetailBottomModeState().enterReply(7)
-        assertEquals(DetailBottomMode.COMMENT, state.mode)
-        assertEquals(7, state.replyTargetId)
     }
 
     @Test

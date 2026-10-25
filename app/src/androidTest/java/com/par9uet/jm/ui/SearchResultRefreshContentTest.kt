@@ -23,12 +23,12 @@ class SearchResultRefreshContentTest {
     fun failedRefreshHidesRetainedResultsAndOffersRetry() {
         val refresh = mutableStateOf<LoadState>(LoadState.NotLoading(false))
         var retries = 0
+        val itemCount = mutableStateOf(2)
         compose.setContent {
             MaterialTheme {
                 SearchResultRefreshContent(
                     refreshState = refresh.value,
-                    // 0 项 + Loading 才走骨架：这条用例末尾依赖「刷新时不再展示上次的结果」。
-                    itemCount = 0,
+                    itemCount = itemCount.value,
                     topContentPadding = 64.dp,
                     bottomContentPadding = 16.dp,
                     onRetry = { retries++ },
@@ -44,6 +44,7 @@ class SearchResultRefreshContentTest {
         }
         compose.runOnIdle {
             assertEquals(2, retries)
+            itemCount.value = 0
             refresh.value = LoadState.Loading
         }
         compose.onNodeWithText("上次搜索的缓存结果").assertDoesNotExist()

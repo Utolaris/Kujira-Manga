@@ -21,7 +21,7 @@ class NotificationRepositoryTest {
         assertFalse(repository.unreadCounts().hasUnread)
         for (invalid in listOf("{}", "[]", "null", """{"site_notice":-1}""", """{"site_notice":"invalid"}""")) {
             response = invalid
-            assertNotNull(runCatching { repository.unreadCounts() }.exceptionOrNull())
+            assertTrue("Invalid counts must fail parsing: $invalid", runCatching { repository.unreadCounts() }.exceptionOrNull() is Exception)
         }
     }
 
@@ -113,11 +113,11 @@ class NotificationRepositoryTest {
         assertFalse(repository.tracking(123))
         repository.toggleTracking(123)
         value = "{}"
-        assertNotNull(runCatching { repository.tracking(123) }.exceptionOrNull())
+        assertTrue(runCatching { repository.tracking(123) }.exceptionOrNull() is IllegalStateException)
     }
 
     @Test fun `malformed lists fail rather than pretending that the inbox is empty`() = runTest {
         val repository = NotificationRepository({ _, _, _ -> "{}" }, { "" }, ArticleHtmlParser())
-        assertNotNull(runCatching { repository.list(NotificationFilter.All, 1) }.exceptionOrNull())
+        assertTrue(runCatching { repository.list(NotificationFilter.All, 1) }.exceptionOrNull() is IllegalArgumentException)
     }
 }

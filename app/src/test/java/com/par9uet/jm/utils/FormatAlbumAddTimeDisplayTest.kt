@@ -1,54 +1,34 @@
 package com.par9uet.jm.utils
 
+import java.util.TimeZone
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.junit.runners.Parameterized
 
-class FormatAlbumAddTimeDisplayTest {
-
-    @Test
-    fun blankIsEmpty() {
-        assertEquals("", formatAlbumAddTimeDisplay(""))
-        assertEquals("", formatAlbumAddTimeDisplay("   "))
-    }
-
-    @Test
-    fun isoDate() {
-        assertEquals("2024年3月15日更新", formatAlbumAddTimeDisplay("2024-03-15"))
-    }
-
-    @Test
-    fun isoDateTime() {
-        assertEquals("2024年12月1日更新", formatAlbumAddTimeDisplay("2024-12-01 08:30:00"))
-    }
-
-    @Test
-    fun slashDate() {
-        assertEquals("2023年7月9日更新", formatAlbumAddTimeDisplay("2023/07/09"))
-    }
-
-    @Test
-    fun unixSecondsTimestamp() {
-        // 1772762965 = 2026-03-06 10:09:25 Asia/Shanghai
-        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Asia/Shanghai"))
+@RunWith(Parameterized::class)
+class FormatAlbumAddTimeDisplayTest(private val input: String, private val expected: String) {
+    @Test fun formatsDate() {
+        val previous = TimeZone.getDefault()
+        TimeZone.setDefault(TimeZone.getTimeZone("Asia/Shanghai"))
         try {
-            assertEquals("2026年3月6日更新", formatAlbumAddTimeDisplay("1772762965"))
+            assertEquals(expected, formatAlbumAddTimeDisplay(input))
         } finally {
-            java.util.TimeZone.setDefault(null)
+            TimeZone.setDefault(previous)
         }
     }
 
-    @Test
-    fun unixMillisTimestamp() {
-        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Asia/Shanghai"))
-        try {
-            assertEquals("2026年3月6日更新", formatAlbumAddTimeDisplay("1772762965000"))
-        } finally {
-            java.util.TimeZone.setDefault(null)
-        }
-    }
-
-    @Test
-    fun unknownShapeKeepsRawPlusSuffix() {
-        assertEquals("未知时间更新", formatAlbumAddTimeDisplay("未知时间"))
+    companion object {
+        @JvmStatic @Parameterized.Parameters(name = "{index}: [{0}] -> {1}")
+        fun cases() = listOf(
+            arrayOf("", ""),
+            arrayOf("   ", ""),
+            arrayOf("2024-03-15", "2024年3月15日更新"),
+            arrayOf("2024-12-01 08:30:00", "2024年12月1日更新"),
+            arrayOf("2023/07/09", "2023年7月9日更新"),
+            arrayOf("1772762965", "2026年3月6日更新"),
+            arrayOf("1772762965000", "2026年3月6日更新"),
+            arrayOf("未知时间", "未知时间更新"),
+        )
     }
 }

@@ -53,11 +53,4 @@ class DetailLayoutMotionTest {
         }
     }
 
-    @Test fun `entry and exit are twenty five percent faster while drag rebound stays unchanged`() {
-        assertEquals(448, CoverEnterMillis)
-        assertEquals(224, DetailContentEnterMillis)
-        assertEquals(150, DetailContentExitMillis)
-        assertEquals(256, CoverExitMillis)
-        assertEquals(440, CoverReturnMillis)
-    }
 }

@@ -10,6 +10,8 @@ import com.par9uet.jm.download.atom.DownloadCoverImages
 import com.par9uet.jm.download.atom.DownloadPageDecoder
 import com.par9uet.jm.repository.ComicRepository
 import java.lang.reflect.Proxy
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.async
@@ -85,6 +87,7 @@ class DownloadGroupCommitConcurrencyTest {
         dao.tasks[1] = first
         dao.tasks[2] = second
 
+        val bothWritersEntered = CountDownLatch(2)
         val activeWriters = AtomicInteger(0)
         val maxConcurrentWriters = AtomicInteger(0)
         val storage = object : DownloadContentStorage {
@@ -95,8 +98,12 @@ class DownloadGroupCommitConcurrencyTest {
             override fun writeConfig(current: DownloadComic, chapters: List<DownloadComic>) {
                 val concurrent = activeWriters.incrementAndGet()
                 maxConcurrentWriters.updateAndGet { known -> maxOf(known, concurrent) }
-                Thread.sleep(40)
-                activeWriters.decrementAndGet()
+                bothWritersEntered.countDown()
+                try {
+                    assertTrue("Both groups must enter before either writer exits", bothWritersEntered.await(5, TimeUnit.SECONDS))
+                } finally {
+                    activeWriters.decrementAndGet()
+                }
             }
         }
         val content = operations(dao, storage)
@@ -105,7 +112,7 @@ class DownloadGroupCommitConcurrencyTest {
 
         assertTrue(
             "distinct groups should not serialize on one gate, saw max=$maxConcurrentWriters",
-            maxConcurrentWriters.get() >= 1,
+            maxConcurrentWriters.get() == 2,
         )
         assertEquals(2, dao.tasks.values.count { it.status == DownloadStatus.COMPLETE })
     }

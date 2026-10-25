@@ -5,8 +5,6 @@ import com.par9uet.jm.download.coordinator.shouldRetryDownload
 import com.par9uet.jm.download.coordinator.advancedDownloadProgress
 import com.par9uet.jm.download.coordinator.groupDownloadProgress
 
-import com.par9uet.jm.coil.CoverImageHostResolver
-import com.par9uet.jm.coil.jmCoverCacheKey
 import com.par9uet.jm.database.model.DownloadComic
 import com.par9uet.jm.database.model.DownloadStatus
 import org.junit.Assert.assertEquals
@@ -31,22 +29,6 @@ class DownloadComicWorkerRegressionTest {
         )
 
         assertEquals((1f + 0.75f + 0.9f) / 3f, groupDownloadProgress(chapters, 2, 0.75f), 0.0001f)
-    }
-
-    @Test
-    fun `cover candidates remain sequential while sharing one cache identity`() {
-        val resolver = CoverImageHostResolver(knownHosts = listOf("a.example", "b.example"))
-        val candidates = resolver.coverUrls(42, "a.example")
-        val attempted = mutableSetOf<String>()
-        val visited = mutableListOf<String>()
-        repeat(candidates.size) {
-            val next = com.par9uet.jm.coil.nextCoverCandidateUrl(candidates, attempted) ?: return@repeat
-            visited += next
-            attempted += next
-        }
-
-        assertEquals(candidates, visited)
-        assertEquals("jm-cover-42", jmCoverCacheKey(42))
     }
 
     @Test

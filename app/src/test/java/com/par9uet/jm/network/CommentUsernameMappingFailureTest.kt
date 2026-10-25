@@ -1,7 +1,6 @@
 package com.par9uet.jm.network
 
 import io.github.jukomu.jmcomic.api.exception.ParseResponseException
-import io.github.jukomu.jmcomic.api.exception.ResponseException
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -33,7 +32,7 @@ class CommentUsernameMappingFailureTest {
     @Test
     fun parseFailureWithoutCauseIsNotMatched() {
         val error = ParseResponseException("Failed to parse comment submit result API JSON")
-        assertFalse(error.isUpstreamCommentMappingFailureSafe())
+        assertFalse(error.isUpstreamCommentUsernameMappingFailure())
     }
 
     @Test
@@ -43,12 +42,6 @@ class CommentUsernameMappingFailureTest {
             IllegalStateException(usernameMessage),
         )
         assertFalse(error.isUpstreamCommentUsernameMappingFailure())
-    }
-
-    @Test
-    fun httpAuthFailureIsNotMatched() {
-        val error = ResponseException("請先登入會員", 401)
-        assertFalse(error.isUpstreamCommentUsernameMappingFailureSafe())
     }
 
     @Test
@@ -69,7 +62,3 @@ class CommentUsernameMappingFailureTest {
         assertFalse(error.isUpstreamCommentUsernameMappingFailure())
     }
 }
-
-private fun ResponseException.isUpstreamCommentUsernameMappingFailureSafe(): Boolean = false
-private fun ParseResponseException.isUpstreamCommentMappingFailureSafe(): Boolean =
-    isUpstreamCommentUsernameMappingFailure()

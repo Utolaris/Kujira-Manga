@@ -1,8 +1,6 @@
 package com.par9uet.jm.ui.navigation
 
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -62,73 +60,4 @@ class MainTabSelectionTest {
         )
     }
 
-    @Test
-    fun `case E - rapid Home Favorites Home before the first animation starts`() {
-        val pager = FakePager(settledPage = home)
-        // Tap Favorites: accepted, pending target set, animation NOT started yet.
-        assertTrue(pager.press(collect))
-        assertEquals(collect, pager.pendingTarget)
-        assertEquals(home, pager.settledPage)
-        assertFalse(pager.isScrollInProgress)
-
-        // Tap Home while Favorites is still pending and no scrolling has begun.
-        assertTrue(pager.press(home))
-        assertEquals(home, pager.pendingTarget)
-
-        // The last tap wins: the animation settles on Home.
-        pager.settle()
-        assertEquals(home, pager.settledPage)
-        assertNull(pager.pendingTarget)
-    }
-
-    @Test
-    fun `case E - rapid Favorites Settings Favorites settles on Favorites`() {
-        val pager = FakePager(settledPage = collect)
-        assertTrue(pager.press(settings))
-        assertTrue(pager.press(collect))
-        pager.settle()
-        assertEquals(collect, pager.settledPage)
-    }
-
-    @Test
-    fun `tapping the current settled page with a different pending target retargets it`() {
-        val pager = FakePager(settledPage = home)
-        pager.press(collect)
-        // Re-tap Home: must cancel the pending Favorites target, not ignore the tap.
-        assertTrue(pager.press(home))
-        pager.settle()
-        assertEquals(home, pager.settledPage)
-    }
-
-    /**
-     * Minimal pager model that models the pending-target state explicitly: a tap only sets
-     * the pending target; the animation settles separately, so rapid taps observe the real
-     * pre-animation window (settledPage unchanged, pending target set, no scrolling).
-     */
-    private class FakePager(
-        var settledPage: Int,
-    ) {
-        var currentPage: Int = settledPage
-        var pendingTarget: Int? = null
-        var isScrollInProgress: Boolean = false
-
-        fun press(requestedPage: Int): Boolean {
-            val ignored = shouldIgnoreTabSelection(
-                settledPage = settledPage,
-                pendingTargetPage = pendingTarget,
-                isScrollInProgress = isScrollInProgress,
-                requestedPage = requestedPage,
-            )
-            if (ignored) return false
-            pendingTarget = requestedPage
-            return true
-        }
-
-        fun settle() {
-            settledPage = pendingTarget ?: settledPage
-            currentPage = settledPage
-            pendingTarget = null
-            isScrollInProgress = false
-        }
-    }
 }

@@ -8,6 +8,27 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CacheFilesTest {
+    @Test fun `single subtree totals preserve nested caches unknown folders and loose files`() = runTest {
+        val root = Files.createTempDirectory("cache-single-pass").toFile()
+        try {
+            mapOf(
+                "common/deep/a" to 11, "download/chapter/b" to 13,
+                "reader_pages/book/page" to 17, "http_cache/entry" to 19, "loose" to 23,
+                "total/other" to 29,
+            ).forEach { (path, bytes) ->
+                File(root, path).apply { checkNotNull(parentFile).mkdirs(); writeBytes(ByteArray(bytes)) }
+            }
+            var externalReads = 0
+            val sizes = DeviceCacheFiles(root, ExternalDownloadSize { externalReads++; 31L })
+                .scan().associate { it.area to it.sizeBytes }
+            assertEquals(11L, sizes[CacheArea.COMMON])
+            assertEquals(44L, sizes[CacheArea.DOWNLOAD])
+            assertEquals(17L, sizes[CacheArea.READER])
+            assertEquals(143L, sizes[CacheArea.ALL])
+            assertEquals(1, externalReads)
+        } finally { root.deleteRecursively() }
+    }
+
     @Test fun `all removes normal caches but never bypasses reader leases`() = runTest {
         val root = Files.createTempDirectory("cache-cleanup").toFile()
         try {
@@ -18,6 +39,9 @@ class CacheFilesTest {
             val files = DeviceCacheFiles(root)
             assertEquals(40L, files.scan().single { it.area == CacheArea.ALL }.sizeBytes)
             assertEquals(10L, files.scan().single { it.area == CacheArea.COMMON }.sizeBytes)
+            files.remove(setOf(CacheArea.READER))
+            assertEquals(40L, files.scan().single { it.area == CacheArea.ALL }.sizeBytes)
+            File(root, "stray.tmp").writeBytes(ByteArray(8))
             files.remove(setOf(CacheArea.ALL, CacheArea.DOWNLOAD))
             assertEquals(listOf("reader_pages"), root.list()!!.toList())
             files.remove(setOf(CacheArea.READER))
@@ -55,6 +79,24 @@ class CacheFilesTest {
             val sizes = DeviceCacheFiles(root).scan().associate { it.area to it.sizeBytes }
             assertEquals(10L, sizes[CacheArea.DOWNLOAD])
             assertEquals(10L, sizes[CacheArea.ALL])
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun `missing areas are zero and removing one area preserves the rest`() = runTest {
+        val root = Files.createTempDirectory("cache-single-area").toFile()
+        try {
+            File(root, "common").mkdirs()
+            File(root, "common/a").writeBytes(ByteArray(100))
+            val files = DeviceCacheFiles(root)
+            val initial = files.scan().associate { it.area to it.sizeBytes }
+            assertEquals(100L, initial[CacheArea.COMMON])
+            assertEquals(0L, initial[CacheArea.DOWNLOAD])
+            assertEquals(0L, initial[CacheArea.READER])
+            File(root, "download").mkdirs()
+            File(root, "download/b").writeBytes(ByteArray(16))
+            files.remove(setOf(CacheArea.COMMON))
+            assertFalse(File(root, "common").exists())
+            assertEquals(16L, files.scan().single { it.area == CacheArea.DOWNLOAD }.sizeBytes)
         } finally { root.deleteRecursively() }
     }
 }

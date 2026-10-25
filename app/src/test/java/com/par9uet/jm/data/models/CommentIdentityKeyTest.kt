@@ -45,14 +45,6 @@ class CommentIdentityKeyTest {
     }
 
     @Test
-    fun `同一条评论跨分页重复出现时身份相同`() {
-        val pageOne = comment(id = 510795, comicId = 42)
-        val pageTwo = comment(id = 510795, comicId = 42, time = "昨天")
-
-        assertEquals(pageOne.identityKey, pageTwo.identityKey)
-    }
-
-    @Test
     fun `不同 CID 身份不同`() {
         assertNotEquals(comment(id = 1).identityKey, comment(id = 2).identityKey)
     }

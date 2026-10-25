@@ -41,8 +41,8 @@ class EmbeddedDinnerApiTest {
         val client = JmApiClient(config, http, context.cookieManager, context.domainManager)
         try {
             val api = EmbeddedDinnerApi { client }
-            assertTrue(api.get("blogs", mapOf("page" to "2", "blog_type" to "dinner")).contains("25"))
-            assertTrue(api.get("blog", mapOf("id" to "7")).contains("正文"))
+            assertEquals("""{"count":25,"list":[]}""", api.get("blogs", mapOf("page" to "2", "blog_type" to "dinner")))
+            assertEquals("""{"info":{"content":"<p>正文</p>"}}""", api.get("blog", mapOf("id" to "7")))
             assertEquals("2", requests[0].url.queryParameter("page"))
             assertEquals("dinner", requests[0].url.queryParameter("blog_type"))
             assertEquals("7", requests[1].url.queryParameter("id"))

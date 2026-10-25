@@ -35,6 +35,9 @@ class GithubReleaseSourceTest {
     }
 
     @Test fun `version comparison is numeric and tolerates prefixes missing components and build suffix`() {
+        assertTrue(compareVersion("1.4.1", "1.4.0") > 0)
+        assertEquals(0, compareVersion("v1.4", "1.4.0-debug"))
+        assertTrue(compareVersion("1.3.9", "1.4.0") < 0)
         assertTrue(compareVersion("1.12.0", "1.9.9") > 0)
         assertTrue(compareVersion("1.2.0", "2.0") < 0)
         assertEquals(0, compareVersion("v1.2", "V1.2.0-nagram"))
