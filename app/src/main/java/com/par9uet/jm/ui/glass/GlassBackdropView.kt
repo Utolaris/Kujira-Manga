@@ -84,7 +84,7 @@ internal class GlassBackdropView(
         if (style == newStyle) return
         style = newStyle
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            nativeRenderState?.setBlurRadius(style.material.blurRadiusPx())
+            nativeRenderState?.setMaterial(style.material, isDarkTint())
         }
         updatePaintMetrics()
         sourceRegionDirty = true
@@ -122,6 +122,7 @@ internal class GlassBackdropView(
     fun setColors(newColors: GlassSurfaceColors) {
         if (colors == newColors) return
         colors = newColors
+        if (Build.VERSION.SDK_INT >= 31) nativeRenderState?.setMaterial(style.material, isDarkTint())
         geometryDirty = true
         tintPaint.color = colors.tint
         topStrokePaint.color = colors.topStroke
@@ -255,6 +256,8 @@ internal class GlassBackdropView(
                 sourceLeft = captureLeftInSource,
                 sourceTop = captureTopInSource,
                 sourceNode = sharedSource.renderNode,
+                padding = padding,
+                corner = cornerRadiusPx(),
             )
             // The region references the shared RenderNode, so new source content is visible
             // automatically. Re-record this transform only when geometry/source/style changes.
@@ -331,45 +334,48 @@ internal class GlassBackdropView(
 
     private fun GlassMaterialStyle.blurRadiusPx(): Float = blurRadius.value * density
 
+    private fun isDarkTint(): Boolean = androidx.core.graphics.ColorUtils.calculateLuminance(colors.tint) < 0.5
+
     @RequiresApi(31)
-    private class NativeGlassRenderState(initialBlurRadius: Float) {
+    private class NativeGlassRenderState(
+        private var material: GlassMaterialStyle,
+        private var dark: Boolean,
+        private val density: Float,
+    ) {
         val renderNode = android.graphics.RenderNode("JmGlassSurface")
-        private var blurRadius = 0f
+        private var width = 0
+        private var height = 0
+        private var padding = 0f
+        private var corner = 0f
 
-        init {
-            renderNode.setClipToBounds(true)
-            setBlurRadius(initialBlurRadius)
+        init { renderNode.setClipToBounds(true) }
+
+        fun setMaterial(value: GlassMaterialStyle, isDark: Boolean) {
+            if (material == value && dark == isDark) return
+            material = value
+            dark = isDark
+            updateEffect()
         }
 
-        fun setBlurRadius(radius: Float) {
-            if (blurRadius == radius) return
-            blurRadius = radius
-            renderNode.setRenderEffect(
-                if (radius > 0f) {
-                    android.graphics.RenderEffect.createBlurEffect(
-                        radius,
-                        radius,
-                        android.graphics.Shader.TileMode.CLAMP,
-                    )
-                } else {
-                    null
-                },
-            )
+        private fun updateEffect() {
+            renderNode.setRenderEffect(createGlassRenderEffect(material, dark, density,
+                width.toFloat(), height.toFloat(), padding, corner))
         }
 
-        fun record(
-            width: Int,
-            height: Int,
-            sourceLeft: Float,
-            sourceTop: Float,
-            sourceNode: android.graphics.RenderNode,
-        ) {
+        fun record(width: Int, height: Int, sourceLeft: Float, sourceTop: Float,
+                   sourceNode: android.graphics.RenderNode, padding: Float, corner: Float) {
+            if (this.width != width || this.height != height || this.padding != padding || this.corner != corner) {
+                this.width = width
+                this.height = height
+                this.padding = padding
+                this.corner = corner
+                updateEffect()
+            }
             renderNode.setPosition(0, 0, width, height)
             val recordingCanvas = renderNode.beginRecording(width, height)
-            recordingCanvas.withTranslation(-sourceLeft, -sourceTop) {
-                drawRenderNode(sourceNode)
-            }
-            renderNode.endRecording()
+            try {
+                recordingCanvas.withTranslation(-sourceLeft, -sourceTop) { drawRenderNode(sourceNode) }
+            } finally { renderNode.endRecording() }
         }
     }
 
@@ -377,7 +383,7 @@ internal class GlassBackdropView(
         return if (
             backdropMode == GlassBackdropMode.Blur && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
         ) {
-            NativeGlassRenderState(style.material.blurRadius.value * density)
+            NativeGlassRenderState(style.material, isDarkTint(), density)
         } else {
             null
         }

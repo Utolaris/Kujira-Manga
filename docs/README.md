@@ -7,6 +7,7 @@
 |---|---|
 | [android-cli.md](./android-cli.md) | 统一 Android 调试 CLI（`./scripts/android`）用法与约定 |
 | [instrumented-tests.md](./instrumented-tests.md) | 真机插桩测试、HyperOS 限制、结果判定 |
+| [glass-material.md](./glass-material.md) | 高斯 / 柔光玻璃切换、强度与全局渲染路径 |
 | [color-palettes.md](./color-palettes.md) | 五套预设的来源、角色映射与文字对比度约定 |
 | [ui-motion.md](./ui-motion.md) | 封面展开/拖动退出、V3 按压、触边震动与收藏心形反馈 |
 | [notifications.md](./notifications.md) | 漫画合集订阅、账号通知箱、图文渲染与已读协议 |

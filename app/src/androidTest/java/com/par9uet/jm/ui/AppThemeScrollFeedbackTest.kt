@@ -43,6 +43,7 @@ class AppThemeScrollFeedbackTest {
             override val theme = MutableStateFlow("light")
             override val colorPalette = MutableStateFlow(ColorPaletteState("default", null, null, null, null))
             override val glassBlurLevel = MutableStateFlow(50)
+            override val glassAppearance = MutableStateFlow(com.par9uet.jm.data.models.GlassAppearance())
             override val launcherDisguiseId = MutableStateFlow("default")
             override val editor: AppearanceEditor get() = error("No settings edits expected")
         }

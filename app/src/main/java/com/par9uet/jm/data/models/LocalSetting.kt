@@ -119,6 +119,8 @@ data class LocalSetting(
     val localModeHelpDismissed: Boolean = false,
     // 全局高斯模糊水平 0-100；50 = 平衡（默认）。旧 JSON 缺字段时由存储层回填 50。
     val glassBlurLevel: Int = 50,
+    val glassEffect: String? = "gaussian",
+    val softGlassLevel: Int = DefaultSoftGlassLevel,
 )
 
 const val COLOR_PALETTE_PRESET_DEFAULT = "default"

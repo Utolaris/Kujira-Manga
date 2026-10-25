@@ -193,6 +193,7 @@ interface AppearancePreferences {
     val colorPalette: StateFlow<ColorPaletteState>
     /** 全局高斯模糊水平 0-100；50 = 平衡。 */
     val glassBlurLevel: StateFlow<Int>
+    val glassAppearance: StateFlow<com.par9uet.jm.data.models.GlassAppearance>
     /** Currently selected launcher alias id ([LauncherDisguise]). */
     val launcherDisguiseId: StateFlow<String>
     val editor: AppearanceEditor
@@ -217,6 +218,9 @@ interface AppearanceEditor {
 
     /** 全局高斯模糊水平（0-100）；写入前收口到合法范围。 */
     fun setGlassBlurLevel(level: Int)
+
+    fun setGlassEffect(effect: com.par9uet.jm.data.models.GlassEffect): Boolean
+    fun setSoftGlassLevel(level: Int): Boolean
 }
 
 /** Only the cache quota values needed by the cover loader. */

@@ -131,6 +131,7 @@ class SettingsViewModel(
     val commentFilterKeywords = localSettingManager.blockedCommentKeywords
     val colorPalette: StateFlow<ColorPaletteState> = appearancePreferences.colorPalette
     val glassBlurLevel: StateFlow<Int> = appearancePreferences.glassBlurLevel
+    val glassAppearance = appearancePreferences.glassAppearance
     fun addCommentFilterKeyword(keyword: String): Boolean {
         if (keyword.isBlank()) return false
         val saved = localSettingManager.addCommentFilterKeyword(keyword)
@@ -159,6 +160,14 @@ class SettingsViewModel(
         tertiary: String?,
         error: String?,
     ) = appearancePreferences.editor.applyCustomColors(primary, secondary, tertiary, error)
+
+    fun setGlassEffect(effect: com.par9uet.jm.data.models.GlassEffect) {
+        if (!appearancePreferences.editor.setGlassEffect(effect)) toastManager.showAsync("玻璃效果保存失败，请重试")
+    }
+
+    fun setSoftGlassLevel(level: Int) {
+        if (!appearancePreferences.editor.setSoftGlassLevel(level)) toastManager.showAsync("柔光玻璃强度保存失败，请重试")
+    }
 
     fun setGlassBlurLevel(level: Int) =
         appearancePreferences.editor.setGlassBlurLevel(level)

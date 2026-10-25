@@ -152,6 +152,12 @@ internal fun normalizePersisted(savedJson: String, saved: LocalSetting): LocalSe
             // 但显式 `"appLanguage":null` 会绕过默认值，这里统一收口到简体。
             appLanguage = coerceAppLanguage(saved.appLanguage),
             // Gson 缺字段会把 Int 读成 0；没有该键时回退到「平衡」而不是透明。
+            glassEffect = com.par9uet.jm.data.models.GlassEffect.fromId(saved.glassEffect).id,
+            softGlassLevel = if (JsonParser.parseString(savedJson).asJsonObject
+                    .get("softGlassLevel")?.isJsonNull == false) {
+                saved.softGlassLevel.coerceIn(com.par9uet.jm.data.models.MinSoftGlassLevel,
+                    com.par9uet.jm.data.models.MaxSoftGlassLevel)
+            } else com.par9uet.jm.data.models.DefaultSoftGlassLevel,
             glassBlurLevel = if (savedJson.hasField("glassBlurLevel")) {
                 saved.glassBlurLevel.coerceIn(0, 100)
             } else {

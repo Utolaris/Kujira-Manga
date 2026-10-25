@@ -19,6 +19,23 @@ import org.junit.Test
 class LocalSettingStorageCompatibilityTest {
     private val gson = com.google.gson.Gson()
 
+    @Test fun `glass settings migrate missing null invalid and out of range data`() {
+        fun normalize(json: String) = normalizePersisted(json, gson.fromJson(json, LocalSetting::class.java))
+        for (json in listOf("{}", """{"glassEffect":null,"softGlassLevel":null}""",
+                """{"glassEffect":"future"}""")) {
+            val setting = normalize(json)
+            assertEquals("gaussian", setting.glassEffect)
+            assertEquals(84, setting.softGlassLevel)
+        }
+        val high = normalize("""{"glassEffect":"soft","softGlassLevel":999,"glassBlurLevel":35}""")
+        assertEquals("soft", high.glassEffect)
+        assertEquals(168, high.softGlassLevel)
+        assertEquals(35, high.glassBlurLevel)
+        assertEquals(16, normalize("""{"softGlassLevel":0}""").softGlassLevel)
+        val roundTrip = normalize(gson.toJson(high))
+        assertEquals(high, roundTrip)
+    }
+
     @Test
     fun `legacy json without appLanguage reads the constructor default`() {
         // Kotlin 的全默认参数会生成无参构造，所以**字段缺失时 Gson 拿到的是默认值**，

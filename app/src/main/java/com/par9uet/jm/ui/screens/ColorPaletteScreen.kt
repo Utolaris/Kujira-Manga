@@ -6,6 +6,13 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.material3.RadioButton
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.platform.testTag
+import com.par9uet.jm.data.models.GlassEffect
+import com.par9uet.jm.data.models.GlassAppearance
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -110,7 +117,7 @@ fun ColorPaletteScreen(
     val scheme = MaterialTheme.colorScheme
     val effectiveColors = listOf(scheme.primary, scheme.secondary, scheme.tertiary, scheme.error)
     val hasCustomOverride = colorPalette.hasCustomOverride
-    val glassBlurLevel by settingsViewModel.glassBlurLevel.collectAsState()
+    val glassAppearance by settingsViewModel.glassAppearance.collectAsState()
 
     CommonScaffold(
         title = "调色板",
@@ -217,12 +224,14 @@ fun ColorPaletteScreen(
                 }
             }
             item {
-                Section(title = "高斯模糊") {
-                    GlassBlurLevelSlider(
-                        level = glassBlurLevel,
-                        onLevelChange = { settingsViewModel.setGlassBlurLevel(it) },
-                    )
-                }
+                GlassAppearanceControls(
+                    appearance = glassAppearance,
+                    onEffectChange = settingsViewModel::setGlassEffect,
+                    onLevelChange = { level ->
+                        if (glassAppearance.effect == GlassEffect.Soft) settingsViewModel.setSoftGlassLevel(level)
+                        else settingsViewModel.setGlassBlurLevel(level)
+                    },
+                )
             }
             item {
                 Section(title = "外观") {
@@ -236,16 +245,47 @@ fun ColorPaletteScreen(
 
 }
 
-/**
- * 全局高斯模糊水平滑条：0-100，不显示数字。
- * 版式对齐「缓存控制」额度滑条：上方三档文案（透明 / 平衡 / 实心），下方游标。
- */
-@OptIn(ExperimentalMaterial3Api::class)
+/** Both choices share one material pipeline; their saved intensities remain independent. */
 @Composable
-private fun GlassBlurLevelSlider(
-    level: Int,
+internal fun GlassAppearanceControls(
+    appearance: GlassAppearance,
+    onEffectChange: (GlassEffect) -> Unit,
     onLevelChange: (Int) -> Unit,
 ) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Section(title = "玻璃效果") {
+            Row(Modifier.fillMaxWidth().selectableGroup()) {
+                GlassEffect.entries.forEach { effect ->
+                    Row(
+                        modifier = Modifier.weight(1f)
+                            .selectable(appearance.effect == effect, role = Role.RadioButton,
+                                onClick = { onEffectChange(effect) })
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = appearance.effect == effect, onClick = null)
+                        Text(if (effect == GlassEffect.Soft) "柔光玻璃" else "高斯模糊",
+                            modifier = Modifier.padding(start = 8.dp))
+                    }
+                }
+            }
+        }
+        val soft = appearance.effect == GlassEffect.Soft
+        Section(title = if (soft) "柔光玻璃强度" else "高斯模糊强度") {
+            GlassEffectLevelSlider(if (soft) appearance.softLevel else appearance.blurLevel, soft, onLevelChange)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun GlassEffectLevelSlider(
+    level: Int,
+    soft: Boolean,
+    onLevelChange: (Int) -> Unit,
+) {
+    val range = if (soft) 16f..168f else 0f..100f
+    var draft by remember(level, soft) { mutableStateOf(level.toFloat().coerceIn(range)) }
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val availableWidth = maxWidth
         val thumbSize = 24.dp
@@ -256,16 +296,16 @@ private fun GlassBlurLevelSlider(
         val inactiveTrack = MaterialTheme.colorScheme.surfaceVariant
 
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(modifier = Modifier.fillMaxWidth()) {
-                listOf("透明", "平衡", "实心").forEachIndexed { index, label ->
-                    val selected = when (index) {
+            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = if (soft) sliderInset else 0.dp)) {
+                (if (soft) listOf("通透", "柔和") else listOf("透明", "平衡", "实心")).forEachIndexed { index, label ->
+                    val selected = if (soft) (if (index == 0) draft <= 16f else draft >= 168f) else when (index) {
                         0 -> level <= 0
                         1 -> level in 25..75
                         else -> level >= 100
                     }
                     Text(
                         text = label,
-                        textAlign = TextAlign.Center,
+                        textAlign = if (soft) (if (index == 0) TextAlign.Start else TextAlign.End) else TextAlign.Center,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         style = if (availableWidth < 360.dp) {
@@ -280,10 +320,17 @@ private fun GlassBlurLevelSlider(
                 }
             }
             Slider(
-                value = level.toFloat(),
-                onValueChange = { onLevelChange(it.toInt().coerceIn(0, 100)) },
-                valueRange = 0f..100f,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = sliderInset),
+                value = draft,
+                onValueChange = { draft = it.coerceIn(range) },
+                onValueChangeFinished = {
+                    val selected = draft.toInt()
+                    // Persistence failures must not leave the slider displaying an unsaved value.
+                    draft = level.toFloat().coerceIn(range)
+                    onLevelChange(selected)
+                },
+                valueRange = range,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = sliderInset)
+                    .testTag("glass-intensity-slider"),
                 thumb = {
                     Surface(
                         modifier = Modifier.size(thumbSize),
@@ -302,7 +349,7 @@ private fun GlassBlurLevelSlider(
                         val trackHeight = 8.dp.toPx()
                         val trackTop = (size.height - trackHeight) / 2f
                         val radius = CornerRadius(trackHeight / 2f)
-                        val trackProgress = (sliderState.value / 100f).coerceIn(0f, 1f)
+                        val trackProgress = ((sliderState.value - range.start) / (range.endInclusive - range.start)).coerceIn(0f, 1f)
                         drawRoundRect(
                             color = inactiveTrack,
                             topLeft = Offset(0f, trackTop),
@@ -316,6 +363,11 @@ private fun GlassBlurLevelSlider(
                                 size = Size(size.width * trackProgress, trackHeight),
                                 cornerRadius = radius,
                             )
+                        }
+                        if (soft) {
+                            val defaultX = size.width * (84f - 16f) / (168f - 16f)
+                            drawLine(color = primary, start = Offset(defaultX, trackTop + trackHeight + 3.dp.toPx()),
+                                end = Offset(defaultX, trackTop + trackHeight + 7.dp.toPx()), strokeWidth = 1.dp.toPx())
                         }
                     }
                 },

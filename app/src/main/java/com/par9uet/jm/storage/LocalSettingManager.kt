@@ -18,6 +18,10 @@ import com.par9uet.jm.contentfilter.normalizeBlockedTagTemplates
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import com.par9uet.jm.data.models.GlassAppearance
+import com.par9uet.jm.data.models.GlassEffect
+import com.par9uet.jm.data.models.MinSoftGlassLevel
+import com.par9uet.jm.data.models.MaxSoftGlassLevel
 
 /**
  * Single writer for [LocalSetting]. The DTO stays the one persistence model (one encrypted
@@ -71,6 +75,10 @@ class LocalSettingManager(
     override val launcherDisguiseId = _projectingState { it.launcherDisguise }
     override val colorPalette = _projectingState(::toColorPaletteState)
     override val glassBlurLevel = _projectingState { it.glassBlurLevel.coerceIn(0, 100) }
+    override val glassAppearance = _projectingState {
+        GlassAppearance(GlassEffect.fromId(it.glassEffect), it.glassBlurLevel.coerceIn(0, 100),
+            it.softGlassLevel.coerceIn(MinSoftGlassLevel, MaxSoftGlassLevel))
+    }
     override val editor: AppearanceEditor get() = this
     override val apiEndpoint = _projectingState { it.api }
     override val appLanguage = _projectingState { coerceAppLanguage(it.appLanguage) }
@@ -278,11 +286,17 @@ class LocalSettingManager(
         }
     }
 
-    /** Confirming a custom color switches the palette to custom in the same transition. */
+    override fun setGlassEffect(effect: GlassEffect): Boolean =
+        updateSetting { it.copy(glassEffect = effect.id) }
+
+    override fun setSoftGlassLevel(level: Int): Boolean =
+        updateSetting { it.copy(softGlassLevel = level.coerceIn(MinSoftGlassLevel, MaxSoftGlassLevel)) }
+
     override fun setGlassBlurLevel(level: Int) {
         updateSetting { it.copy(glassBlurLevel = level.coerceIn(0, 100)) }
     }
 
+    /** Confirming a custom color switches the palette to custom in the same transition. */
     override fun applyCustomColors(primary: String?, secondary: String?, tertiary: String?, error: String?) {
         updateSetting {
             val hasAnyCustomColor = primary != null || secondary != null ||

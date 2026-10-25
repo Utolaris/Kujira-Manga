@@ -1,5 +1,7 @@
 package com.par9uet.jm.ui.glass
 
+import com.par9uet.jm.data.models.GlassAppearance
+import com.par9uet.jm.data.models.GlassEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.unit.Dp
@@ -12,23 +14,15 @@ enum class GlassBackdropMode {
 }
 
 /**
- * 全局高斯模糊水平（0-100）。50 = 平衡（[GlassMaterialStyle.DefaultBlurRadius]）。
- * 由设置 → 调色板提供；0 接近透明，100 更实。
+ * 全局材质选择与独立强度，由 AppTheme 提供并由每个 GlassCaptureHost 向内部组合传递。
  */
-val LocalGlassBlurLevel = staticCompositionLocalOf { 50 }
+val LocalGlassAppearance = staticCompositionLocalOf { GlassAppearance() }
 
 /** 按全局水平解析出实际模糊半径：50 → 基准值，0 → 无模糊，100 → 两倍。 */
 fun blurRadiusForLevel(level: Int, base: Dp = GlassMaterialStyle.DefaultBlurRadius): Dp {
     val scale = level.coerceIn(0, 100) / 50f
     return base * scale
 }
-
-/** 把 [LocalGlassBlurLevel] 应用到本材质的模糊半径。 */
-fun GlassMaterialStyle.withBlurLevel(level: Int): GlassMaterialStyle =
-    copy(blurRadius = blurRadiusForLevel(level))
-
-fun GlassSurfaceStyle.withBlurLevel(level: Int): GlassSurfaceStyle =
-    copy(material = material.withBlurLevel(level))
 
 /**
  * Shared material constants for every glass consumer.
@@ -39,6 +33,8 @@ fun GlassSurfaceStyle.withBlurLevel(level: Int): GlassSurfaceStyle =
 @Immutable
 data class GlassMaterialStyle(
     val blurRadius: Dp = DefaultBlurRadius,
+    val effect: GlassEffect = GlassEffect.Gaussian,
+    val softLevel: Int = 84,
     val tintAlpha: Float = 0.76f,
     val borderWidth: Dp = 0.4.dp,
     val shadowRadius: Dp = 2.667.dp,
@@ -92,7 +88,6 @@ data class GlassStyle(
     val maxBarWidth: Dp = 250.dp,
     val cornerRadius: Dp = 28.dp,
     val material: GlassMaterialStyle = GlassMaterialStyle.Default,
-    val selectedIndicatorAlpha: Float = 0.09f,
 ) {
     val blurRadius: Dp get() = material.blurRadius
     val tintAlpha: Float get() = material.tintAlpha
@@ -104,3 +99,11 @@ data class GlassStyle(
         val Default = GlassStyle()
     }
 }
+
+/** Gaussian keeps its historical dp radius; the reference soft radius is in physical pixels. */
+internal fun GlassMaterialStyle.withAppearance(appearance: GlassAppearance, density: Float = 1f): GlassMaterialStyle = copy(
+    effect = appearance.effect,
+    softLevel = appearance.softLevel.coerceIn(16, 168),
+    blurRadius = if (appearance.effect == GlassEffect.Soft) (appearance.softLevel.coerceIn(16, 168) * 0.4f / density).dp
+        else blurRadiusForLevel(appearance.blurLevel),
+)

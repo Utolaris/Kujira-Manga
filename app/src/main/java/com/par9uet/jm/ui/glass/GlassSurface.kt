@@ -60,8 +60,9 @@ fun GlassSurface(
     content: @Composable BoxScope.() -> Unit,
 ) {
     val registry = LocalGlassSurfaceRegistry.current
-    val blurLevel = LocalGlassBlurLevel.current
-    val resolvedStyle = style.withBlurLevel(blurLevel)
+    val appearance = LocalGlassAppearance.current
+    val resolvedStyle = style.copy(material = style.material.withAppearance(appearance,
+        androidx.compose.ui.platform.LocalDensity.current.density))
     val currentStyle = rememberUpdatedState(resolvedStyle)
     val currentAlpha = rememberUpdatedState(surfaceAlpha.coerceIn(0f, 1f))
     val currentScale = rememberUpdatedState(surfaceScale.coerceAtLeast(0.1f))

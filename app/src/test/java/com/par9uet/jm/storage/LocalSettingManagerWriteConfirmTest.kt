@@ -48,6 +48,26 @@ class LocalSettingManagerWriteConfirmTest {
         applier: LauncherIdentityApplier = NoOpLauncherIdentityApplier(),
     ) = LocalSettingManager(persistence, applier)
 
+    @Test fun `glass mode and independent strengths are durable and failed changes stay unpublished`() {
+        val persistence = ControllablePersistence(LocalSetting(glassBlurLevel = 35))
+        val manager = manager(persistence)
+        assertTrue(manager.setSoftGlassLevel(140))
+        assertTrue(manager.setGlassEffect(com.par9uet.jm.data.models.GlassEffect.Soft))
+        val saved = manager.glassAppearance.value
+        assertEquals(140, saved.softLevel)
+        assertEquals(35, saved.blurLevel)
+        assertEquals(saved, manager(persistence).glassAppearance.value)
+        persistence.failNextWrites = true
+        assertFalse(manager.setGlassEffect(com.par9uet.jm.data.models.GlassEffect.Gaussian))
+        assertFalse(manager.setSoftGlassLevel(16))
+        assertEquals(saved, manager.glassAppearance.value)
+        assertEquals(saved, manager(persistence).glassAppearance.value)
+        persistence.failNextWrites = false
+        assertTrue(manager.setGlassEffect(com.par9uet.jm.data.models.GlassEffect.Gaussian))
+        assertEquals(140, manager.glassAppearance.value.softLevel)
+        assertEquals(35, manager.glassAppearance.value.blurLevel)
+    }
+
     @Test
     fun `privacy setting write failure does not publish the new value`() {
         val persistence = ControllablePersistence(LocalSetting(showComicCacheNotificationName = true))

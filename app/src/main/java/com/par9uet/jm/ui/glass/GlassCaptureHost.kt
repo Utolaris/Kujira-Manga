@@ -75,6 +75,7 @@ fun GlassCaptureHost(
     val coverNavigator = LocalCoverNavigator.current
     val coverAnchors = LocalCoverAnchors.current
     val coverPageKey = LocalCoverPageKey.current ?: (LocalLifecycleOwner.current as? NavBackStackEntry)?.id
+    val glassAppearance = LocalGlassAppearance.current
     val context = LocalContext.current
 
     AndroidView(
@@ -101,6 +102,7 @@ fun GlassCaptureHost(
                     coverNavigator = coverNavigator,
                     coverAnchors = coverAnchors,
                     coverPageKey = coverPageKey,
+                    glassAppearance = glassAppearance,
                 )
             }
         },
@@ -121,6 +123,7 @@ fun GlassCaptureHost(
                 coverNavigator = coverNavigator,
                 coverAnchors = coverAnchors,
                 coverPageKey = coverPageKey,
+                glassAppearance = glassAppearance,
             )
         },
         onRelease = GlassCaptureHostView::dispose,
@@ -148,6 +151,7 @@ internal class GlassCaptureHostView(context: Context) :
         val coverNavigator: CoverNavigator?,
         val coverAnchors: CoverAnchorRegistry?,
         val coverPageKey: String?,
+        val glassAppearance: com.par9uet.jm.data.models.GlassAppearance,
     )
 
     private data class RegisteredSurface(
@@ -278,6 +282,7 @@ internal class GlassCaptureHostView(context: Context) :
         coverNavigator: CoverNavigator? = null,
         coverAnchors: CoverAnchorRegistry? = null,
         coverPageKey: String? = null,
+        glassAppearance: com.par9uet.jm.data.models.GlassAppearance = com.par9uet.jm.data.models.GlassAppearance(),
     ) {
         val newTheme = ThemeState(
             colorScheme = colorScheme,
@@ -294,6 +299,7 @@ internal class GlassCaptureHostView(context: Context) :
             coverNavigator = coverNavigator,
             coverAnchors = coverAnchors,
             coverPageKey = coverPageKey,
+            glassAppearance = glassAppearance,
         )
         val themeChanged = themeState.value != newTheme
         themeState.value = newTheme
@@ -504,8 +510,11 @@ internal class GlassCaptureHostView(context: Context) :
             shadow = 0,
         )
         return GlassSurfaceColors(
-            tint = colorScheme.surfaceContainer.copy(alpha = material.tintAlpha).toArgb(),
-            topStroke = if (isDarkTheme) 0x06FFFFFF else 0x11000000,
+            tint = colorScheme.surfaceContainer.copy(alpha = if (material.effect == com.par9uet.jm.data.models.GlassEffect.Soft)
+                softGlassProfile(material.softLevel, isDarkTheme).tintAlpha else material.tintAlpha).toArgb(),
+            topStroke = if (material.effect == com.par9uet.jm.data.models.GlassEffect.Soft) {
+                if (isDarkTheme) 0x28FFFFFF else 0x70FFFFFF
+            } else if (isDarkTheme) 0x06FFFFFF else 0x11000000,
             bottomStroke = if (isDarkTheme) 0x11FFFFFF else 0x20000000,
             shadow = if (isDarkTheme) 0x04FFFFFF else 0x20000000,
         )
@@ -515,6 +524,7 @@ internal class GlassCaptureHostView(context: Context) :
     private fun ThemedContent(theme: ThemeState, content: @Composable () -> Unit) {
         CompositionLocalProvider(
             LocalExtendedColors provides theme.extendedColors,
+            LocalGlassAppearance provides theme.glassAppearance,
             LocalMainNavController provides theme.mainNavController,
             LocalMinimumInteractiveComponentSize provides theme.minimumInteractiveComponentSize,
             LocalTabletLayoutEnabled provides theme.tabletLayoutEnabled,
