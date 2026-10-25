@@ -15,10 +15,6 @@ internal const val DetailContentExitMillis = 150
 internal const val CoverExitMillis = 256
 internal val CoverEasing = CubicBezierEasing(.2f, 0f, 0f, 1f)
 
-/** Tablet cover columns leave large non-scrollable areas; only the cover can start a direct drag. */
-internal fun canStartDirectDetailDrag(tablet: Boolean, positionInWindow: Offset, cover: Rect?): Boolean =
-    !tablet || cover?.contains(positionInWindow) == true
-
 internal fun coverBoundsMoved(from: Rect, to: Rect): Boolean =
     max(max(abs(from.left - to.left), abs(from.top - to.top)),
         max(abs(from.right - to.right), abs(from.bottom - to.bottom))) > 1f

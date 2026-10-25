@@ -9,15 +9,6 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CoverMotionTest {
-    @Test fun `tablet whitespace cannot start a direct drag but the cover and existing phone gestures can`() {
-        val cover = Rect(100f, 140f, 420f, 566f)
-        assertFalse(canStartDirectDetailDrag(true, Offset(180f, 900f), cover))
-        assertFalse(canStartDirectDetailDrag(true, Offset(450f, 200f), cover))
-        assertFalse(canStartDirectDetailDrag(true, Offset(180f, 200f), null))
-        assertTrue(canStartDirectDetailDrag(true, Offset(180f, 200f), cover))
-        assertTrue(canStartDirectDetailDrag(false, Offset(180f, 900f), cover))
-    }
-
     @Test fun `offscreen detail covers stay absent while partially visible covers can fly`() {
         val viewport = Rect(0f, 0f, 400f, 800f)
         assertFalse(coverHasVisiblePixels(Rect(16f, -300f, 196f, -60f), viewport))

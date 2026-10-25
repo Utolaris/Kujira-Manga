@@ -7,6 +7,7 @@ import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -58,6 +59,7 @@ import com.par9uet.jm.ui.theme.LocalExtendedColors
 import com.par9uet.jm.ui.theme.extendedColorSchemeFor
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
@@ -68,6 +70,7 @@ class CoverTransitionFlowTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private var observedEntry: DetailEntryControl? = null
     private var observedMotion: DetailMotion? = null
+    private var observedScroll: ScrollState? = null
     private var removeSource: (() -> Unit)? = null
     private var lastReturnFrame: CoverReturnFrame? = null
 
@@ -229,34 +232,75 @@ class CoverTransitionFlowTest {
         compose.onNodeWithTag("cover-return-overlay").assertDoesNotExist()
     }
 
-    @Test fun tabletBlankColumnCannotMoveThePageWhileTheCoverStillDragsAndRebounds() {
-        assumeTrue(motionEnabled())
-        compose.mainClock.autoAdvance = false
-        compose.setContent { TestGraph(tablet = true) }
-        compose.onNodeWithText("source-cover").performClick()
-        compose.mainClock.advanceTimeBy(CoverEnterMillis + DetailContentEnterMillis + 256L)
-        compose.onNodeWithTag("detail-surface").performTouchInput {
-            down(Offset(20f, height - 160f))
-            moveBy(Offset(0f, -70f))
-            moveBy(Offset(0f, -70f))
-        }
-        compose.runOnIdle { assertEquals(CoverPose(), observedMotion!!.pose) }
-        compose.onNodeWithTag("detail-surface").performTouchInput { up() }
-        compose.onNodeWithTag("destination-cover").performTouchInput {
-            down(center)
-            moveBy(Offset(0f, 50f))
-            moveBy(Offset(0f, 50f))
-        }
-        compose.runOnIdle { assertTrue(observedMotion!!.pose.y > 0f) }
-        compose.onNodeWithTag("destination-cover").performTouchInput { cancel() }
-        compose.mainClock.advanceTimeBy(600)
-        compose.runOnIdle {
-            assertEquals(CoverPose(), observedMotion!!.pose)
-            assertEquals(null, lastReturnFrame)
-        }
+    @Test fun tabletColumnsCannotDragThePageFromTheCoverWhitespaceOrCommentEdges() {
+        assertTabletPageCannotBeDragged(columns = true)
     }
 
-    @Composable private fun TestGraph(tablet: Boolean = false) {
+    @Test fun compactTabletCannotDragThePageFromTheCoverOrScrollEdges() {
+        assertTabletPageCannotBeDragged(columns = false)
+    }
+
+    private fun assertTabletPageCannotBeDragged(columns: Boolean) {
+        assumeTrue(motionEnabled())
+        compose.mainClock.autoAdvance = false
+        compose.setContent { TestGraph(tablet = true, tabletColumns = columns) }
+        compose.onNodeWithText("source-cover").performClick()
+        compose.mainClock.advanceTimeBy(CoverEnterMillis + DetailContentEnterMillis + 256L)
+
+        fun assertPageStill() = compose.runOnIdle {
+            assertEquals(CoverPose(), observedMotion!!.pose)
+            assertTrue(!observedMotion!!.dragging)
+            assertTrue(!observedMotion!!.exiting)
+            assertEquals(null, lastReturnFrame)
+        }
+
+        for (direction in listOf(1f, -1f)) {
+            compose.onNodeWithTag("destination-cover").performTouchInput {
+                down(center)
+                advanceEventTime(600)
+                moveBy(Offset(20f, 70f * direction))
+                moveBy(Offset(20f, 70f * direction))
+            }
+            // Check while the finger is still down: a rebound must not hide a moved page.
+            assertPageStill()
+            compose.onNodeWithTag("destination-cover").performTouchInput { up() }
+            compose.mainClock.advanceTimeBy(600)
+            assertPageStill()
+        }
+
+        if (columns) {
+            compose.onNodeWithTag("detail-surface").performTouchInput {
+                down(Offset(20f, height - 160f))
+                moveBy(Offset(0f, -70f))
+                moveBy(Offset(0f, -70f))
+            }
+            assertPageStill()
+            compose.onNodeWithTag("detail-surface").performTouchInput { up() }
+        }
+
+        for (bottom in listOf(false, true)) {
+            compose.runOnIdle {
+                runBlocking { observedScroll!!.scrollTo(if (bottom) observedScroll!!.maxValue else 0) }
+            }
+            compose.mainClock.advanceTimeByFrame()
+            compose.onNodeWithTag("detail-scroll").performTouchInput {
+                down(center)
+                val delta = if (bottom) -70f else 70f
+                moveBy(Offset(0f, delta))
+                moveBy(Offset(0f, delta))
+            }
+            assertPageStill()
+            compose.onNodeWithTag("detail-scroll").performTouchInput { up() }
+            compose.mainClock.advanceTimeBy(600)
+            assertPageStill()
+        }
+
+        // The gesture guard must not disable real content scrolling.
+        compose.mainClock.autoAdvance = true
+        compose.onNodeWithText("comment-25").performScrollTo().assertIsDisplayed()
+    }
+
+    @Composable private fun TestGraph(tablet: Boolean = false, tabletColumns: Boolean = true) {
         val nav = rememberNavController()
         val origins = remember { CoverOrigins() }
         var sourceVisible by remember { mutableStateOf(true) }
@@ -291,28 +335,34 @@ class CoverTransitionFlowTest {
                                         val entryControl = LocalDetailEntry.current
                                         val detailMotion = LocalDetailMotion.current
                                         val scroll = rememberScrollState()
-                                        SideEffect { observedEntry = entryControl; observedMotion = detailMotion as? DetailMotion }
+                                        SideEffect {
+                                            observedEntry = entryControl
+                                            observedMotion = detailMotion as? DetailMotion
+                                            observedScroll = scroll
+                                        }
                                         val comments: @Composable () -> Unit = {
                                             Column(Modifier.detailEntryContent()) {
                                                 MotionButton(onClick = { nav.navigate("reader") }) { Text("进入阅读") }
                                                 repeat(30) { Text("comment-$it", Modifier.height(80.dp)) }
                                             }
                                         }
-                                        if (LocalTabletLayoutEnabled.current) {
+                                        if (LocalTabletLayoutEnabled.current && tabletColumns) {
                                             BoxWithConstraints(Modifier.fillMaxSize().background(Color.White).testTag("detail-surface")) {
                                                 val width = tabletDetailCoverWidth(maxWidth, maxHeight, 100.dp, 88.dp)
                                                 Row(Modifier.fillMaxSize().padding(start = 16.dp, top = 100.dp, end = 16.dp),
                                                     horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                                                     Box(Modifier.width(width).aspectRatio(.75f).detailEntryCover()
                                                         .background(Color.Red).testTag("destination-cover"))
-                                                    Column(Modifier.weight(1f).verticalScroll(scroll)) { comments() }
+                                                    Column(Modifier.weight(1f).testTag("detail-scroll").verticalScroll(scroll)) { comments() }
                                                 }
                                             }
                                         } else {
-                                            Column(Modifier.fillMaxSize().background(Color.White).testTag("detail-surface").verticalScroll(scroll)) {
+                                            Box(Modifier.fillMaxSize().testTag("detail-surface")) {
+                                            Column(Modifier.fillMaxSize().background(Color.White).testTag("detail-scroll").verticalScroll(scroll)) {
                                                 Box(Modifier.padding(top = 100.dp, start = 16.dp).size(180.dp, 240.dp)
                                                     .detailEntryCover().background(Color.Red).testTag("destination-cover"))
                                                 comments()
+                                            }
                                             }
                                         }
                                     },

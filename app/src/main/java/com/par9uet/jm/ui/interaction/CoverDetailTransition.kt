@@ -301,10 +301,11 @@ internal fun CoverDetailTransition(
                 }
             }
         }
-        val gesture = Modifier.nestedScroll(nested).pointerInput(motion, tablet) {
+        // Tablet covers and scroll boundaries must never turn into whole-page drag handles.
+        // Both remote and downloaded details share this wrapper, including compact tablet layouts.
+        val gesture = if (tablet) Modifier else Modifier.nestedScroll(nested).pointerInput(motion) {
             awaitEachGesture {
                 val first = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                val directDragAllowed = canStartDirectDetailDrag(tablet, first.position + windowPosition, motion.cover?.first)
                 touch.down = true
                 touch.horizontal = false
                 touch.owned = false
@@ -332,7 +333,7 @@ internal fun CoverDetailTransition(
                         val wasDragging = motion.dragging
                         val final = awaitPointerEvent(PointerEventPass.Final)
                         if (!touch.horizontal && !motion.dragBlocked && change.pressed && !change.isConsumed &&
-                            abs(touch.travelled.y) > slop && (motion.dragging || directDragAllowed) &&
+                            abs(touch.travelled.y) > slop &&
                             (motion.dragging || abs(touch.travelled.y) > abs(touch.travelled.x))
                         ) {
                             if (motion.dragging) {
