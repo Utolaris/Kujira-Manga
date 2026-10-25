@@ -1,6 +1,7 @@
 package com.par9uet.jm.startup
 
 import com.par9uet.jm.core.ToastManager
+import com.par9uet.jm.core.concurrent.ForegroundWork
 import com.par9uet.jm.core.model.User
 import com.par9uet.jm.core.network.NetWorkResult
 import com.par9uet.jm.data.models.LocalSetting
@@ -9,7 +10,7 @@ import com.par9uet.jm.favorites.FakeConnectionMode
 import com.par9uet.jm.favorites.fakeNightPrompt
 import com.par9uet.jm.favorites.sync.FavoriteAutoSyncCoordinator
 import com.par9uet.jm.favorites.sync.FavoriteSyncController
-import com.par9uet.jm.favorites.sync.FavoriteSyncReport
+import com.par9uet.jm.favorites.model.FavoriteSyncReport
 import com.par9uet.jm.favorites.sync.FavoriteSyncRequestKind
 import com.par9uet.jm.favorites.sync.FavoriteSyncRequester
 import com.par9uet.jm.launcher.LauncherIdentityApplier
@@ -43,10 +44,12 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import okhttp3.Cookie
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.koin.dsl.koinApplication
@@ -55,8 +58,34 @@ import org.koin.dsl.module
 /** Exercises the real startup coordinator and sync controller without composing Favorites. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ColdStartFavoriteSyncTest {
+    @Test fun `disk maintenance waits for first home load and any favorite sync`() = runTest {
+        val homeReady = CompletableDeferred<Unit>()
+        val syncReady = CompletableDeferred<Unit>()
+        val environment = environment(homeReady = homeReady, syncReady = syncReady)
+        try {
+            environment.startup.start()
+            runCurrent()
+            assertEquals(0, environment.cacheScans[0])
+            environment.probeReady.complete(Unit)
+            runCurrent()
+            // 冷启动不再发起收藏同步，同步只由进入收藏页触发。
+            assertTrue(environment.requests.isEmpty())
+            assertEquals(0, environment.cacheScans[0])
+            environment.controller.request(FavoriteSyncRequestKind.AUTO, 3)
+            homeReady.complete(Unit)
+            runCurrent()
+            // 首页首批内容已就绪，但用户触发的同步仍在进行，维护不能抢磁盘。
+            assertEquals(listOf(3), environment.requests)
+            assertEquals(0, environment.cacheScans[0])
+            syncReady.complete(Unit)
+            advanceTimeBy(3_001)
+            runCurrent()
+            assertEquals(1, environment.cacheScans[0])
+        } finally { environment.application.close() }
+    }
+
     @Test
-    fun `startup waits for the real saved session probe then syncs without visiting Favorites`() = runTest {
+    fun `startup probes the saved session without starting a favorite sync`() = runTest {
         val environment = environment()
         try {
             environment.startup.start()
@@ -65,13 +94,14 @@ class ColdStartFavoriteSyncTest {
             assertTrue(environment.requests.isEmpty())
             environment.startup.start()
             environment.probeReady.complete(Unit)
-            runCurrent()
-            assertEquals(listOf(0), environment.requests)
-            environment.startup.start()
+            advanceUntilIdle()
+            // 冷启动不再预取收藏：同步只由进入收藏页（FavoritesIntent.Entered）发起。
+            assertTrue(environment.requests.isEmpty())
+            assertFalse(environment.controller.state.value.hasSynced)
+            assertEquals(1, environment.probes[0])
             environment.controller.request(FavoriteSyncRequestKind.AUTO, 3)
             runCurrent()
-            assertEquals(1, environment.probes[0])
-            assertEquals(listOf(0), environment.requests)
+            assertEquals(listOf(3), environment.requests)
         } finally { environment.application.close() }
     }
 
@@ -89,7 +119,7 @@ class ColdStartFavoriteSyncTest {
     }
 
     @Test
-    fun `recent durable completion suppresses startup and every folder until sixty seconds`() = runTest {
+    fun `recent durable completion suppresses every folder until sixty seconds`() = runTest {
         val environment = environment(lastCompletedAt = 1_000_000L)
         try {
             environment.probeReady.complete(Unit)
@@ -105,10 +135,15 @@ class ColdStartFavoriteSyncTest {
             environment.controller.request(FavoriteSyncRequestKind.AUTO, 9)
             runCurrent()
             assertEquals(listOf(9), environment.requests)
+            // 命中冷却的自动请求仍要恢复持久化的完成标记；已有同步错误不得被覆盖。
+            environment.controller.request(FavoriteSyncRequestKind.AUTO, 10)
+            runCurrent()
+            assertEquals(listOf(9), environment.requests)
+            assertTrue(environment.controller.state.value.hasSynced)
         } finally { environment.application.close() }
     }
 
-    @Test fun `unread request is last after authentication cache and asynchronous favorite sync and runs once`() = runTest {
+    @Test fun `unread request is last after authentication cache and first home load and runs once`() = runTest {
         val syncReady = CompletableDeferred<Unit>()
         val cacheReady = CompletableDeferred<Unit>()
         val homeReady = CompletableDeferred<Unit>()
@@ -117,15 +152,37 @@ class ColdStartFavoriteSyncTest {
             environment.startup.start(); runCurrent()
             assertEquals(0, environment.unreadRequests[0])
             environment.probeReady.complete(Unit); runCurrent()
-            assertEquals(listOf(0), environment.requests)
+            assertTrue(environment.requests.isEmpty())
             assertEquals(0, environment.unreadRequests[0])
             cacheReady.complete(Unit); runCurrent()
             assertEquals(0, environment.unreadRequests[0])
             syncReady.complete(Unit); runCurrent()
             assertEquals(0, environment.unreadRequests[0])
             homeReady.complete(Unit); runCurrent()
+            advanceTimeBy(3_001); runCurrent()
             assertEquals(1, environment.unreadRequests[0])
             environment.startup.start(); runCurrent()
+            assertEquals(1, environment.unreadRequests[0])
+        } finally { environment.application.close() }
+    }
+
+    @Test fun `startup maintenance waits for visible covers and scrolling after data is ready`() = runTest {
+        val foreground = ForegroundWork()
+        foreground.update("visible-cover", true)
+        val environment = environment(foregroundWork = foreground)
+        try {
+            environment.probeReady.complete(Unit)
+            environment.startup.start()
+            advanceTimeBy(10_000); runCurrent()
+            assertEquals(0, environment.cacheScans[0])
+            assertEquals(0, environment.unreadRequests[0])
+            foreground.update("scroll", true)
+            foreground.update("visible-cover", false)
+            advanceTimeBy(2_000); runCurrent()
+            assertEquals(0, environment.cacheScans[0])
+            foreground.update("scroll", false)
+            advanceTimeBy(3_001); runCurrent()
+            assertEquals(1, environment.cacheScans[0])
             assertEquals(1, environment.unreadRequests[0])
         } finally { environment.application.close() }
     }
@@ -138,6 +195,7 @@ class ColdStartFavoriteSyncTest {
         val probes: IntArray,
         val requests: MutableList<Int>,
         val unreadRequests: IntArray,
+        val cacheScans: IntArray,
     )
 
     private fun TestScope.environment(
@@ -145,6 +203,7 @@ class ColdStartFavoriteSyncTest {
         syncReady: CompletableDeferred<Unit> = CompletableDeferred(Unit),
         cacheReady: CompletableDeferred<Unit> = CompletableDeferred(Unit),
         homeReady: CompletableDeferred<Unit> = CompletableDeferred(Unit),
+        foregroundWork: ForegroundWork = ForegroundWork(),
     ): Environment {
         val settings = LocalSettingManager(object : LocalSettingPersistence {
             override fun load() = LocalSettingLoadResult.Success(LocalSetting(
@@ -212,8 +271,9 @@ class ColdStartFavoriteSyncTest {
             override suspend fun <T> run(owner: UserSessionSnapshot, block: suspend () -> T): T = block()
         }
         val unread = NotificationUnreadCoordinator(source, account, modeGate, backgroundScope)
+        val cacheScans = intArrayOf(0)
         val files = object : CacheFiles {
-            override suspend fun scan(): List<CacheSize> { cacheReady.await(); return emptyList() }
+            override suspend fun scan(): List<CacheSize> { cacheScans[0]++; cacheReady.await(); return emptyList() }
             override suspend fun remove(areas: Set<com.par9uet.jm.cache.CacheArea>) = Unit
         }
         val cache = StartupCacheCleanup(files, settings, CacheCleanupOperations(files, {}, {}, {}))
@@ -231,6 +291,6 @@ class ColdStartFavoriteSyncTest {
                 single<FavoriteSyncRequester> { controller }
             })
         }
-        return Environment(application, PostStartupCoordinator(backgroundScope, application.koin), controller, probeReady, probes, requests, unreadRequests)
+        return Environment(application, PostStartupCoordinator(backgroundScope, application.koin, foregroundWork = foregroundWork), controller, probeReady, probes, requests, unreadRequests, cacheScans)
     }
 }

@@ -219,3 +219,9 @@ interface AppearanceEditor {
     /** 全局高斯模糊水平（0-100）；写入前收口到合法范围。 */
     fun setGlassBlurLevel(level: Int)
 }
+
+/** Only the cache quota values needed by the cover loader. */
+interface CoverCachePreferences {
+    val cacheBudgetMb: StateFlow<Int>
+    val downloadExemptFromCacheLimit: StateFlow<Boolean>
+}

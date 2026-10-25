@@ -8,7 +8,7 @@ import com.par9uet.jm.favorites.model.FavoriteLocalQuery
 import com.par9uet.jm.favorites.model.FavoriteSession
 import com.par9uet.jm.favorites.model.FavoriteSessionSnapshot
 import com.par9uet.jm.core.SessionRecoveryException
-import com.par9uet.jm.session.withAuthenticationRecovery
+import com.par9uet.jm.core.network.withAuthenticationRecovery
 import com.par9uet.jm.core.network.NetWorkResult
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow

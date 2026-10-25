@@ -81,6 +81,7 @@ class EmbeddedClientManager(
 
     private data class SharedClient(
         val client: JmApiClient,
+        val contentClient: LanguageAwareJmApiClient,
         val loginBusinessCode: ThreadLocal<Int?>,
         val clientSessionGeneration: Long,
     )
@@ -99,6 +100,12 @@ class EmbeddedClientManager(
     // Idle workers expire so logging out leaves no permanent SDK worker threads behind.
     private val clientExecutor = EmbeddedTaskExecutor(
         ThreadPoolExecutor(2, 2, 30L, TimeUnit.SECONDS, LinkedBlockingQueue()).apply {
+            threadFactory = java.util.concurrent.ThreadFactory { task ->
+                Thread({
+                    runCatching { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND) }
+                    task.run()
+                }, "jm-sdk-background")
+            }
             allowCoreThreadTimeOut(true)
         },
         onFailure = { log("内置 API 后台初始化失败，可重试请求：${it.message}") },
@@ -107,6 +114,10 @@ class EmbeddedClientManager(
     fun getClient(): JmApiClient {
         return getSharedClient().client
     }
+
+    fun getAlbum(id: String) = getSharedClient().contentClient.getAlbum(id)
+
+    fun getPhoto(id: String) = getSharedClient().contentClient.getPhoto(id)
 
     private fun getSharedClient(): SharedClient {
         return sharedClient ?: synchronized(this) {
@@ -119,7 +130,8 @@ class EmbeddedClientManager(
                     clientSessionGeneration = sessionGeneration,
                 )
                 SharedClient(
-                    client = client,
+                    client = client.client,
+                    contentClient = client,
                     loginBusinessCode = loginBusinessCode,
                     clientSessionGeneration = sessionGeneration,
                 ).also { sharedClient = it }
@@ -149,7 +161,7 @@ class EmbeddedClientManager(
             loginJwtToken = loginJwtToken,
             clientSessionGeneration = null,
             loginHost = loginHost,
-        )
+        ).client
         val attempt = recordLoginAttempt(origin)
         return try {
             // Preserve backend affinity without sharing the active authentication token.
@@ -317,7 +329,7 @@ class EmbeddedClientManager(
         loginJwtToken: ThreadLocal<String?>? = null,
         clientSessionGeneration: Long?,
         loginHost: String? = null,
-    ): JmApiClient {
+    ): LanguageAwareJmApiClient {
         val config = JmConfiguration.Builder()
             .clientType(ClientType.API)
             .executor(clientExecutor)
@@ -359,7 +371,7 @@ class EmbeddedClientManager(
                 // 3. SDK 用旧版 token 盐/版本及 URL 表单，改用官方签名和 FormData。
                 val request = chain.request()
                     .withEmbeddedLoginHost(loginHost, domainManager.domains)
-                    .withEmbeddedLang(domainManager.domains, languageProvider.language())
+                    .withEmbeddedLang(domainManager.domains, EmbeddedRequestLanguageScope.current(languageProvider))
                     .withEmbeddedSearchDate(domainManager.domains)
                     .withEmbeddedUserAgent(userAgentProvider.userAgent())
                     .withOfficialApiRequest(domainManager.domains)
@@ -452,7 +464,7 @@ class EmbeddedClientManager(
             restoreSessionIntoClient(jmClient)
         }
 
-        return jmClient
+        return LanguageAwareJmApiClient(jmClient, config.cachePool, languageProvider)
     }
 
     /**

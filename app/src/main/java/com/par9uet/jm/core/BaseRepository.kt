@@ -12,7 +12,7 @@ import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
+import com.par9uet.jm.core.concurrent.backgroundIoDispatcher
 import kotlinx.coroutines.withContext
 
 open class BaseRepository {
@@ -39,7 +39,7 @@ open class BaseRepository {
     protected suspend inline fun <T> safeEmbeddedCall(
         operation: String,
         crossinline block: suspend () -> T,
-    ): NetWorkResult<T> = withContext(Dispatchers.IO) {
+    ): NetWorkResult<T> = withContext(backgroundIoDispatcher()) {
         try {
             NetWorkResult.Success(block())
         } catch (error: CancellationException) {

@@ -11,8 +11,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 import org.junit.Assert.assertTrue
 import com.par9uet.jm.favorites.data.FAVORITE_SCOPE_ALL
-import com.par9uet.jm.favorites.sync.FavoriteSyncProgress
-import com.par9uet.jm.favorites.sync.FavoriteSyncReport
+import com.par9uet.jm.favorites.model.FavoriteSyncProgress
+import com.par9uet.jm.favorites.model.FavoriteSyncReport
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -27,6 +27,74 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class FavoriteSyncControllerTest {
+    @Test fun `cooldown restores success but does not hide a later manual sync failure`() = runTest {
+        val controller = controller(backgroundScope, TestFavoriteSession(), mutableListOf(),
+            operation = { _, _, _, _ -> NetWorkResult.Error("offline") },
+            lastSuccessfulSyncAt = { 1_000_000L })
+        runCurrent()
+        controller.request(FavoriteSyncRequestKind.AUTO)
+        runCurrent()
+        assertTrue(controller.state.value.hasSynced)
+        controller.request(FavoriteSyncRequestKind.MANUAL)
+        runCurrent()
+        assertEquals("offline", controller.state.value.errorMessage)
+        controller.request(FavoriteSyncRequestKind.AUTO)
+        runCurrent()
+        assertFalse(controller.state.value.hasSynced)
+        assertEquals("offline", controller.state.value.errorMessage)
+    }
+
+    @Test fun `success indicator resets for the next sync failure and account change`() = runTest {
+        val session = TestFavoriteSession()
+        val second = CompletableDeferred<Unit>()
+        var calls = 0
+        val controller = controller(backgroundScope, session, mutableListOf(), operation = { _, _, _, _ ->
+            if (++calls == 1) success() else {
+                second.await()
+                NetWorkResult.Error("offline")
+            }
+        })
+        assertFalse(controller.state.value.hasSynced)
+        controller.request(FavoriteSyncRequestKind.MANUAL)
+        runCurrent()
+        assertTrue(controller.state.value.hasSynced)
+        controller.request(FavoriteSyncRequestKind.MANUAL)
+        assertTrue(controller.state.value.isSyncing)
+        assertFalse(controller.state.value.hasSynced)
+        runCurrent()
+        second.complete(Unit)
+        runCurrent()
+        assertFalse(controller.state.value.hasSynced)
+        controller.onExternalSyncSucceeded(session.snapshot())
+        assertTrue(controller.state.value.hasSynced)
+        session.switchAccount(8)
+        runCurrent()
+        assertFalse(controller.state.value.hasSynced)
+    }
+
+    @Test fun `external completion rejects local mode and stale accounts`() = runTest {
+        val session = TestFavoriteSession()
+        val mode = FakeConnectionMode(initialLocal = true)
+        val controller = controller(backgroundScope, session, mutableListOf(),
+            operation = { _, _, _, _ -> success() }, localMode = mode)
+        val snapshot = session.snapshot()
+        runCurrent()
+        controller.onExternalSyncSucceeded(snapshot)
+        assertFalse(controller.state.value.hasSynced)
+        mode.setLocalModeEnabled(7, false)
+        runCurrent()
+        controller.onExternalSyncSucceeded(snapshot)
+        assertTrue(controller.state.value.hasSynced)
+        mode.setLocalModeEnabled(7, true)
+        runCurrent()
+        assertFalse(controller.state.value.hasSynced)
+        mode.setLocalModeEnabled(7, false)
+        session.switchAccount(8)
+        runCurrent()
+        controller.onExternalSyncSucceeded(snapshot)
+        assertFalse(controller.state.value.hasSynced)
+    }
+
     @Test
     fun `first login builds full cache and notifies only after success`() = runTest {
         val session = TestFavoriteSession()

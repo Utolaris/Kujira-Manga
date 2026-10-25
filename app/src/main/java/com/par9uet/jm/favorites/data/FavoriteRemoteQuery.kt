@@ -6,7 +6,7 @@ import com.par9uet.jm.favorites.data.FavoriteRemoteItem
 import io.github.jukomu.jmcomic.api.model.FavoriteQuery
 import io.github.jukomu.jmcomic.api.model.JmAlbum
 import io.github.jukomu.jmcomic.api.model.JmAlbumMeta
-import kotlinx.coroutines.Dispatchers
+import com.par9uet.jm.core.concurrent.backgroundIoDispatcher
 import kotlinx.coroutines.withContext
 
 data class FavoriteRemotePage(
@@ -33,7 +33,7 @@ class EmbeddedFavoriteRemoteQuery(
     override suspend fun getFavorites(
         folderId: Int,
         page: Int,
-    ): FavoriteRemotePage = withContext(Dispatchers.IO) {
+    ): FavoriteRemotePage = withContext(backgroundIoDispatcher()) {
         requireNotNull(
             authenticatedEmbeddedClient.withClient { client ->
                 client.getFavorites(
@@ -52,11 +52,9 @@ class EmbeddedFavoriteRemoteQuery(
         }
     }
 
-    override suspend fun getMetadata(albumId: Int): FavoriteMetadataPayload = withContext(Dispatchers.IO) {
+    override suspend fun getMetadata(albumId: Int): FavoriteMetadataPayload = withContext(backgroundIoDispatcher()) {
         requireNotNull(
-            authenticatedEmbeddedClient.withClient { client ->
-                client.getAlbum(albumId.toString())
-            }
+            authenticatedEmbeddedClient.getAlbum(albumId.toString())
         ).toFavoriteMetadataPayload()
     }
 }

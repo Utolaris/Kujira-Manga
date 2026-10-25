@@ -42,6 +42,11 @@ class EmbeddedSessionWiringTest {
                     single<com.par9uet.jm.network.EmbeddedRequestLanguageProvider> {
                         com.par9uet.jm.network.EmbeddedRequestLanguageProvider { "CN" }
                     }
+                    single<com.par9uet.jm.storage.ContentLanguagePreferences> {
+                        object : com.par9uet.jm.storage.ContentLanguagePreferences {
+                            override val appLanguage = MutableStateFlow("CN")
+                        }
+                    }
                     // The home-recommendation service is not under test here; a lazy proxy
                     // only satisfies the RetrofitNetworkHomeDataSource constructor.
                     single<com.par9uet.jm.retrofit.service.ComicService> {

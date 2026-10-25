@@ -17,6 +17,7 @@ import com.par9uet.jm.startup.StartupHomeLoad
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -63,7 +64,7 @@ class HomeViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private class FakeSettings : ContentPreferences, RecommendationPreferences, com.par9uet.jm.storage.MiscSettingsPreferences {
+    private class FakeSettings : ContentPreferences, RecommendationPreferences, com.par9uet.jm.storage.ContentLanguagePreferences, com.par9uet.jm.storage.MiscSettingsPreferences {
         constructor()
 
         constructor(recommendEnabled: Boolean) {
@@ -79,6 +80,7 @@ class HomeViewModelTest {
         override val blockedCommentKeywords = kotlinx.coroutines.flow.MutableStateFlow(emptyList<String>())
         private val _preferenceRecommendEnabled = MutableStateFlow(false)
         override val preferenceRecommendEnabled = _preferenceRecommendEnabled.asStateFlow()
+        override val appLanguage = MutableStateFlow("CN")
         override val misc = MutableStateFlow(com.par9uet.jm.storage.MiscSettingsState())
     }
 
@@ -173,6 +175,58 @@ class HomeViewModelTest {
         NetWorkResult.Success(listOf(item(categoryId.hashCode())))
 
     @Test
+    fun changingLanguageReloadsPromoteAndEmbeddedCaches() = runTest(scheduler) {
+        val settings = FakeSettings(recommendEnabled = true)
+        val repo = FakeComicRepository(
+            embeddedHandler = { NetWorkResult.Success(listOf(item(9).copy(name = settings.appLanguage.value))) },
+            networkHandler = {
+                NetWorkResult.Success(listOf(
+                    page("first", "first", listOf(item(1))),
+                    page("second", "second", listOf(item(2).copy(name = settings.appLanguage.value))),
+                ))
+            },
+        )
+        val vm = HomeViewModel(repo, settings, settings, settings, unreadStatus, settings)
+        vm.refreshHome()
+        advanceUntilIdle()
+        vm.selectHomeCategory(HomeViewModel.CATEGORY_LATEST)
+        advanceUntilIdle()
+        assertEquals("CN", vm.homeState.value.states[HomeViewModel.CATEGORY_LATEST]?.content?.single()?.name)
+
+        settings.appLanguage.value = "TW"
+        vm.refreshHome()
+        advanceUntilIdle()
+        assertEquals(2, repo.networkPageCalls)
+        assertEquals("TW", vm.homeState.value.states["net_second"]?.content?.single()?.name)
+        vm.selectHomeCategory(HomeViewModel.CATEGORY_LATEST)
+        advanceUntilIdle()
+        assertEquals(2, repo.embeddedCalls.count { it == HomeViewModel.CATEGORY_LATEST })
+        assertEquals("TW", vm.homeState.value.states[HomeViewModel.CATEGORY_LATEST]?.content?.single()?.name)
+    }
+
+    @Test
+    fun responseFromPreviousLanguageCannotReplaceNewHome() = runTest(scheduler) {
+        val settings = FakeSettings(recommendEnabled = true)
+        settings.appLanguage.value = "TW"
+        val oldResponse = kotlinx.coroutines.CompletableDeferred<NetWorkResult<List<HomeComicSwiperItem>>>()
+        var calls = 0
+        val repo = FakeComicRepository(networkHandler = {
+            if (++calls == 1) oldResponse.await()
+            else NetWorkResult.Success(listOf(page("new", "简体推荐", listOf(item(2)))))
+        })
+        val vm = HomeViewModel(repo, settings, settings, settings, unreadStatus, settings)
+        vm.refreshHome()
+        runCurrent()
+        settings.appLanguage.value = "CN"
+        vm.refreshHome()
+        runCurrent()
+        oldResponse.complete(NetWorkResult.Success(listOf(page("old", "旧语言推荐", listOf(item(1))))))
+        advanceUntilIdle()
+        assertEquals("net_new", vm.homeState.value.selectedCategoryId)
+        assertTrue(vm.homeState.value.categories.none { it.id == "net_old" })
+    }
+
+    @Test
     fun coldStartRecommendationFailureRecoversWithoutRestartingOrChangingSelectedCategory() = runTest(scheduler) {
         var online = false
         val repo = FakeComicRepository(
@@ -183,7 +237,7 @@ class HomeViewModelTest {
             },
         )
         val settings = FakeSettings(recommendEnabled = true)
-        val vm = HomeViewModel(repo, settings, settings, settings, unreadStatus)
+        val vm = HomeViewModel(repo, settings, settings, settings, unreadStatus, settings)
         vm.setHomeActive(true)
         try {
             vm.refreshHome()
@@ -203,6 +257,11 @@ class HomeViewModelTest {
             assertTrue(vm.homeState.value.categories.any { it.id == "net_rec" })
             assertEquals("builtin_month_hot", vm.homeState.value.selectedCategoryId)
             assertEquals(existingContent, vm.homeState.value.states["builtin_month_hot"]!!.content)
+            // 恢复后只补齐栏目入口，不预取正文；点开才显示。
+            assertNull(vm.homeState.value.states["net_rec"])
+            vm.selectHomeCategory("net_rec")
+            runCurrent()
+            assertEquals(2, repo.networkPageCalls)
             assertEquals(listOf(7), vm.homeState.value.states["net_rec"]!!.content.map { it.id })
             advanceTimeBy(120_000)
             runCurrent()
@@ -216,7 +275,7 @@ class HomeViewModelTest {
     fun recommendationRetriesBackOffAndContinueAtOneMinuteWhileHomeIsActive() = runTest(scheduler) {
         val repo = FakeComicRepository(embeddedHandler = { embeddedOk(it) })
         val settings = FakeSettings(recommendEnabled = true)
-        val vm = HomeViewModel(repo, settings, settings, settings, unreadStatus)
+        val vm = HomeViewModel(repo, settings, settings, settings, unreadStatus, settings)
         vm.setHomeActive(true)
         try {
             vm.refreshHome()
@@ -247,7 +306,7 @@ class HomeViewModelTest {
             },
         )
         val settings = FakeSettings(recommendEnabled = true)
-        val vm = HomeViewModel(repo, settings, settings, settings, unreadStatus)
+        val vm = HomeViewModel(repo, settings, settings, settings, unreadStatus, settings)
         vm.setHomeActive(true)
         try {
             vm.refreshHome()
@@ -282,7 +341,7 @@ class HomeViewModelTest {
             },
         )
         val settings = FakeSettings(recommendEnabled = true)
-        val vm = HomeViewModel(repo, settings, settings, settings, unreadStatus)
+        val vm = HomeViewModel(repo, settings, settings, settings, unreadStatus, settings)
         vm.setHomeActive(true)
         try {
             vm.refreshHome()
@@ -307,7 +366,6 @@ class HomeViewModelTest {
     fun emptyRecommendationResponseIsNotCachedForTheWholeProcess() = runTest(scheduler) {
         var first = true
         val repo = FakeComicRepository(
-            embeddedHandler = { embeddedOk(it) },
             networkHandler = {
                 val items = if (first) emptyList() else listOf(item(7))
                 first = false
@@ -315,16 +373,16 @@ class HomeViewModelTest {
             },
         )
         val settings = FakeSettings(recommendEnabled = true)
-        val vm = HomeViewModel(repo, settings, settings, settings, unreadStatus)
+        val vm = HomeViewModel(repo, settings, settings, settings, unreadStatus, settings)
         vm.setHomeActive(true)
         try {
             vm.refreshHome()
             runCurrent()
+            // 空响应按失败处理：先退回内置分类，不把空栏目缓存为进程级成功结果。
+            delay(1_000)
+            assertEquals(1, repo.embeddedCalls.size)
             assertTrue(vm.homeState.value.categories.none { it.id.startsWith("net_") })
-            advanceTimeBy(2_000)
-            runCurrent()
-            assertEquals(2, repo.networkPageCalls)
-            assertTrue(vm.homeState.value.categories.any { it.id == "net_rec" })
+            assertEquals("builtin_week_hot", vm.homeState.value.selectedCategoryId)
         } finally {
             vm.setHomeActive(false)
         }
@@ -339,18 +397,20 @@ class HomeViewModelTest {
             NetWorkResult.Success(listOf(page("rec", "推荐", items)))
         })
         val settings = FakeSettings(recommendEnabled = true)
-        val vm = HomeViewModel(repo, settings, settings, settings, unreadStatus)
+        val vm = HomeViewModel(repo, settings, settings, settings, unreadStatus, settings)
         vm.setHomeActive(true)
         try {
             vm.refreshHome()
             runCurrent()
+            // 空响应不发布推荐栏目：首页回到内置分类的首屏，并立即加载它。
             vm.refreshSelectedHomeCategory()
-            advanceUntilIdle()
+            runCurrent()
 
             assertEquals(2, repo.networkPageCalls)
-            assertEquals("net_rec", vm.homeState.value.selectedCategoryId)
-            assertEquals(listOf(7), vm.homeState.value.states["net_rec"]!!.content.map { it.id })
-            assertFalse(vm.homeState.value.states["net_rec"]!!.isLoading)
+            assertTrue(vm.homeState.value.categories.none { it.id.startsWith("net_") })
+            assertEquals("builtin_week_hot", vm.homeState.value.selectedCategoryId)
+            // 内置分类状态只保留真正由请求填充的内容；空响应不留下伪造的成功状态。
+            assertTrue(vm.homeState.value.states["builtin_week_hot"]?.content.isNullOrEmpty())
         } finally {
             vm.setHomeActive(false)
         }
@@ -360,7 +420,7 @@ class HomeViewModelTest {
     fun recommendOffStartupPromotesCurrentSecondPageToFirst() = runTest(scheduler) {
         val repo = FakeComicRepository(embeddedHandler = { embeddedOk(it) })
         val settings = FakeSettings()
-        val vm = HomeViewModel(repo, settings, settings, settings, unreadStatus)
+        val vm = HomeViewModel(repo, settings, settings, settings, unreadStatus, settings)
 
         vm.refreshHome()
         advanceUntilIdle()
@@ -390,7 +450,7 @@ class HomeViewModelTest {
             },
         )
         val settings = FakeSettings(recommendEnabled = true)
-        val vm = HomeViewModel(repo, settings, settings, settings, unreadStatus)
+        val vm = HomeViewModel(repo, settings, settings, settings, unreadStatus, settings)
 
         vm.refreshHome()
         advanceUntilIdle()
@@ -402,15 +462,23 @@ class HomeViewModelTest {
             listOf("C108推荐本本", "连载漫画", "其它栏目", "本周热门"),
             vm.homeState.value.categories.take(4).map { it.title },
         )
+        // 首屏只加载可视栏目：其余推荐栏目只有目录，正文等点击。
         assertEquals(listOf(2), vm.homeState.value.states["net_rec"]?.content?.map { it.id })
-        assertEquals(listOf(1), vm.homeState.value.states["net_serial"]?.content?.map { it.id })
-        assertEquals(listOf(3), vm.homeState.value.states["net_other"]?.content?.map { it.id })
+        assertNull(vm.homeState.value.states["net_serial"])
+        assertNull(vm.homeState.value.states["net_other"])
         assertNull(vm.homeState.value.states[HomeViewModel.CATEGORY_LATEST])
 
         vm.selectHomeCategory("net_rec")
         advanceUntilIdle()
         assertEquals(1, repo.networkPageCalls)
         assertEquals(listOf(2), vm.homeState.value.states["net_rec"]?.content?.map { it.id })
+
+        // 点击其它推荐栏目：从已拿到的目录里取完整列表，不再发请求。
+        vm.selectHomeCategory("net_other")
+        advanceUntilIdle()
+        assertEquals("net_other", vm.homeState.value.selectedCategoryId)
+        assertEquals(1, repo.networkPageCalls)
+        assertEquals(listOf(3), vm.homeState.value.states["net_other"]?.content?.map { it.id })
     }
 
     @Test
@@ -432,6 +500,7 @@ class HomeViewModelTest {
             FakeSettings(),
             FakeSettings(),
             unreadStatus,
+            FakeSettings(),
         )
 
         vm.refreshHome()
@@ -442,6 +511,7 @@ class HomeViewModelTest {
             vm.homeState.value.categories.take(3).map { it.title },
         )
         assertEquals(listOf(2), vm.homeState.value.states["net_rec"]?.content?.map { it.id })
+        assertNull(vm.homeState.value.states["net_serial"])
     }
 
     @Test
@@ -463,6 +533,7 @@ class HomeViewModelTest {
             FakeSettings(),
             FakeSettings(),
             unreadStatus,
+            FakeSettings(),
         )
 
         vm.refreshHome()
@@ -473,6 +544,10 @@ class HomeViewModelTest {
             vm.homeState.value.categories.take(3).map { it.title },
         )
         assertEquals("net_second", vm.homeState.value.selectedCategoryId)
+        // 首位栏目只有点开才进正文。
+        assertNull(vm.homeState.value.states["net_first"])
+        vm.selectHomeCategory("net_first")
+        advanceUntilIdle()
         assertEquals(listOf(1), vm.homeState.value.states["net_first"]?.content?.map { it.id })
     }
 
@@ -480,7 +555,7 @@ class HomeViewModelTest {
     fun clickingCategoryRequestsItOnceThenUsesCache() = runTest(scheduler) {
         val repo = FakeComicRepository(embeddedHandler = { embeddedOk(it) })
         val settings = FakeSettings()
-        val vm = HomeViewModel(repo, settings, settings, settings, unreadStatus)
+        val vm = HomeViewModel(repo, settings, settings, settings, unreadStatus, settings)
 
         vm.refreshHome()
         advanceUntilIdle()
@@ -508,7 +583,7 @@ class HomeViewModelTest {
     fun forceRefreshOnlyRefreshesCurrentCategory() = runTest(scheduler) {
         val repo = FakeComicRepository(embeddedHandler = { embeddedOk(it) })
         val settings = FakeSettings()
-        val vm = HomeViewModel(repo, settings, settings, settings, unreadStatus)
+        val vm = HomeViewModel(repo, settings, settings, settings, unreadStatus, settings)
 
         vm.refreshHome()
         advanceUntilIdle()
@@ -538,7 +613,7 @@ class HomeViewModelTest {
             networkHandler = { NetWorkResult.Success(listOf(page("home", "首页", listOf(item(3))))) },
         )
         val settings = FakeSettings()
-        val vm = HomeViewModel(repo, settings, settings, settings, unreadStatus)
+        val vm = HomeViewModel(repo, settings, settings, settings, unreadStatus, settings)
 
         vm.refreshHome()
         advanceUntilIdle()
@@ -575,7 +650,7 @@ class HomeViewModelTest {
             },
         )
         val settings = FakeSettings()
-        val vm = HomeViewModel(repo, settings, settings, settings, unreadStatus)
+        val vm = HomeViewModel(repo, settings, settings, settings, unreadStatus, settings)
 
         vm.refreshHome()
         advanceUntilIdle()
@@ -607,7 +682,7 @@ class HomeViewModelTest {
             },
         )
         val settings = FakeSettings()
-        val vm = HomeViewModel(repo, settings, settings, settings, unreadStatus)
+        val vm = HomeViewModel(repo, settings, settings, settings, unreadStatus, settings)
 
         // 默认只加载交换后的 Embedded 第 1 页。
         vm.refreshHome()
@@ -626,7 +701,7 @@ class HomeViewModelTest {
         assertTrue(vm.homeState.value.categories.any { it.id == HomeViewModel.CATEGORY_LATEST })
         assertEquals("net_rec", vm.homeState.value.selectedCategoryId)
 
-        // 关闭网络推荐：回到 Embedded，并复用已加载的首屏缓存。
+        // 关闭网络推荐：回到 Embedded。首屏分类此前从未加载过，此时才按需请求一次。
         settings.setRecommendEnabled(false)
         vm.refreshHome()
         advanceUntilIdle()
@@ -658,7 +733,7 @@ class HomeViewModelTest {
             },
         )
         val settings = FakeSettings()
-        val vm = HomeViewModel(repo, settings, settings, settings, unreadStatus)
+        val vm = HomeViewModel(repo, settings, settings, settings, unreadStatus, settings)
 
         vm.refreshHome()
         advanceUntilIdle()
@@ -691,7 +766,7 @@ class HomeViewModelTest {
                 if (categoryId == "builtin_week_hot") aGate.await() else embeddedOk(categoryId)
             },
         )
-        val vm = HomeViewModel(repo, FakeSettings(), FakeSettings(), FakeSettings(), unreadStatus)
+        val vm = HomeViewModel(repo, FakeSettings(), FakeSettings(), FakeSettings(), unreadStatus, FakeSettings())
         vm.refreshHome()
         advanceUntilIdle()
 
@@ -725,7 +800,7 @@ class HomeViewModelTest {
                 }
             },
         )
-        val vm = HomeViewModel(repo, FakeSettings(), FakeSettings(), FakeSettings(), unreadStatus)
+        val vm = HomeViewModel(repo, FakeSettings(), FakeSettings(), FakeSettings(), unreadStatus, FakeSettings())
         vm.refreshHome()
         advanceUntilIdle()
 
@@ -755,7 +830,7 @@ class HomeViewModelTest {
         )
         val startup = StartupHomeLoad()
         val settings = FakeSettings(recommendEnabled = true)
-        val vm = HomeViewModel(repo, settings, settings, settings, unreadStatus, startup)
+        val vm = HomeViewModel(repo, settings, settings, settings, unreadStatus, settings, startup)
         vm.refreshHome(); runCurrent()
         var ready = false
         val waiting = backgroundScope.launch { startup.awaitIdle(); ready = true }

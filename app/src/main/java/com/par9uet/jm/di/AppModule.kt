@@ -80,6 +80,7 @@ val LOCAL_SETTING_MANAGER_ALIASES = arrayOf(
     AppearancePreferences::class,
     AppearanceEditor::class,
     ApiEndpointPreference::class,
+    com.par9uet.jm.storage.CoverCachePreferences::class,
     ContentLanguagePreferences::class,
     MiscSettingsPreferences::class,
     AppExperiencePreferences::class,
@@ -193,6 +194,9 @@ val appModule = module {
             refreshFavorites = { snapshot -> get<com.par9uet.jm.favorites.usecase.SyncFavorites>().synchronize(snapshot, force = true) },
             localFavoriteChanges = get(),
             toastManager = get(),
+            onFavoritesSynced = { snapshot ->
+                get<com.par9uet.jm.favorites.sync.FavoriteSyncController>().onExternalSyncSucceeded(snapshot)
+            },
         )
     }
     single<com.par9uet.jm.core.model.FavoriteForceAlign> {
@@ -217,7 +221,7 @@ val appModule = module {
         com.par9uet.jm.cache.molecule.CacheCleanupOperations(
             get(),
             clearCoverCache = {
-                kotlinx.coroutines.withContext(Dispatchers.IO) {
+                kotlinx.coroutines.withContext(com.par9uet.jm.core.concurrent.backgroundIoDispatcher()) {
                     get<com.par9uet.jm.coil.CoverImageLoaderHolder>().clearDiskCache()
                 }
             },
@@ -229,7 +233,9 @@ val appModule = module {
     viewModel { com.par9uet.jm.ui.viewModel.CacheCleanupViewModel(get(), get(), get(), get()) }
     single { DownloadToastAggregator(get()) }
     single { com.par9uet.jm.startup.StartupHomeLoad() }
-    single { PostStartupCoordinator(get(), GlobalContext.get()) }
+    single { com.par9uet.jm.core.concurrent.BackgroundWork() }
+    single { com.par9uet.jm.core.concurrent.ForegroundWork() }
+    single { PostStartupCoordinator(get(), GlobalContext.get(), get<com.par9uet.jm.core.concurrent.BackgroundWork>().context, get()) }
     single { AppUpdateDownloadManager(get(), get(), get(), get(), get()) } bind com.par9uet.jm.update.AppUpdateDownloads::class
     single {
         com.par9uet.jm.update.GithubReleaseSource(get())

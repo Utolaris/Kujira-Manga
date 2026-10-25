@@ -16,8 +16,6 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Test
-import org.koin.dsl.koinApplication
-import org.koin.dsl.module
 import java.io.IOException
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -48,19 +46,13 @@ class StartupCacheCleanupTest {
         var coverClears = 0
         val operations = CacheCleanupOperations(files, { coverClears++ }, { readerClears++ }, { fail("Exempt downloads must stay untouched") })
         val check = StartupCacheCleanup(files, settings(), operations)
-        val application = koinApplication { modules(module { single { check } }) }
-        try {
-            val coordinator = PostStartupCoordinator(backgroundScope, application.koin)
-            coordinator.start()
-            runCurrent()
-            coordinator.start()
-            check.checkOnce()
-            runCurrent()
-            assertEquals(1, files.scans)
-            assertEquals(1, readerClears)
-            assertEquals(1, coverClears)
-            assertTrue(files.removals.isEmpty())
-        } finally { application.close() }
+        // Startup ordering is covered by ColdStartFavoriteSyncTest with the full dependency graph.
+        check.checkOnce()
+        check.checkOnce()
+        assertEquals(1, files.scans)
+        assertEquals(1, readerClears)
+        assertEquals(1, coverClears)
+        assertTrue(files.removals.isEmpty())
     }
 
     @Test fun `at or below quota does not clean and unlimited does not scan`() = runTest {

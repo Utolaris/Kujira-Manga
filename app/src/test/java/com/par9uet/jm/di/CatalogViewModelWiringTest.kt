@@ -40,11 +40,13 @@ class CatalogViewModelWiringTest {
             }
         } as ComicRepository
         val settings = object : ContentPreferences, RecommendationPreferences,
+            com.par9uet.jm.storage.ContentLanguagePreferences,
             com.par9uet.jm.storage.BlockedTagTemplatePreferences,
             com.par9uet.jm.storage.MiscSettingsPreferences {
             override val blockedTags = MutableStateFlow(emptyList<String>())
             override val blockedCommentKeywords = kotlinx.coroutines.flow.MutableStateFlow(emptyList<String>())
             override val preferenceRecommendEnabled = MutableStateFlow(false)
+            override val appLanguage = MutableStateFlow("CN")
             override val blockedTagTemplates =
                 MutableStateFlow(emptyList<com.par9uet.jm.data.models.BlockedTagTemplate>())
             override val misc = MutableStateFlow(com.par9uet.jm.storage.MiscSettingsState())
@@ -68,6 +70,7 @@ class CatalogViewModelWiringTest {
                 }
                 single<ContentPreferences> { settings }
                 single<RecommendationPreferences> { settings }
+                single<com.par9uet.jm.storage.ContentLanguagePreferences> { settings }
                 single<com.par9uet.jm.storage.BlockedTagTemplatePreferences> { settings }
                 single<com.par9uet.jm.storage.MiscSettingsPreferences> { settings }
                 single { historySearchManager }

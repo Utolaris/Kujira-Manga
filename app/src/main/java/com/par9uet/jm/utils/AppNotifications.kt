@@ -49,7 +49,7 @@ fun ensureAppNotificationChannels(context: Context) {
         "收藏同步",
         NotificationManager.IMPORTANCE_LOW,
     ).apply {
-        description = "本地模式切换网络模式时的收藏同步进度"
+        description = "本地收藏模式切换网络模式时的收藏同步进度"
         setSound(null, null)
     })
 }
@@ -158,7 +158,7 @@ fun showLocalModeSyncResultNotification(context: Context, success: Boolean) {
     val notification = NotificationCompat.Builder(context, LOCAL_MODE_SYNC_CHANNEL_ID)
         .setSmallIcon(R.drawable.ic_download_notification)
         .setContentTitle(if (success) "已切换到网络模式" else "收藏同步未完成")
-        .setContentText(if (success) "收藏夹已同步到远端" else "仍处于本地模式（实验性），可稍后重试")
+        .setContentText(if (success) "收藏夹已同步到远端" else "仍处于本地收藏模式，可稍后重试")
         .setContentIntent(openApp)
         .setAutoCancel(true)
         .build()

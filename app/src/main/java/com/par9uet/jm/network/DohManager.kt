@@ -4,13 +4,15 @@ import android.util.Base64
 import com.par9uet.jm.storage.DohPreferences
 import com.par9uet.jm.storage.DohPreferencesEditor
 import com.par9uet.jm.utils.applyCertificateTrust
-import kotlinx.coroutines.Dispatchers
+import com.par9uet.jm.core.concurrent.backgroundIoDispatcher
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -106,7 +108,7 @@ class DohManager(
         dohEditor.persistAutoSelectFastest(enabled)
 
     /**
-     * Probes every built-in route in parallel and switches to the fastest one that answered.
+     * Probes built-in routes with at most two concurrent requests and selects the fastest response.
      *
      * Deliberately not part of [init]: the probe is best-effort and must never delay the first
      * screen or the authenticated startup traffic. A switch retires the previous resolver, so the
@@ -121,7 +123,8 @@ class DohManager(
         if (!sessionEnabled || !setting.enabled) return null
 
         val probes = coroutineScope {
-            builtinDohServers.map { server -> async { server to testServer(server) } }.awaitAll()
+            val permits = Semaphore(2)
+            builtinDohServers.map { server -> async { permits.withPermit { server to testServer(server) } } }.awaitAll()
         }
         val winner = probes
             .mapNotNull { (server, result) -> result.elapsedMs?.let { server to it } }
@@ -162,7 +165,7 @@ class DohManager(
         publishStatus(lastError = "")
     }
 
-    suspend fun testServer(server: DohServer): DohLatencyResult = withContext(Dispatchers.IO) {
+    suspend fun testServer(server: DohServer): DohLatencyResult = withContext(backgroundIoDispatcher()) {
         val startedAt = System.nanoTime()
         var testResolver: DohResolver? = null
         val result = runCatching {
@@ -187,8 +190,9 @@ class DohManager(
     suspend fun init() {
         val setting = dohPrefs.doh.value
         sessionEnabled = setting.enabled && setting.autoStart
-        // A first screen request may already have created it. Reuse that resolver so startup
-        // does not close it and cancel the requests that are restoring the reader.
+        // 首屏请求（内置分类、/promote 等）走不带 DoH 的内置客户端，因此这里通常是首次创建解析器；
+        // 若阅读器等路径已经先建好，ensureResolver 只在 key 变化时重建，不会关闭现有解析器、
+        // 打断正在恢复阅读的请求。
         ensureResolver()
     }
 

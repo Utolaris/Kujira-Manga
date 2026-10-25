@@ -4,7 +4,7 @@ import com.par9uet.jm.core.network.OfficialApiSignature
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient
 import io.github.jukomu.jmcomic.core.constant.JmConstants
 import io.github.jukomu.jmcomic.core.net.model.JmApiResponse
-import kotlinx.coroutines.Dispatchers
+import com.par9uet.jm.core.concurrent.backgroundIoDispatcher
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
 import okhttp3.MultipartBody
@@ -13,7 +13,7 @@ import okhttp3.Request
 /** 官方通知协议；共享活动会话、域名切换、DoH 和 SDK 传输。 */
 class EmbeddedNotificationApi(private val authenticated: AuthenticatedEmbeddedClient) {
     suspend fun request(method: String, path: String, parameters: Map<String, String>): String =
-        withContext(Dispatchers.IO) {
+        withContext(backgroundIoDispatcher()) {
             requireNotNull(authenticated.withClient { client -> executeNotificationRequest(client, method, path, parameters) })
         }
 }

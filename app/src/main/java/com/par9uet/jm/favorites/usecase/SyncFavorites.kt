@@ -9,19 +9,17 @@ import com.par9uet.jm.core.network.NetWorkResult
 import com.par9uet.jm.favorites.data.FAVORITE_SCOPE_ALL
 import com.par9uet.jm.favorites.data.FavoriteMetadataPayload
 import com.par9uet.jm.favorites.data.FavoriteRemoteItem
-import com.par9uet.jm.favorites.sync.FavoriteSyncProgress
-import com.par9uet.jm.favorites.sync.FavoriteSyncReport
+import com.par9uet.jm.favorites.model.FavoriteSyncProgress
+import com.par9uet.jm.favorites.model.FavoriteSyncReport
 import com.par9uet.jm.favorites.model.FavoriteSession
 import com.par9uet.jm.favorites.model.FavoriteSessionSnapshot
 import com.par9uet.jm.utils.log
 import com.par9uet.jm.utils.logError
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
+import com.par9uet.jm.core.concurrent.backgroundIoDispatcher
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
 /** Coordinates persistent favorite synchronization without owning favorite persistence. */
@@ -171,7 +169,7 @@ class SyncFavorites(
         progressPhase: String = "收藏页面",
     ): RemoteFavoriteSnapshot {
         val startedAt = elapsedRealtime()
-        val snapshot = withContext(Dispatchers.IO) {
+        val snapshot = withContext(backgroundIoDispatcher()) {
             val items = mutableListOf<FavoriteRemoteItem>()
             val folders = mutableMapOf<Int, String>()
             var page = 1
@@ -228,16 +226,22 @@ class SyncFavorites(
         val distinctIds = ids.distinct()
         if (distinctIds.isEmpty()) return@coroutineScope MetadataFetchResult(emptyList(), 0)
         val startedAt = elapsedRealtime()
-        val semaphore = Semaphore(FAVORITE_METADATA_CONCURRENCY)
+        val resultsByIndex = arrayOfNulls<Result<FavoriteMetadataPayload>>(distinctIds.size)
+        val lock = Any()
+        var nextIndex = 0
         var completed = 0
-        val results = distinctIds.map { albumId ->
-            async(Dispatchers.IO) {
-                semaphore.withPermit {
-                    try {
-                        // Album metadata is public and can be fetched concurrently. The account's
-                        // local write still requires the captured session under the commit lock.
+        // Keep a fixed worker set even for thousands of missing records. A semaphore around
+        // one coroutine per comic still allocates and schedules the entire collection up front.
+        List(minOf(FAVORITE_METADATA_CONCURRENCY, distinctIds.size)) {
+            async(backgroundIoDispatcher()) {
+                while (true) {
+                    val index = synchronized(lock) {
+                        if (nextIndex == distinctIds.size) return@async
+                        nextIndex++
+                    }
+                    val result = try {
                         check(session.isCurrent(sessionSnapshot)) { "登录账号已变化" }
-                        val metadata = remoteQuery.getMetadata(albumId)
+                        val metadata = remoteQuery.getMetadata(distinctIds[index])
                         check(session.isCurrent(sessionSnapshot)) { "登录账号已变化" }
                         Result.success(metadata)
                     } catch (e: CancellationException) {
@@ -245,14 +249,15 @@ class SyncFavorites(
                     } catch (e: Exception) {
                         Result.failure(e)
                     }
-                }.also {
-                    synchronized(distinctIds) {
+                    synchronized(lock) {
+                        resultsByIndex[index] = result
                         completed++
                         onProgress(FavoriteSyncProgress(completed, distinctIds.size, "漫画元数据"))
                     }
                 }
             }
         }.awaitAll()
+        val results = resultsByIndex.map { checkNotNull(it) }
         val failures = results.count { it.isFailure }
         log(
             "FavoritesSync",

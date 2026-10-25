@@ -19,6 +19,30 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SyncFavoritesTest {
+    @Test fun `large metadata batches use bounded workers and preserve comic order`() = runTest {
+        val active = java.util.concurrent.atomic.AtomicInteger()
+        val peak = java.util.concurrent.atomic.AtomicInteger()
+        val session = TestFavoriteSession()
+        val local = LocalSnapshot()
+        val remote = Remote().apply {
+            pageHandler = { _, _ -> FavoriteRemotePage(
+                (1..1_000).map { FavoriteRemoteItem(it, "item $it") }, mapOf(0 to "全部"), 1_000, 1,
+            ) }
+            metadataHandler = { id ->
+                peak.accumulateAndGet(active.incrementAndGet(), ::maxOf)
+                try {
+                    kotlinx.coroutines.yield()
+                    FavoriteMetadataPayload(id, "item", "", emptyList(), emptyList(), emptyList(), emptyList())
+                } finally { active.decrementAndGet() }
+            }
+        }
+        val result = SyncFavorites(remote, local, session) { 0L }.synchronize(session.snapshot())
+        assertTrue(result is NetWorkResult.Success)
+        assertEquals((1..1_000).toList(), local.appliedMetadata)
+        assertTrue(peak.get() in 1..4)
+        assertEquals(0, active.get())
+    }
+
     @Test
     fun `network failures explain how to recover`() = runTest {
         val session = TestFavoriteSession()
@@ -95,6 +119,7 @@ class SyncFavoritesTest {
         var markedSuccessful = false
         var completedAt: Long? = null
         var onReplace: () -> Unit = {}
+        val appliedMetadata = mutableListOf<Int>()
         override suspend fun replaceAllSnapshot(
             accountId: Int, remoteItems: List<FavoriteRemoteItem>, remoteFolders: Map<Int, String>,
             metadata: List<FavoriteMetadataPayload>, syncedAt: Long, forceRefreshedAt: Long,
@@ -104,7 +129,9 @@ class SyncFavoritesTest {
             accountId: Int, scopeFolderId: Int, remoteItems: List<FavoriteRemoteItem>,
             remoteFolders: Map<Int, String>, syncedAt: Long,
         ) = FavoriteSyncDelta(0, 0, 0, remoteItems.size, remoteItems.map { it.albumId })
-        override suspend fun applyMetadata(accountId: Int, payload: FavoriteMetadataPayload, syncedAt: Long) = Unit
+        override suspend fun applyMetadata(accountId: Int, payload: FavoriteMetadataPayload, syncedAt: Long) {
+            appliedMetadata += payload.albumId
+        }
         override suspend fun markSyncSuccess(accountId: Int, scopeFolderId: Int, syncedAt: Long) { markedSuccessful = true; completedAt = syncedAt }
     }
 

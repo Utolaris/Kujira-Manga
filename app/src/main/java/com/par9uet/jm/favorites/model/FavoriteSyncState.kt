@@ -1,4 +1,4 @@
-package com.par9uet.jm.favorites.sync
+package com.par9uet.jm.favorites.model
 data class FavoriteSyncProgress(
     val completed: Int = 0,
     val total: Int = 0,

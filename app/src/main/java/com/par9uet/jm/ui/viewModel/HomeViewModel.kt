@@ -7,6 +7,7 @@ import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.data.models.HomeComicSwiperItem
 import com.par9uet.jm.core.network.NetWorkResult
 import com.par9uet.jm.storage.RecommendationPreferences
+import com.par9uet.jm.storage.ContentLanguagePreferences
 import com.par9uet.jm.startup.StartupHomeLoad
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -32,6 +33,7 @@ class HomeViewModel(
     private val contentPreferences: com.par9uet.jm.storage.ContentPreferences,
     private val miscSettingsPreferences: com.par9uet.jm.storage.MiscSettingsPreferences,
     unreadStatus: com.par9uet.jm.notification.model.NotificationUnreadStatus,
+    contentLanguagePreferences: ContentLanguagePreferences,
     private val startupHome: StartupHomeLoad = StartupHomeLoad(),
 ) : ViewModel() {
     /** HomeScreen collects these instead of service-locating LocalSettingManager. */
@@ -39,11 +41,16 @@ class HomeViewModel(
     val blockedTags = contentPreferences.blockedTags
     val misc = miscSettingsPreferences.misc
     val hasUnreadNotifications = unreadStatus.hasUnread
+    val appLanguage = contentLanguagePreferences.appLanguage
 
-    /** 首页分类描述：id 供仓库加载，title 为展示名。 */
+    /**
+     * 首页分类描述：id 供仓库加载，title 为展示名。
+     * content 是该栏目的完整列表，来自 /promote；首次点击前不进正文，避免首屏一次灌入全部栏目。
+     */
     data class HomeCategoryInfo(
         val id: String,
         val title: String,
+        val content: List<Comic> = emptyList(),
     )
 
     data class HomeCategoryLoadState(
@@ -71,6 +78,7 @@ class HomeViewModel(
     private var homeTopologyGeneration = 0L
     private var homeRequestGeneration = 0L
     private var lastPreferenceRecommendEnabled: Boolean? = null
+    private var lastAppLanguage = appLanguage.value
     private val homeCategoryCache =
         mutableMapOf<String, List<Comic>>()
     private var networkHomeCache: List<HomeComicSwiperItem>? = null
@@ -104,10 +112,18 @@ class HomeViewModel(
         )
     }
 
-    /** Rebuild Home from Embedded categories plus the optional network recommendation feed. */
+    /**
+     * Rebuild Home from Embedded categories plus the optional network recommendation feed.
+     * 只有选中栏目会立即加载；推荐栏目与内置分类都在用户点击后才取完整列表。
+     */
     fun refreshHome() {
         val recommendEnabled = recommendationPreferences.preferenceRecommendEnabled.value
-        val topologyChanged = recommendEnabled != lastPreferenceRecommendEnabled
+        val languageChanged = appLanguage.value != lastAppLanguage
+        if (languageChanged) {
+            homeCategoryCache.clear()
+            networkHomeCache = null
+        }
+        val topologyChanged = recommendEnabled != lastPreferenceRecommendEnabled || languageChanged
         if (topologyChanged) {
             promoteRetryJob?.cancel()
             promoteRetryJob = null
@@ -119,6 +135,7 @@ class HomeViewModel(
             _homeState.value = HomeUIState()
         }
         lastPreferenceRecommendEnabled = recommendEnabled
+        lastAppLanguage = appLanguage.value
 
         if (recommendEnabled) {
             val cached = networkHomeCache
@@ -129,6 +146,10 @@ class HomeViewModel(
             }
         } else {
             applyEmbeddedHome()
+        }
+        // 推荐开启时 /promote 只给栏目名与首屏列表；内置分类与未点开的推荐栏目按需加载。
+        _homeState.value.selectedCategoryId?.let { selected ->
+            if (_homeState.value.categories.any { it.id == selected }) ensureCategoryLoaded(selected)
         }
     }
 
@@ -182,15 +203,13 @@ class HomeViewModel(
         val state = _homeState.value.states[categoryId]
         val active = activeCategoryLoads[categoryId]
         if (!force && active?.topologyGeneration == homeTopologyGeneration) return
-        if (!force && homeCategoryCache.containsKey(categoryId)) {
-            hydrateCategory(categoryId)
-            return
-        }
+        if (!force && hydrateCategory(categoryId)) return
 
         if (isPromoteCategory(categoryId)) {
+            // 推荐栏目的内容随 /promote 下发；点击未加载的栏目就是按需补齐这份目录。
             loadPromoteSections(
                 force = force,
-                refreshingCategoryId = categoryId,
+                loadingCategoryId = categoryId,
             )
             return
         }
@@ -238,9 +257,13 @@ class HomeViewModel(
         }.also(startupHome::track)
     }
 
+    /**
+     * 拉取 /promote 栏目目录。首批内容只随响应填充尚未显示的栏目；之后切换栏目一律走
+     * [hydrateCategory]，不重新缓存整份推荐。
+     */
     private fun loadPromoteSections(
         force: Boolean = false,
-        refreshingCategoryId: String? = null,
+        loadingCategoryId: String? = null,
     ) {
         val active = activeCategoryLoads[PROMOTE_LOAD_KEY]
         if (!force && active?.topologyGeneration == homeTopologyGeneration) return
@@ -249,7 +272,8 @@ class HomeViewModel(
 
         val token = newHomeRequestToken(PROMOTE_LOAD_KEY)
         activeCategoryLoads[PROMOTE_LOAD_KEY] = token
-        refreshingCategoryId?.let { categoryId ->
+        // 点击未加载的推荐栏目时可见分类还没进 categories，只能先标记它的加载状态。
+        loadingCategoryId?.let { categoryId ->
             val current = _homeState.value.states[categoryId] ?: HomeCategoryLoadState()
             updateCategoryState(
                 categoryId,
@@ -264,27 +288,35 @@ class HomeViewModel(
                 if (!isCurrentHomeRequest(token)) return@launch
                 when (result) {
                     is NetWorkResult.Success -> {
-                        // 空响应也不能作为整个进程的成功缓存，否则再也没有补齐栏目的机会。
-                        val hasContent = result.data.any { it.list.isNotEmpty() }
+                        // 空响应不算可用推荐：不能被缓存成整个进程的成功结果，否则再也没有补齐栏目的机会，
+                        // 只有拿到非空栏目目录才算这次推荐请求成功。
+                        val hasContent = result.data.isNotEmpty()
                         promoteRetryNeeded = !hasContent
                         if (hasContent) {
                             networkHomeCache = result.data
                             promoteRetryAttempt = 0
                             applyPromoteHome(result.data)
                         } else {
-                            // 已有可用推荐时，暂时空响应也不能把栏目与内容抹掉。
-                            networkHomeCache?.let(::applyPromoteHome) ?: applyEmbeddedHome()
+                            // 已有可用推荐时，暂时空响应也不能把栏目抹掉，只重试；
+                            // 没有可用缓存时退回内置分类，并立即补齐选中栏目。
+                            val cached = networkHomeCache
+                            if (cached != null) {
+                                applyPromoteHome(cached)
+                            } else {
+                                applyEmbeddedHome()
+                            }
                         }
                     }
 
                     is NetWorkResult.Error -> {
                         promoteRetryNeeded = true
                         when {
-                            refreshingCategoryId != null -> {
-                                val current = _homeState.value.states[refreshingCategoryId]
+                            // 点击栏目触发的加载失败只落在该栏目上，不换掉首页。
+                            loadingCategoryId != null -> {
+                                val current = _homeState.value.states[loadingCategoryId]
                                     ?: HomeCategoryLoadState()
                                 updateCategoryState(
-                                    refreshingCategoryId,
+                                    loadingCategoryId,
                                     current.copy(
                                         isLoading = false,
                                         isError = true,
@@ -306,26 +338,30 @@ class HomeViewModel(
         }.also(startupHome::track)
     }
 
+    /**
+     * /promote 只决定栏目顺序与标题；每个栏目的完整列表留在 [HomeCategoryInfo.content]，
+     * 只有当前选中栏目随响应进入正文状态，切换栏目时再取。
+     * 推荐栏目的内容都来自这一份响应，刷新时据此保留用户已加载的栏目。
+     */
     private fun applyPromoteHome(categories: List<HomeComicSwiperItem>) {
-        val promoteSections = swapFirstTwoHomePages(categories.filter { it.list.isNotEmpty() })
+        val promoteSections = categories.filter { it.list.isNotEmpty() }
         if (promoteSections.isEmpty()) {
             applyEmbeddedHome()
             return
         }
-
-        val networkInfos = promoteSections.map { item ->
-            HomeCategoryInfo(networkCategoryId(item.id), item.title)
+        // 前两项换位只调整入口顺序，不改变各栏目自身内容。
+        val networkInfos = swapFirstTwoHomePages(promoteSections).map { item ->
+            HomeCategoryInfo(
+                id = networkCategoryId(item.id),
+                title = item.title,
+                content = item.list,
+            )
         }
         val allInfos = networkInfos + EMBEDDED_CATEGORIES
         val validIds = allInfos.mapTo(mutableSetOf()) { it.id }
         val newStates = _homeState.value.states
             .filterKeys { it in validIds }
             .toMutableMap()
-        promoteSections.forEach { item ->
-            val id = networkCategoryId(item.id)
-            homeCategoryCache[id] = item.list
-            newStates[id] = HomeCategoryLoadState(content = item.list)
-        }
         EMBEDDED_CATEGORIES.forEach { info ->
             homeCategoryCache[info.id]?.let { content ->
                 newStates[info.id] = HomeCategoryLoadState(content = content)
@@ -334,6 +370,16 @@ class HomeViewModel(
         val selected = _homeState.value.selectedCategoryId
             ?.takeIf { it in validIds }
             ?: networkInfos.first().id
+        // 只有当前栏目随本次响应直接显示；其余栏目等点击后再进 states。
+        // 已有内容（含请求中的加载状态/最近一次错误）优先保留，只有真正没有内容时才用目录填充。
+        if (allInfos.any { it.id.startsWith(NETWORK_CATEGORY_PREFIX) }) {
+            allInfos.firstOrNull { it.id == selected && it.content.isNotEmpty() }
+                ?.let { info ->
+                    val existing = newStates[info.id]
+                    newStates[info.id] = existing?.copy(content = info.content)
+                        ?: HomeCategoryLoadState(content = info.content)
+                }
+        }
         _homeState.value = HomeUIState(
             categories = allInfos,
             selectedCategoryId = selected,
@@ -362,15 +408,21 @@ class HomeViewModel(
         ensureCategoryLoaded(selected)
     }
 
-    private fun hydrateCategory(categoryId: String) {
-        val content = homeCategoryCache[categoryId].orEmpty()
+    /** 取出本地已有的栏目内容；没有则返回 false，由调用方决定回源。 */
+    private fun hydrateCategory(categoryId: String): Boolean {
+        val content = homeCategoryCache[categoryId]
+            ?: _homeState.value.categories.firstOrNull { it.id == categoryId }?.content
+        if (content.isNullOrEmpty()) return false
         updateCategoryState(categoryId, HomeCategoryLoadState(content = content))
+        return true
     }
 
     private fun updateCategoryState(
         categoryId: String,
         loadState: HomeCategoryLoadState,
     ) {
+        // 请求进行中就写入正文状态：分类目录可能稍后才到（点击尚未加载的推荐栏目），
+        // 加载中/失败提示不能因为布局替换而丢失，内容仍按需填充。
         _homeState.update {
             it.copy(states = it.states + (categoryId to loadState))
         }

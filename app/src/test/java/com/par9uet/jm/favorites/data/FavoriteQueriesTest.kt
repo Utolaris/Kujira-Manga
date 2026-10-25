@@ -139,8 +139,11 @@ class FavoriteQueriesTest {
 
         assertEquals(listOf<Any?>(7L, 0L, "a", "b"), query.boundArgs())
         assertEquals(2, existsOnTags.findAll(query.sql).count())
-        assertTrue("OR 分支必须把子句括起来：" + query.sql, query.sql.contains(") AND ") || query.sql.contains("))"))
-        assertTrue(query.sql.contains(" OR "))
+        val tagClause = "EXISTS (SELECT 1 FROM favorite_metadata_terms t WHERE t.accountId = c.accountId AND t.albumId = c.albumId AND t.termType = '$FAVORITE_TERM_TAG' AND t.normalizedValue = ?)"
+        assertTrue(
+            "OR 标签必须整体收在账号与文件夹过滤条件内：${query.sql}",
+            query.sql.contains("WHERE c.accountId = ? AND m.folderId = ? AND ($tagClause OR $tagClause) GROUP BY"),
+        )
     }
 
     @Test
@@ -170,13 +173,15 @@ class FavoriteQueriesTest {
             blockedTagList = emptyList(),
             searchText = "",
             selectedTags = emptySet(),
-            selectedAuthors = setOf(" Author "),
+            selectedAuthors = setOf(" Author ", "Second"),
             folderId = 0,
             tagLogic = TagFilterLogic.AND,
         )
 
-        assertEquals(listOf<Any?>(7L, 0L, "author"), query.boundArgs())
-        assertEquals(1, existsOnAuthors.findAll(query.sql).count())
+        assertEquals(listOf<Any?>(7L, 0L, "author", "second"), query.boundArgs())
+        assertEquals(2, existsOnAuthors.findAll(query.sql).count())
+        val authorClause = "EXISTS (SELECT 1 FROM favorite_metadata_terms a WHERE a.accountId = c.accountId AND a.albumId = c.albumId AND a.termType = '$FAVORITE_TERM_AUTHOR' AND a.normalizedValue = ?)"
+        assertTrue(query.sql.contains("AND ($authorClause OR $authorClause) GROUP BY"))
         assertTrue(query.sql.contains("'$FAVORITE_TERM_AUTHOR'"))
     }
 

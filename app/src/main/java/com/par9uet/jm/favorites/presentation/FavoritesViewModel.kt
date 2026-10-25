@@ -8,7 +8,10 @@ import androidx.paging.cachedIn
 import com.par9uet.jm.data.models.TagFilterLogic
 import com.par9uet.jm.favorites.model.FavoriteLocalQuery
 import com.par9uet.jm.favorites.model.FavoriteSession
+import com.par9uet.jm.favorites.model.PendingFavoriteChanges
 import com.par9uet.jm.favorites.model.FavoritesFilter
+import com.par9uet.jm.favorites.model.FavoritesFolderUiState
+import com.par9uet.jm.favorites.model.FavoritesGridUiState
 import com.par9uet.jm.favorites.model.FavoritesIntent
 import com.par9uet.jm.favorites.model.FavoritesModal
 import com.par9uet.jm.favorites.model.FavoritesSelectionState
@@ -67,9 +70,22 @@ class FavoritesViewModel(
     private val localModeExitScheduler: LocalModeExitScheduler,
     private val localFavoriteOperationGate: LocalFavoriteOperationGate,
     private val listPositionMemory: com.par9uet.jm.ui.models.ListPositionMemory,
+    private val pendingChanges: PendingFavoriteChanges,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(FavoritesUiState())
     val uiState = _uiState.asStateFlow()
+    val folderUiState = _uiState.map {
+        FavoritesFolderUiState(it.selectedFolderId, it.folders)
+    }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FavoritesFolderUiState())
+    val gridUiState = _uiState.map {
+        FavoritesGridUiState(
+            selectedFolderId = it.selectedFolderId,
+            filter = it.filter,
+            selection = it.selection,
+            searchActive = it.searchActive,
+            isBuildingInitialCache = it.sync.isSyncing && it.sync.isInitialBuild,
+        )
+    }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FavoritesGridUiState())
 
     private val visibilityPolicy = FavoriteVisibilityPolicy()
     private val accountIdFlow = favoriteSession.accountIdFlow
@@ -101,6 +117,8 @@ class FavoritesViewModel(
                         filter = FavoritesFilter(),
                         modal = null,
                         syncErrorVisible = false,
+                        pendingComicCount = null,
+                        isLocalMode = localMode.isLocalMode,
                     )
                 }
             }
@@ -121,6 +139,25 @@ class FavoritesViewModel(
         viewModelScope.launch {
             syncController.state.collect { sync ->
                 _uiState.update { it.copy(sync = sync, syncErrorVisible = sync.errorMessage != null) }
+            }
+        }
+        viewModelScope.launch {
+            val counts = accountIdFlow.distinctUntilChanged().flatMapLatest { accountId ->
+                pendingChanges.observeCount(accountId).map { accountId to it }
+            }
+            combine(counts, localMode.isLocalModeFlow, localFavoriteOperationGate.isTransitioning) { count, local, busy ->
+                Triple(count, local, busy)
+            }.collect { (count, local, busy) ->
+                if (count.first != currentAccountId()) return@collect
+                _uiState.update {
+                    it.copy(
+                        isLocalMode = local,
+                        pendingComicCount = count.second,
+                        isLocalModeSyncing = busy,
+                        sync = if (busy && !it.isLocalModeSyncing) it.sync.copy(hasSynced = false) else it.sync,
+                        modal = if (!local && it.modal is FavoritesModal.LocalSync) null else it.modal,
+                    )
+                }
             }
         }
     }
@@ -151,7 +188,9 @@ class FavoritesViewModel(
         )
     }.flatMapLatest { key ->
         Pager(
-            config = PagingConfig(pageSize = 20, prefetchDistance = 6, initialLoadSize = 20),
+            // The grid renders real cards only. Room's counted null placeholders would have
+            // no card height, then grow during the fling as each local page arrives.
+            config = PagingConfig(pageSize = 20, prefetchDistance = 6, initialLoadSize = 20, enablePlaceholders = false),
             pagingSourceFactory = {
                 localQuery.pagingSource(
                     accountId = key.accountId,
@@ -199,9 +238,9 @@ class FavoritesViewModel(
                 }
             }
             FavoritesIntent.ManualSync -> {
-                // 本地模式下点同步 = 主动结束本地模式并立刻补偿到远端（见本地模式说明弹窗）。
+                if (localFavoriteOperationGate.isTransitioning()) return
                 if (localMode.isLocalMode) {
-                    if (!localModeExitScheduler.request()) toastManager.showAsync("无法启动收藏同步，请重试")
+                    _uiState.update { it.copy(modal = FavoritesModal.LocalSync(currentAccountId())) }
                 } else {
                     viewModelScope.launch {
                         if (allowNetworkFeature()) syncController.request(
@@ -209,6 +248,16 @@ class FavoritesViewModel(
                             folderId = _uiState.value.selectedFolderId,
                         )
                     }
+                }
+            }
+            FavoritesIntent.LocalSyncConfirmed -> {
+                val modal = _uiState.value.modal as? FavoritesModal.LocalSync ?: return
+                if (modal.accountId != currentAccountId() || !localMode.isLocalMode || localFavoriteOperationGate.isTransitioning()) {
+                    dismissModal()
+                } else if (localModeExitScheduler.request()) {
+                    dismissModal()
+                } else {
+                    toastManager.showAsync("无法启动收藏同步，请重试")
                 }
             }
             FavoritesIntent.ForceRefresh -> if (allowNetworkFeature()) syncController.request(FavoriteSyncRequestKind.FORCE)

@@ -15,6 +15,10 @@ class AuthenticatedEmbeddedClient(
     private val requestGate: AuthenticatedRequestGate,
 ) {
     private val clientProvider = embeddedClientManager::getClient
+    private val albumProvider = embeddedClientManager::getAlbum
+
+    suspend fun getAlbum(id: String): io.github.jukomu.jmcomic.api.model.JmAlbum? =
+        withClient { albumProvider(id) }
 
     suspend fun <T> withClient(block: (JmApiClient) -> T): T? = requestGate.run {
         call(block)
@@ -33,11 +37,9 @@ class AuthenticatedEmbeddedClient(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: ParseResponseException) {
-            // JMComic-Api-Java 1.1.8 postComment/replyToComment still call
-            // getLoggedInUserName() AFTER the server accepted the comment POST. If that
-            // cache is missing for any reason, the parser wraps IllegalStateException into
-            // ParseResponseException. Retrying would duplicate the remote comment, so treat
-            // this exact shape as success.
+            // Recover only this exact wrapped username failure; a generic parse error must
+            // still propagate. This does not cover SDK 1.1.8's direct IllegalStateException
+            // before ApiParser, verified by EmbeddedUsernameCacheTest's public submit call.
             if (error.isUpstreamCommentUsernameMappingFailure()) {
                 null
             } else {
@@ -77,8 +79,7 @@ class AuthenticatedEmbeddedClient(
 }
 
 /**
- * Matches ONLY the verified 1.1.8 post-success username exception produced by
- * ApiParser.parseCommentSubmitResult <- AbstractJmClient.getLoggedInUserName():
+ * Matches only the modeled wrapped username failure, not every SDK submit failure:
  * an IllegalStateException with message "Username is required for this operation. Please login
  * first." wrapped by ParseResponseException("Failed to parse comment submit result API JSON").
  */

@@ -51,7 +51,7 @@ class ComicTrackingViewModel(
     }
 
     fun refresh() {
-        // 自动读状态时不向未登录/本地模式用户展开错误；点击后再给出操作提示。
+        // 自动读状态时不向未登录/本地收藏模式用户展开错误；点击后再给出操作提示。
         if (account.sessions.value.accountId <= 0 || mode.isLocalMode) {
             _state.value = _state.value.copy(subscribed = null, busy = false, error = null)
             return
@@ -68,7 +68,7 @@ class ComicTrackingViewModel(
         _state.value = current.copy(busy = true, error = null, subscribed = if (toggle) null else current.subscribed)
         job = viewModelScope.launch {
             try {
-                check(!mode.isLocalMode) { "本地模式下无法订阅漫画" }
+                check(!mode.isLocalMode) { "本地收藏模式下无法订阅漫画" }
                 check(owner.accountId > 0) { "请先登录后订阅漫画" }
                 val subscribed = account.run(owner) {
                     if (toggle) source.toggleTracking(current.id)

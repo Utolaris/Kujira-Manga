@@ -13,7 +13,7 @@ import com.par9uet.jm.favorites.data.FavoriteMetadataPayload
 import com.par9uet.jm.favorites.data.FavoriteRemoteMutation
 import com.par9uet.jm.favorites.data.FavoriteRemotePage
 import com.par9uet.jm.favorites.data.FavoriteRemoteQuery
-import com.par9uet.jm.favorites.sync.FavoriteSyncReport
+import com.par9uet.jm.favorites.model.FavoriteSyncReport
 import com.par9uet.jm.favorites.usecase.SyncLocalModeFavoritesOnExit
 import com.par9uet.jm.retrofit.model.LoginResponse
 import com.par9uet.jm.storage.CookieStorage
@@ -118,6 +118,7 @@ class LocalModeCoordinatorTest {
         failCollect: Boolean = false,
         failRefresh: Boolean = false,
         afterRefresh: suspend (UserManager) -> Unit = {},
+        onFavoritesSynced: (com.par9uet.jm.favorites.model.FavoriteSessionSnapshot) -> Unit = {},
     ): Fixture {
         val mode = FakeConnectionMode(true)
         val repository = Repository()
@@ -160,6 +161,7 @@ class LocalModeCoordinatorTest {
                 else NetWorkResult.Success(FavoriteSyncReport(0, 0, 0, 0, 0))
             },
             toastManager = ToastManager(),
+            onFavoritesSynced = onFavoritesSynced,
         )
         return Fixture(coordinator, mode, repository, changes, history, userManager, operationGate) { refreshes }
     }
@@ -171,6 +173,23 @@ class LocalModeCoordinatorTest {
         assertEquals(0, f.refreshes())
         assertEquals(1, f.changes.items.size)
         assertEquals(2, f.history.items.size)
+    }
+
+    @Test fun `only a complete successful local exit publishes sync completion`() = runTest {
+        var completions = 0
+        val failed = fixture(failCollect = true, onFavoritesSynced = { completions++ })
+        failed.coordinator.exitLocalMode()
+        assertEquals(0, completions)
+        val failedRefresh = fixture(failRefresh = true, onFavoritesSynced = { completions++ })
+        failedRefresh.coordinator.exitLocalMode()
+        assertEquals(0, completions)
+        val successful = fixture(onFavoritesSynced = { snapshot ->
+            assertEquals(7, snapshot.accountId)
+            completions++
+        })
+        successful.coordinator.exitLocalMode()
+        assertFalse(successful.coordinator.isLocalMode)
+        assertEquals(1, completions)
     }
 
     @Test fun `mode closes after remote sync and current account history clears`() = runTest {

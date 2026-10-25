@@ -15,6 +15,21 @@ data class FavoritesSelectionState(
     val selectedComicIds: Set<Int> = emptySet(),
 )
 
+/** Main tabs need folder selection, without subscribing the whole pager to sync progress. */
+data class FavoritesFolderUiState(
+    val selectedFolderId: Int = 0,
+    val folders: Map<String, String> = emptyMap(),
+)
+
+/** Only values that affect the comic grid; progress counters belong to the toolbar/settings. */
+data class FavoritesGridUiState(
+    val selectedFolderId: Int = 0,
+    val filter: FavoritesFilter = FavoritesFilter(),
+    val selection: FavoritesSelectionState = FavoritesSelectionState(),
+    val searchActive: Boolean = false,
+    val isBuildingInitialCache: Boolean = false,
+)
+
 /**
  * 收藏夹不再自己保存滚动位置：位置统一由全局 `ListPositionMemory` 按
  * 「文件夹 + 筛选条件」的 key 记录，换筛选即换 key、自然回到顶部。
@@ -32,6 +47,7 @@ data class FavoriteSyncUiState(
     val phase: String = "",
     val errorMessage: String? = null,
     val errorKind: NetworkErrorKind? = null,
+    val hasSynced: Boolean = false,
 )
 
 sealed interface FavoritesModal {
@@ -39,6 +55,7 @@ sealed interface FavoritesModal {
     data object FolderManagement : FavoritesModal
     data object Move : FavoritesModal
     data object Uncollect : FavoritesModal
+    data class LocalSync(val accountId: Int) : FavoritesModal
     data object CreateFolder : FavoritesModal
     data class RenameFolder(val folderId: Int, val folderName: String) : FavoritesModal
     data class DeleteFolder(val folderId: Int, val folderName: String) : FavoritesModal
@@ -55,6 +72,9 @@ data class FavoritesUiState(
     val authorCounts: Map<String, Int> = emptyMap(),
     val sync: FavoriteSyncUiState = FavoriteSyncUiState(),
     val syncErrorVisible: Boolean = false,
+    val isLocalMode: Boolean = false,
+    val pendingComicCount: Int? = null,
+    val isLocalModeSyncing: Boolean = false,
 )
 
 sealed interface FavoritesIntent {
@@ -62,6 +82,7 @@ sealed interface FavoritesIntent {
     data object Left : FavoritesIntent
     data class AccountStateChanged(val authenticated: Boolean) : FavoritesIntent
     data object ManualSync : FavoritesIntent
+    data object LocalSyncConfirmed : FavoritesIntent
     data object ForceRefresh : FavoritesIntent
     data object SyncErrorDismissed : FavoritesIntent
     data object SyncRetried : FavoritesIntent

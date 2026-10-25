@@ -109,9 +109,7 @@ class EmbeddedComicDataSource(
 
     override suspend fun getComicDetail(id: Int): NetWorkResult<ComicDetailResponse> =
         safeEmbeddedCall("内置 API 获取漫画详情失败") {
-            withEmbeddedClient { client ->
-                client.getAlbum(id.toString()).toComicDetailResponse()
-            }
+            embeddedClientManager.getAlbum(id.toString()).toComicDetailResponse()
         }
 
     override suspend fun collectComic(id: Int): NetWorkResult<CollectComicResponse> =
@@ -210,7 +208,7 @@ class EmbeddedComicDataSource(
             try {
                 withEmbeddedClient { client ->
                     val photo = try {
-                        client.getPhoto(id.toString())
+                        embeddedClientManager.getPhoto(id.toString())
                     } catch (e: CancellationException) {
                         throw e
                     } catch (_: Exception) {

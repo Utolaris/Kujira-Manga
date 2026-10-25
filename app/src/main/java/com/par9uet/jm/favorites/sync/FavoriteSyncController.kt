@@ -7,9 +7,9 @@ import com.par9uet.jm.favorites.data.causeChainText
 import com.par9uet.jm.favorites.data.toFavoriteSyncError
 import com.par9uet.jm.favorites.model.FavoriteSyncUiState
 import com.par9uet.jm.core.network.NetWorkResult
-import com.par9uet.jm.session.withAuthenticationRecovery
-import com.par9uet.jm.favorites.sync.FavoriteSyncProgress
-import com.par9uet.jm.favorites.sync.FavoriteSyncReport
+import com.par9uet.jm.core.network.withAuthenticationRecovery
+import com.par9uet.jm.favorites.model.FavoriteSyncProgress
+import com.par9uet.jm.favorites.model.FavoriteSyncReport
 import com.par9uet.jm.utils.logError
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -23,6 +23,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.flow.first
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
 
 enum class FavoriteSyncRequestKind {
     AUTO,
@@ -56,6 +58,7 @@ class FavoriteSyncController(
     private val hasFullSnapshot: suspend (Int) -> Boolean = { false },
     private val onCacheInitialized: () -> Unit = {},
     private val lastSuccessfulSyncAt: suspend (Int) -> Long? = { null },
+    private val workContext: CoroutineContext = EmptyCoroutineContext,
 ) : FavoriteSyncRequester {
     private val lock = Any()
     private val _state = MutableStateFlow(FavoriteSyncUiState())
@@ -74,7 +77,7 @@ class FavoriteSyncController(
         }
         applicationScope.launch {
             localMode.isLocalModeFlow.collect { isLocal ->
-                if (isLocal) synchronized(lock) {
+                if (isLocal && localMode.isLocalMode) synchronized(lock) {
                     requestGeneration++
                     syncJob?.cancel()
                     syncJob = null
@@ -94,6 +97,14 @@ class FavoriteSyncController(
             if (jobs.isEmpty()) return
             jobs.joinAll()
         }
+    }
+
+    /** Completion from the local-mode exit/force-align workflow shares the toolbar state. */
+    fun onExternalSyncSucceeded(snapshot: FavoriteSessionSnapshot) = synchronized(lock) {
+        refreshSession()
+        if (!session.isCurrent(snapshot) || localMode.isLocalMode || _state.value.isSyncing) return@synchronized
+        _state.value = FavoriteSyncUiState(hasSynced = true)
+        autoSyncCoordinator.onSyncSucceeded()
     }
 
     override suspend fun initializeForLogin() {
@@ -147,7 +158,7 @@ class FavoriteSyncController(
         if (_state.value.isSyncing || automaticRequestJob?.isActive == true) return
         val snapshot = observedSession
         lateinit var job: Job
-        job = applicationScope.launch(start = CoroutineStart.LAZY) {
+        job = applicationScope.launch(workContext, start = CoroutineStart.LAZY) {
             try {
                 val completedAt = lastSuccessfulSyncAt(snapshot.accountId)
                 synchronized(lock) {
@@ -155,7 +166,13 @@ class FavoriteSyncController(
                         return@synchronized
                     }
                     val result = autoSyncCoordinator.request(folderId, _state.value.isSyncing, completedAt)
-                    if (result is FavoriteAutoRequestResult.StartNow) startSync(result.folderId, force = false)
+                    if (result is FavoriteAutoRequestResult.StartNow) {
+                        startSync(result.folderId, force = false)
+                    } else if (!_state.value.isSyncing && _state.value.errorMessage == null) {
+                        // A skipped idle request means the completion cooldown is still active.
+                        // Restore its persisted success after process restart/session renewal.
+                        _state.update { it.copy(hasSynced = true) }
+                    }
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -180,7 +197,7 @@ class FavoriteSyncController(
             isForceRefresh = force,
             isInitialBuild = initial,
         )
-        val job = applicationScope.launch(start = CoroutineStart.LAZY) {
+        val job = applicationScope.launch(workContext, start = CoroutineStart.LAZY) {
             var failure: NetWorkResult.Error? = null
             var succeeded = false
             var notifyCacheInitialized = false
@@ -222,7 +239,7 @@ class FavoriteSyncController(
                             )
                         }
                         _state.value = if (failure == null) {
-                            FavoriteSyncUiState()
+                            FavoriteSyncUiState(hasSynced = succeeded)
                         } else {
                             _state.value.copy(
                                 isSyncing = false,

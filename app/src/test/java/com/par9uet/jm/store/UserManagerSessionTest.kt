@@ -5,8 +5,8 @@ import com.par9uet.jm.session.SessionReadiness
 import com.par9uet.jm.session.SessionReadinessHolder
 import com.par9uet.jm.core.SessionRecoveryException
 import com.par9uet.jm.session.UserManager
-import com.par9uet.jm.session.withAuthenticationRecovery
-import com.par9uet.jm.favorites.sync.FavoriteSyncReport
+import com.par9uet.jm.core.network.withAuthenticationRecovery
+import com.par9uet.jm.favorites.model.FavoriteSyncReport
 
 import com.par9uet.jm.core.model.User
 import com.par9uet.jm.session.CandidateSession

@@ -30,6 +30,10 @@ import org.koin.dsl.bind
 import org.koin.dsl.module
 
 val favoriteModule = module {
+    single<com.par9uet.jm.favorites.model.PendingFavoriteChanges> {
+        val changes = get<com.par9uet.jm.storage.LocalFavoriteChangeManager>()
+        com.par9uet.jm.favorites.model.PendingFavoriteChanges(changes::observePendingCount)
+    }
     single<FavoriteLocalQuery> { get<FavoriteStore>() }
     single<FavoriteLocalMutation> { get<FavoriteStore>() }
     single<FavoriteLocalSync> { get<FavoriteStore>() }
@@ -65,6 +69,7 @@ val favoriteModule = module {
             localMode = get(),
             hasFullSnapshot = get<FavoriteLocalSync>()::hasFullSnapshot,
             lastSuccessfulSyncAt = get<FavoriteLocalSync>()::lastSuccessfulSyncAt,
+            workContext = get<com.par9uet.jm.core.concurrent.BackgroundWork>().context,
             onCacheInitialized = { toastManager.showAsync("收藏夹初始化完成。") },
         )
     }
@@ -84,7 +89,7 @@ val favoriteModule = module {
     }
     viewModel {
         FavoritesViewModel(
-            get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(),
+            get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(),
         )
     }
 }

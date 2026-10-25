@@ -74,6 +74,7 @@ class SettingsKoinWiringTest {
             assertSame(manager, koin.get<AppearancePreferences>())
             assertSame(manager, koin.get<AppearanceEditor>())
             assertSame(manager, koin.get<ApiEndpointPreference>())
+            assertSame(manager, koin.get<com.par9uet.jm.storage.CoverCachePreferences>())
             assertSame(manager, koin.get<ContentLanguagePreferences>())
             assertSame(manager, koin.get<MiscSettingsPreferences>())
             assertSame(manager, koin.get<AppExperiencePreferences>())

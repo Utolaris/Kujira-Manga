@@ -140,7 +140,7 @@ class NotificationViewModel(
     }
 
     private fun requireRemote(owner: UserSessionSnapshot) {
-        check(!mode.isLocalMode) { "本地模式下无法加载通知" }
+        check(!mode.isLocalMode) { "本地收藏模式下无法加载通知" }
         check(owner.accountId > 0) { "请先登录后查看通知" }
     }
     private fun isCurrent(owner: UserSessionSnapshot, requestGeneration: Int) =

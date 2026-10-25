@@ -2,6 +2,8 @@ package com.par9uet.jm.favorites.presentation
 
 import androidx.paging.PagingSource
 import androidx.paging.PagingState
+import androidx.paging.PagingDataPresenter
+import androidx.paging.PagingDataEvent
 import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.data.models.TagFilterLogic
 import com.par9uet.jm.favorites.TestFavoriteSession
@@ -35,6 +37,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
@@ -53,6 +56,194 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class FavoritesViewModelTest {
+    @Test fun `thousands of stored favorites expose only loaded cards and prefetch the next local page`() = runTest(scheduler) {
+        val loads = mutableListOf<PagingSource.LoadParams<Int>>()
+        val query = object : FavoriteLocalQuery by EmptyFavoriteLocalQuery() {
+            override fun pagingSource(
+                accountId: Int, blockedTagList: List<String>, searchText: String,
+                selectedTags: Set<String>, selectedAuthors: Set<String>, folderId: Int, tagLogic: TagFilterLogic,
+            ): PagingSource<Int, Comic> = object : PagingSource<Int, Comic>() {
+                override fun getRefreshKey(state: PagingState<Int, Comic>): Int? = null
+                override suspend fun load(params: LoadParams<Int>): LoadResult<Int, Comic> {
+                    loads += params
+                    val start = params.key ?: 0
+                    val end = (start + params.loadSize).coerceAtMost(1_000)
+                    return LoadResult.Page(
+                        data = (start until end).map { Comic.create(it + 1, "漫画 ${it + 1}", emptyList()) },
+                        prevKey = if (start == 0) null else (start - params.loadSize).coerceAtLeast(0),
+                        nextKey = end.takeIf { it < 1_000 },
+                        itemsBefore = start, itemsAfter = 1_000 - end,
+                    )
+                }
+            }
+        }
+        val environment = environment(query = query)
+        val presenter = object : PagingDataPresenter<Comic>(mainContext = Dispatchers.Main) {
+            override suspend fun presentPagingDataEvent(event: PagingDataEvent<Comic>) = Unit
+        }
+        backgroundScope.launch { environment.viewModel.collectComicPager.collectLatest { presenter.collectFrom(it) } }
+        runCurrent()
+        assertEquals("Unloaded Room rows must not become heightless grid slots", 20, presenter.size)
+        assertEquals(0, presenter.snapshot().placeholdersAfter)
+        assertTrue(loads.all { !it.placeholdersEnabled })
+        assertEquals(20, presenter[19]?.id)
+        runCurrent()
+        assertEquals(40, presenter.size)
+        assertEquals((1..40).toList(), presenter.snapshot().items.map { it.id })
+        assertEquals(2, loads.size)
+    }
+
+    @Test fun `sync progress never republishes unchanged grid or folder chrome`() = runTest(scheduler) {
+        val environment = environment()
+        var gridEmissions = 0
+        var folderEmissions = 0
+        backgroundScope.launch { environment.viewModel.gridUiState.collect { gridEmissions++ } }
+        backgroundScope.launch { environment.viewModel.folderUiState.collect { folderEmissions++ } }
+        runCurrent()
+        val gridBaseline = gridEmissions
+        val folderBaseline = folderEmissions
+        assertTrue(gridBaseline > 0 && folderBaseline > 0)
+        repeat(100) { completed ->
+            environment.sync.publish(FavoriteSyncUiState(isSyncing = true, completed = completed, total = 100))
+            runCurrent()
+        }
+        environment.sync.publish(FavoriteSyncUiState(hasSynced = true))
+        runCurrent()
+        assertEquals(gridBaseline, gridEmissions)
+        assertEquals(folderBaseline, folderEmissions)
+        environment.viewModel.onIntent(FavoritesIntent.SearchChanged("new search"))
+        runCurrent()
+        assertEquals(gridBaseline + 1, gridEmissions)
+        assertEquals(folderBaseline, folderEmissions)
+        environment.viewModel.onIntent(FavoritesIntent.FolderSelected(3))
+        runCurrent()
+        assertEquals(gridBaseline + 2, gridEmissions)
+        assertEquals(folderBaseline + 1, folderEmissions)
+    }
+
+    @Test fun `initial cache loader reacts to start and finish rather than every progress tick`() = runTest(scheduler) {
+        val environment = environment()
+        val loading = mutableListOf<Boolean>()
+        backgroundScope.launch { environment.viewModel.gridUiState.collect { loading += it.isBuildingInitialCache } }
+        runCurrent()
+        environment.sync.publish(FavoriteSyncUiState(isSyncing = true, isInitialBuild = true))
+        runCurrent()
+        environment.sync.publish(FavoriteSyncUiState(isSyncing = true, isInitialBuild = true, completed = 20, total = 100))
+        runCurrent()
+        environment.sync.publish(FavoriteSyncUiState(hasSynced = true))
+        runCurrent()
+        assertEquals(listOf(false, true, false), loading)
+    }
+
+    @Test fun `local sync click shows live count and requires confirmation before scheduling`() = runTest(scheduler) {
+        val count = MutableStateFlow<Int?>(3)
+        var requests = 0
+        val environment = environment(
+            mode = com.par9uet.jm.favorites.localModeFor(42),
+            pending = com.par9uet.jm.favorites.model.PendingFavoriteChanges { count },
+            exit = com.par9uet.jm.core.model.LocalModeExitScheduler { requests++; true },
+        )
+        runCurrent()
+        assertTrue(environment.viewModel.uiState.value.isLocalMode)
+        assertEquals(3, environment.viewModel.uiState.value.pendingComicCount)
+        environment.viewModel.onIntent(FavoritesIntent.ManualSync)
+        assertEquals(FavoritesModal.LocalSync(42), environment.viewModel.uiState.value.modal)
+        assertEquals(0, requests)
+        count.value = 2
+        runCurrent()
+        assertEquals(2, environment.viewModel.uiState.value.pendingComicCount)
+        environment.viewModel.onIntent(FavoritesIntent.LocalSyncConfirmed)
+        environment.viewModel.onIntent(FavoritesIntent.LocalSyncConfirmed)
+        assertEquals(1, requests)
+        assertNull(environment.viewModel.uiState.value.modal)
+        assertTrue(environment.sync.requests.isEmpty())
+    }
+
+    @Test fun `local sync dismissal does not schedule exit and scheduling failure keeps confirmation`() = runTest(scheduler) {
+        var requests = 0
+        val environment = environment(
+            mode = com.par9uet.jm.favorites.localModeFor(42),
+            exit = com.par9uet.jm.core.model.LocalModeExitScheduler { requests++; false },
+        )
+        runCurrent()
+        environment.viewModel.onIntent(FavoritesIntent.ManualSync)
+        environment.viewModel.onIntent(FavoritesIntent.ModalDismissed)
+        environment.viewModel.onIntent(FavoritesIntent.LocalSyncConfirmed)
+        assertEquals(0, requests)
+        environment.viewModel.onIntent(FavoritesIntent.ManualSync)
+        environment.viewModel.onIntent(FavoritesIntent.LocalSyncConfirmed)
+        assertEquals(1, requests)
+        assertEquals(FavoritesModal.LocalSync(42), environment.viewModel.uiState.value.modal)
+    }
+
+    @Test fun `pending count follows the account and does not depend on folder or filters`() = runTest(scheduler) {
+        val mode = com.par9uet.jm.favorites.localModeFor(42)
+        val environment = environment(
+            mode = mode,
+            pending = com.par9uet.jm.favorites.model.PendingFavoriteChanges { flowOf(if (it == 42) 9 else 2) },
+        )
+        runCurrent()
+        environment.viewModel.onIntent(FavoritesIntent.FolderSelected(3))
+        environment.viewModel.onIntent(FavoritesIntent.SearchChanged("filter"))
+        runCurrent()
+        assertEquals(9, environment.viewModel.uiState.value.pendingComicCount)
+        environment.viewModel.onIntent(FavoritesIntent.ManualSync)
+        environment.session.switchAccount(7)
+        mode.switchActiveAccount(7)
+        runCurrent()
+        assertEquals(2, environment.viewModel.uiState.value.pendingComicCount)
+        assertNull(environment.viewModel.uiState.value.modal)
+    }
+
+    @Test fun `local count may be zero or unreadable and mode exit still requires confirmation`() = runTest(scheduler) {
+        val count = MutableStateFlow<Int?>(null)
+        val mode = com.par9uet.jm.favorites.localModeFor(42)
+        val environment = environment(mode = mode, pending = com.par9uet.jm.favorites.model.PendingFavoriteChanges { count })
+        runCurrent()
+        assertNull(environment.viewModel.uiState.value.pendingComicCount)
+        count.value = 0
+        runCurrent()
+        assertEquals(0, environment.viewModel.uiState.value.pendingComicCount)
+        environment.viewModel.onIntent(FavoritesIntent.ManualSync)
+        assertEquals(FavoritesModal.LocalSync(42), environment.viewModel.uiState.value.modal)
+        mode.setLocalModeEnabled(42, false)
+        runCurrent()
+        assertFalse(environment.viewModel.uiState.value.isLocalMode)
+        assertNull(environment.viewModel.uiState.value.modal)
+    }
+
+    @Test fun `in progress local exit blocks repeated requests`() = runTest(scheduler) {
+        val gate = com.par9uet.jm.favorites.usecase.LocalFavoriteOperationGate()
+        val environment = environment(mode = com.par9uet.jm.favorites.localModeFor(42), operationGate = gate)
+        runCurrent()
+        environment.sync.publish(FavoriteSyncUiState(hasSynced = true))
+        runCurrent()
+        gate.beginTransition()
+        runCurrent()
+        environment.viewModel.onIntent(FavoritesIntent.ManualSync)
+        assertTrue(environment.viewModel.uiState.value.isLocalModeSyncing)
+        assertFalse(environment.viewModel.uiState.value.sync.hasSynced)
+        assertNull(environment.viewModel.uiState.value.modal)
+        gate.endTransition()
+        runCurrent()
+        assertFalse(environment.viewModel.uiState.value.isLocalModeSyncing)
+    }
+
+    @Test fun `confirmation cannot sync a different account before observers catch up`() = runTest(scheduler) {
+        val mode = com.par9uet.jm.favorites.FakeConnectionMode(true, 42, listOf(42, 7))
+        var requests = 0
+        val environment = environment(mode = mode,
+            exit = com.par9uet.jm.core.model.LocalModeExitScheduler { requests++; true })
+        runCurrent()
+        environment.viewModel.onIntent(FavoritesIntent.ManualSync)
+        environment.session.switchAccount(7)
+        mode.switchActiveAccount(7)
+        // Intentionally confirm before the account-flow collector can dismiss the old modal.
+        environment.viewModel.onIntent(FavoritesIntent.LocalSyncConfirmed)
+        assertEquals(0, requests)
+        assertNull(environment.viewModel.uiState.value.modal)
+    }
+
     @Test
     fun `sync progress and completion preserve the paging generation and viewport`() = runTest(scheduler) {
         val environment = environment()
@@ -474,12 +665,17 @@ class FavoritesViewModelTest {
         val memory: ListPositionMemory,
     )
 
-    private fun environment(): TestEnvironment {
+    private fun environment(
+        mode: com.par9uet.jm.core.model.ConnectionModeStatus = com.par9uet.jm.favorites.alwaysNetworkLocalModeStatus(),
+        pending: com.par9uet.jm.favorites.model.PendingFavoriteChanges = com.par9uet.jm.favorites.model.PendingFavoriteChanges { flowOf(0) },
+        exit: com.par9uet.jm.core.model.LocalModeExitScheduler = com.par9uet.jm.core.model.LocalModeExitScheduler { true },
+        operationGate: com.par9uet.jm.favorites.usecase.LocalFavoriteOperationGate = com.par9uet.jm.favorites.usecase.LocalFavoriteOperationGate(),
+        query: FavoriteLocalQuery = EmptyFavoriteLocalQuery(),
+    ): TestEnvironment {
         val events = mutableListOf<String>()
         val session = TestFavoriteSession(accountId = 42)
         val remote = RecordingRemoteMutation(events)
         val local = RecordingLocalMutation(events)
-        val query = EmptyFavoriteLocalQuery()
         val sync = RecordingSyncRequester(events)
         val memory = ListPositionMemory()
         val viewModel = FavoritesViewModel(
@@ -492,12 +688,13 @@ class FavoritesViewModelTest {
             createFavoriteFolder = CreateFavoriteFolder(remote, session, com.par9uet.jm.favorites.alwaysNetworkLocalModeStatus(), com.par9uet.jm.favorites.usecase.LocalFavoriteOperationGate()),
             deleteFavoriteFolder = DeleteFavoriteFolder(remote, local, session, com.par9uet.jm.favorites.alwaysNetworkLocalModeStatus(), com.par9uet.jm.favorites.usecase.LocalFavoriteOperationGate()),
             renameFavoriteFolder = RenameFavoriteFolder(remote, local, session, com.par9uet.jm.favorites.alwaysNetworkLocalModeStatus(), com.par9uet.jm.favorites.usecase.LocalFavoriteOperationGate()),
-            localFavoriteOperationGate = com.par9uet.jm.favorites.usecase.LocalFavoriteOperationGate(),
+            localFavoriteOperationGate = operationGate,
             downloadSelectedFavorites = DownloadSelectedFavorites(query, NoOpFavoriteDownloader()),
             syncController = sync,
-            localMode = com.par9uet.jm.favorites.alwaysNetworkLocalModeStatus(),
-            localModeExitScheduler = com.par9uet.jm.core.model.LocalModeExitScheduler { true },
+            localMode = mode,
+            localModeExitScheduler = exit,
             listPositionMemory = memory,
+            pendingChanges = pending,
         )
         return TestEnvironment(viewModel, session, remote, local, sync, events, memory)
     }

@@ -55,7 +55,7 @@ val comicModule = module {
             },
         )
     }
-    single { RetrofitNetworkHomeDataSource(get()) } bind NetworkHomeDataSource::class
+    single { RetrofitNetworkHomeDataSource(get(), get()) } bind NetworkHomeDataSource::class
     single {
         EmbeddedComicDataSource(get(), get(), get(), get())
     } bind ComicEmbeddedDataSource::class
@@ -77,7 +77,7 @@ val comicModule = module {
         )
     }
 
-    viewModel { HomeViewModel(get(), get(), get(), get(), get(), get()) }
+    viewModel { HomeViewModel(get(), get(), get(), get(), get(), get(), get()) }
     viewModel { SearchViewModel(get(), get(), get(), get(), get(), get()) }
     viewModel { WeekViewModel(get(), get()) }
     viewModel { ComicDetailViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }

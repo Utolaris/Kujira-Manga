@@ -29,7 +29,7 @@ import io.github.jukomu.jmcomic.api.model.JmComment
 import io.github.jukomu.jmcomic.api.model.JmDailyCheckInStatus
 import io.github.jukomu.jmcomic.api.model.JmUserInfo
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
+import com.par9uet.jm.core.concurrent.backgroundIoDispatcher
 import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.net.ConnectException
@@ -69,7 +69,7 @@ class UserRepositoryImpl(
         password: String,
         origin: AuthAttemptOrigin,
     ): NetWorkResult<CandidateSession> {
-        return withContext(Dispatchers.IO) {
+        return withContext(backgroundIoDispatcher()) {
             try {
                 // Authentication always runs in an isolated client. Only the generation-checked
                 // commit in UserManager promotes these cookies to the shared session.

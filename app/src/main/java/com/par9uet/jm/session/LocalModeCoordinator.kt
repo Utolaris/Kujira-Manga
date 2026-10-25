@@ -4,7 +4,7 @@ import com.par9uet.jm.core.ToastManager
 import com.par9uet.jm.core.network.NetWorkResult
 import com.par9uet.jm.favorites.model.FavoriteSession
 import com.par9uet.jm.favorites.model.FavoriteSessionSnapshot
-import com.par9uet.jm.favorites.sync.FavoriteSyncReport
+import com.par9uet.jm.favorites.model.FavoriteSyncReport
 import com.par9uet.jm.favorites.usecase.SyncLocalModeFavoritesOnExit
 import com.par9uet.jm.favorites.usecase.LocalFavoriteOperationGate
 import com.par9uet.jm.storage.ConnectionModeEditor
@@ -38,7 +38,7 @@ sealed interface LocalModeTransition {
 }
 
 /**
- * 本地模式切换协调。
+ * 本地收藏模式切换协调。
  *
  * 进入：只改开关（收藏/历史写入路径随后自动走本地）。
  * 切回网络：确认登录态（手动登录可复用）→ 收藏补偿（远端比对 + 逐个 collect/uncollect）→ 强制全量同步
@@ -56,6 +56,7 @@ class LocalModeCoordinator(
     private val refreshFavorites: suspend (FavoriteSessionSnapshot) -> NetWorkResult<FavoriteSyncReport>,
     private val localFavoriteChanges: com.par9uet.jm.storage.LocalFavoriteChangeManager,
     private val toastManager: ToastManager,
+    private val onFavoritesSynced: (FavoriteSessionSnapshot) -> Unit,
 ) : com.par9uet.jm.core.model.LocalModeExit {
     private val _transition = MutableStateFlow<LocalModeTransition>(LocalModeTransition.Idle)
     val transition = _transition.asStateFlow()
@@ -74,7 +75,7 @@ class LocalModeCoordinator(
         if (accountId <= 0 || userManager.authState.value != SessionReadiness.Authenticated ||
             (expectedAccountId != null && expectedAccountId != accountId)
         ) {
-            fail("请先登录，再开启本地模式")
+            fail("请先登录，再开启本地收藏模式")
             return
         }
         if (!browseHistory.clear(accountId)) {
@@ -87,7 +88,7 @@ class LocalModeCoordinator(
             log("LocalMode", "entered local mode")
             LocalModeTransition.Idle
         } else {
-            val message = "无法写入本地模式开关，请重试"
+            val message = "无法写入本地收藏模式开关，请重试"
             fail(message)
             LocalModeTransition.Failed(message)
         }
@@ -109,7 +110,7 @@ class LocalModeCoordinator(
         try {
             exitLock.withLock { localFavoriteOperationGate.withLock { block() } }
         } catch (cancelled: CancellationException) {
-            _transition.value = if (isLocalMode) LocalModeTransition.Failed("同步已中断，仍停留在本地模式")
+            _transition.value = if (isLocalMode) LocalModeTransition.Failed("同步已中断，仍停留在本地收藏模式")
             else LocalModeTransition.Idle
             throw cancelled
         } catch (error: Exception) {
@@ -121,16 +122,16 @@ class LocalModeCoordinator(
     }
 
     /**
-     * 强制收藏夹与远端对齐：丢弃本地未同步变更，拉全量覆盖本地；若在本地模式则一并关闭。
+     * 强制收藏夹与远端对齐：丢弃本地未同步变更，拉全量覆盖本地；若在本地收藏模式则一并关闭。
      * 不走补偿推送 —— 未上云的本地收藏会按说明弹窗提示可能丢失。
      */
     suspend fun forceAlignFavoritesWithRemote() = withFavoriteTransition { performForceAlignFavoritesWithRemote() }
 
     /**
      * 顺序不变量（与 [performExitLocalMode] 一致）：
-     * 先确认登录并拉到远端快照，**成功之后**才丢弃待同步意图、再关本地模式。
+     * 先确认登录并拉到远端快照，**成功之后**才丢弃待同步意图、再关本地收藏模式。
      * 反序会在 relogin/刷新失败时永久丢掉未上云收藏，且可能停在「模式已关、列表未对齐」的中间态。
-     * 本地模式下刷新走 [LocalModeSyncRequest] 闸门放行，避免先关模式才能打远端。
+     * 本地收藏模式下刷新走 [LocalModeSyncRequest] 闸门放行，避免先关模式才能打远端。
      */
     private suspend fun performForceAlignFavoritesWithRemote() {
         val accountId = userManager.userState.value.data?.id ?: 0
@@ -177,7 +178,7 @@ class LocalModeCoordinator(
             if (isLocalMode) {
                 _transition.value = LocalModeTransition.Exiting("正在切换网络模式")
                 if (!connectionModeEditor.setLocalModeEnabled(snapshot.accountId, false)) {
-                    commitError = "无法写入本地模式开关，请重试"
+                    commitError = "无法写入本地收藏模式开关，请重试"
                     return@withCurrentSession false
                 }
                 if (!browseHistory.clear(snapshot.accountId)) {
@@ -191,6 +192,7 @@ class LocalModeCoordinator(
             return
         }
         toastManager.showAsync("收藏夹已与远端对齐")
+        onFavoritesSynced(snapshot)
         _transition.value = LocalModeTransition.Idle
     }
 
@@ -228,7 +230,7 @@ class LocalModeCoordinator(
             val login = relogin()
             if (login is NetWorkResult.Error) {
                 logError("LocalMode", "exit relogin failed: ${login.message}")
-                fail(login.message.ifBlank { "重新登录失败，仍停留在本地模式" })
+                fail(login.message.ifBlank { "重新登录失败，仍停留在本地收藏模式" })
                 return
             }
             log("LocalMode", "exit relogin ok account=$accountId")
@@ -243,7 +245,7 @@ class LocalModeCoordinator(
         when (report) {
             is NetWorkResult.Error -> {
                 logError("LocalMode", "favorite compensate failed: ${report.message}")
-                fail("收藏同步失败，仍停留在本地模式：${report.message}")
+                fail("收藏同步失败，仍停留在本地收藏模式：${report.message}")
                 return
             }
             is NetWorkResult.Success -> {
@@ -254,7 +256,7 @@ class LocalModeCoordinator(
                 )
                 if (report.data.failed > 0) {
                     // 不要再做全量 replace：会把未推送成功的本地收藏从列表里抹掉。
-                    fail("${report.data.failed} 条收藏尚未同步，仍停留在本地模式，请稍后重试")
+                    fail("${report.data.failed} 条收藏尚未同步，仍停留在本地收藏模式，请稍后重试")
                     return
                 }
             }
@@ -263,7 +265,7 @@ class LocalModeCoordinator(
         when (val result = withContext(LocalModeSyncRequest(accountId, snapshot.generation)) { refreshFavorites(snapshot) }) {
             is NetWorkResult.Error -> {
                 logError("LocalMode", "force refresh after exit failed: ${result.message}")
-                fail("刷新收藏夹失败，仍停留在本地模式：${result.message}")
+                fail("刷新收藏夹失败，仍停留在本地收藏模式：${result.message}")
                 return
             }
             is NetWorkResult.Success -> {
@@ -276,13 +278,14 @@ class LocalModeCoordinator(
         }
         _transition.value = LocalModeTransition.Exiting("正在切换网络模式")
         if (!connectionModeEditor.setLocalModeEnabled(accountId, false)) {
-            fail("无法写入本地模式开关，请重试")
+            fail("无法写入本地收藏模式开关，请重试")
             return
         }
         if (!browseHistory.clear(accountId)) {
             logError("LocalMode", "local history cleanup deferred for account=$accountId")
         }
         log("LocalMode", "exited to network mode")
+        onFavoritesSynced(snapshot)
         toastManager.showAsync("已切换到网络模式")
         _transition.value = LocalModeTransition.Idle
     }

@@ -3,7 +3,7 @@ package com.par9uet.jm.update
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
-import kotlinx.coroutines.Dispatchers
+import com.par9uet.jm.core.concurrent.backgroundIoDispatcher
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -19,7 +19,7 @@ class GithubReleaseSource(
     // Prefer DI-provided DoH client; bare default is only for tests.
     private val client: OkHttpClient = OkHttpClient(),
 ) : ReleaseSource {
-    override suspend fun latest(): GithubRelease = withContext(Dispatchers.IO) {
+    override suspend fun latest(): GithubRelease = withContext(backgroundIoDispatcher()) {
         val request = Request.Builder()
             .url(GITHUB_RELEASE_API)
             .header("Accept", "application/vnd.github+json")

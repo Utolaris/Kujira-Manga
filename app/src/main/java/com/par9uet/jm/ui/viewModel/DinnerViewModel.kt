@@ -55,7 +55,7 @@ class DinnerViewModel(
         _list.value = state.copy(loading = true, error = null)
         listJob = viewModelScope.launch {
             try {
-                check(!mode.isLocalMode) { "本地模式下无法加载绅夜食堂" }
+                check(!mode.isLocalMode) { "本地收藏模式下无法加载绅夜食堂" }
                 val result = source.list(page)
                 if (generation != listGeneration) return@launch
                 check(page == 1 || result.items.isEmpty() || result.items.any { next -> state.items.none { it.id == next.id } }) {
@@ -84,7 +84,7 @@ class DinnerViewModel(
         _article.value = DinnerArticleState(id = id, loading = true)
         articleJob = viewModelScope.launch {
             try {
-                check(!mode.isLocalMode) { "本地模式下无法加载文章" }
+                check(!mode.isLocalMode) { "本地收藏模式下无法加载文章" }
                 val result = source.article(id)
                 if (generation == articleGeneration) _article.value = DinnerArticleState(id = id, article = result)
             } catch (cancelled: CancellationException) {

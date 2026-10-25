@@ -3,7 +3,7 @@ package com.par9uet.jm.cache
 import android.content.Context
 import android.provider.DocumentsContract
 import com.par9uet.jm.cache.atom.ExternalDownloadSize
-import kotlinx.coroutines.Dispatchers
+import com.par9uet.jm.core.concurrent.backgroundIoDispatcher
 import kotlinx.coroutines.withContext
 
 /**
@@ -14,7 +14,7 @@ import kotlinx.coroutines.withContext
  * 宁可抛给上层显示错误，也不要给一个看起来正常的假数字。
  */
 class DocumentTreeDownloadSize(private val context: Context) : ExternalDownloadSize {
-    override suspend fun sizeBytes(): Long = withContext(Dispatchers.IO) {
+    override suspend fun sizeBytes(): Long = withContext(backgroundIoDispatcher()) {
         val treeUri = getDownloadTreeUri(context) ?: return@withContext 0L
         val root = DocumentsContract.buildDocumentUriUsingTree(
             treeUri,

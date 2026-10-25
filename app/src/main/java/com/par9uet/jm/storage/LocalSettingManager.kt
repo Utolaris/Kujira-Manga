@@ -28,6 +28,7 @@ class LocalSettingManager(
     private val persistence: LocalSettingPersistence,
     private val launcherDisguiseApplier: LauncherIdentityApplier,
 ) : ContentPreferences,
+    CoverCachePreferences,
     BlockedTagTemplatePreferences,
     RecommendationPreferences,
     ReaderPreferences,
@@ -199,12 +200,12 @@ class LocalSettingManager(
         updateSetting { it.copy(readMode = mode) }
 
     /** 缓存控制：总预算（MB）。 */
-    val cacheBudgetMb = _projectingState {
+    override val cacheBudgetMb = _projectingState {
         com.par9uet.jm.cache.CacheBudget.coerceTotalMb(it.cacheBudgetMb)
     }
 
     /** 下载漫画是否不受缓存总配额限制。 */
-    val downloadExemptFromCacheLimit = _projectingState { it.downloadExemptFromCacheLimit }
+    override val downloadExemptFromCacheLimit = _projectingState { it.downloadExemptFromCacheLimit }
 
     fun setCacheBudgetMb(mb: Int) =
         updateSetting { it.copy(cacheBudgetMb = com.par9uet.jm.cache.CacheBudget.coerceTotalMb(mb)) }
