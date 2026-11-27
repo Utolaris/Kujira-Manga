@@ -65,7 +65,9 @@ class ComicTrackingViewModel(
         if (!current.eligible || current.id <= 0 || current.busy) return
         val owner = account.sessions.value
         val requestGeneration = ++generation
-        _state.value = current.copy(busy = true, error = null, subscribed = if (toggle) null else current.subscribed)
+        // Keep the last confirmed label during the request; busy already prevents another toggle.
+        // Only an uncertain/failed outcome below invalidates the status and makes retry query-only.
+        _state.value = current.copy(busy = true, error = null)
         job = viewModelScope.launch {
             try {
                 check(!mode.isLocalMode) { "本地收藏模式下无法订阅漫画" }

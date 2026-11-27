@@ -3,6 +3,9 @@ package com.par9uet.jm.ui
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.navigation.compose.rememberNavController
@@ -89,5 +92,49 @@ class NotificationScreenTest {
         }
         compose.onNodeWithText("订阅").assertDoesNotExist()
         compose.onNodeWithText("已订阅").assertIsDisplayed()
+    }
+
+    @Test fun initialSubscriptionQueryAppearsWithItsFinalLabelWithoutLoadingText() {
+        var state by mutableStateOf(ComicTrackingState(id = 200, eligible = true, busy = true))
+        compose.setContent { MaterialTheme { ComicSubscriptionButton(200, state) { } } }
+        compose.onNodeWithText("加载中").assertDoesNotExist()
+        compose.onNodeWithText("订阅").assertDoesNotExist()
+        compose.onNodeWithText("已订阅").assertDoesNotExist()
+        compose.runOnIdle { state = state.copy(busy = false, subscribed = true) }
+        compose.onNodeWithText("已订阅").assertIsDisplayed()
+        compose.onNodeWithText("加载中").assertDoesNotExist()
+    }
+
+    @Test fun subscriptionAndCancellationKeepTheirLabelWhileBusyThenTransitionToTheConfirmedLabel() {
+        var state by mutableStateOf(ComicTrackingState(id = 200, eligible = true, subscribed = false))
+        var clicks = 0
+        compose.setContent {
+            MaterialTheme {
+                ComicSubscriptionButton(200, state) {
+                    clicks++
+                    state = state.copy(busy = true)
+                }
+            }
+        }
+        compose.onNodeWithText("订阅").performClick()
+        compose.onNodeWithText("订阅").assertIsDisplayed().assertIsNotEnabled()
+        compose.onNodeWithText("加载中").assertDoesNotExist()
+        compose.runOnIdle { state = state.copy(busy = false, subscribed = true) }
+        compose.onNodeWithText("已订阅").assertIsDisplayed().performClick()
+        compose.onNodeWithText("已订阅").assertIsDisplayed().assertIsNotEnabled()
+        compose.onNodeWithText("加载中").assertDoesNotExist()
+        compose.runOnIdle { state = state.copy(busy = false, subscribed = false) }
+        compose.onNodeWithText("订阅").assertIsDisplayed().assertIsEnabled()
+        assertEquals(2, clicks)
+    }
+
+    @Test fun loggedOutSubscriptionEntryAndFailedQueryRetryRemainAvailable() {
+        var state by mutableStateOf(ComicTrackingState(id = 200, eligible = true))
+        var clicks = 0
+        compose.setContent { MaterialTheme { ComicSubscriptionButton(200, state) { clicks++ } } }
+        compose.onNodeWithText("订阅").assertIsDisplayed().performClick()
+        compose.runOnIdle { state = state.copy(error = "订阅状态获取失败") }
+        compose.onNodeWithText("重试").assertIsDisplayed().performClick()
+        assertEquals(2, clicks)
     }
 }

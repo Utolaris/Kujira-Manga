@@ -4,6 +4,8 @@ import android.content.ClipData
 import com.par9uet.jm.ui.navigation.HierarchicalBackHandler
 import android.net.Uri
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateContentSize
 import com.par9uet.jm.ui.interaction.CoverEasing
 import com.par9uet.jm.ui.interaction.DetailReflowMillis
@@ -58,6 +60,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.RemoveRedEye
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.ButtonDefaults
 import com.par9uet.jm.ui.components.MotionButton as Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -644,18 +647,47 @@ private fun ComicMetadataContent(
 @Composable
 internal fun ComicSubscriptionButton(id: Int, state: ComicTrackingState, onClick: () -> Unit) {
     if (state.id != id || !state.eligible) return
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Button(onClick = onClick, enabled = !state.busy, shape = CircleShape,
-            modifier = Modifier.height(30.dp).defaultMinSize(minWidth = 1.dp),
-            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)) {
-            Text(when {
-                state.busy -> "加载中"
-                state.error != null -> "重试"
-                state.subscribed == true -> "已订阅"
-                else -> "订阅"
-            })
+    val duration = if (motionEnabled()) 180 else 0
+    val text = when {
+        state.error != null -> "重试"
+        state.subscribed == true -> "已订阅"
+        else -> "订阅"
+    }
+    // Reserve the capsule's height while the initial status is unknown, so metadata stays still.
+    // An idle unknown state also covers logged-out users, who still need the login entry.
+    Box(Modifier.heightIn(min = 30.dp)) {
+        AnimatedVisibility(
+            visible = state.subscribed != null || !state.busy,
+            enter = fadeIn(tween(duration)),
+            exit = fadeOut(tween(duration)),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Button(
+                    onClick = onClick,
+                    enabled = !state.busy,
+                    shape = CircleShape,
+                    modifier = Modifier.height(30.dp).defaultMinSize(minWidth = 1.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        disabledContainerColor = MaterialTheme.colorScheme.primary,
+                        disabledContentColor = MaterialTheme.colorScheme.onPrimary,
+                    ),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                ) {
+                    AnimatedContent(
+                        targetState = text,
+                        transitionSpec = {
+                            (fadeIn(tween(duration)) togetherWith fadeOut(tween(duration)))
+                                .using(SizeTransform { _, _ -> tween(duration, easing = CoverEasing) })
+                        },
+                        contentAlignment = Alignment.Center,
+                        label = "comic-subscription-label",
+                    ) { label -> Text(label) }
+                }
+                state.error?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
+            }
         }
-        state.error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
     }
 }
 

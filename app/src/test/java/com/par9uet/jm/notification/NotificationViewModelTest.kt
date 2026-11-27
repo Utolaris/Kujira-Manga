@@ -43,6 +43,8 @@ class NotificationViewModelTest {
         var allRead = 0
         var toggles = 0
         var trackingReads = 0
+        val trackingIds = mutableListOf<Int>()
+        val toggledIds = mutableListOf<Int>()
         var subscribed = false
         var query: suspend (NotificationFilter, Int) -> InboxPage = { _, _ -> InboxPage(listOf(message("1")), false) }
         var read: suspend () -> Unit = { }
@@ -53,8 +55,8 @@ class NotificationViewModelTest {
         }
         override suspend fun markRead(id: String) { readRequests += id; read() }
         override suspend fun markAllRead() { allRead++ }
-        override suspend fun tracking(id: Int): Boolean { trackingReads++; return status(id) }
-        override suspend fun toggleTracking(id: Int) { toggles++; toggle() }
+        override suspend fun tracking(id: Int): Boolean { trackingReads++; trackingIds += id; return status(id) }
+        override suspend fun toggleTracking(id: Int) { toggles++; toggledIds += id; toggle() }
     }
 
     @Test fun `opening marks read once and mark all includes the source inbox`() = runTest(dispatcher) {
@@ -157,6 +159,39 @@ class NotificationViewModelTest {
         assertEquals(1, source.toggles)
         assertEquals(true, vm.state.value.subscribed)
         vm.toggle(); runCurrent()
+        assertEquals(false, vm.state.value.subscribed)
+        assertEquals("Subscription reads use the collection id, never a child chapter id", listOf(101, 101, 101), source.trackingIds)
+        assertEquals(listOf(101, 101), source.toggledIds)
+    }
+
+    @Test fun `toggle keeps the confirmed status until server recheck and blocks duplicate submissions`() = runTest(dispatcher) {
+        val source = Source()
+        val vm = ComicTrackingViewModel(source, account, mode); runCurrent()
+        vm.bind(100, listOf(101)); runCurrent()
+        val posted = CompletableDeferred<Unit>()
+        val confirmed = CompletableDeferred<Boolean>()
+        source.toggle = { posted.await() }
+        source.status = { confirmed.await() }
+        vm.toggle(); runCurrent()
+        assertTrue(vm.state.value.busy)
+        assertEquals(false, vm.state.value.subscribed)
+        vm.toggle(); runCurrent()
+        assertEquals(1, source.toggles)
+
+        posted.complete(Unit); runCurrent()
+        assertTrue(vm.state.value.busy)
+        assertEquals(false, vm.state.value.subscribed)
+        confirmed.complete(true); runCurrent()
+        assertFalse(vm.state.value.busy)
+        assertEquals(true, vm.state.value.subscribed)
+
+        val cancelled = CompletableDeferred<Boolean>()
+        source.status = { cancelled.await() }
+        vm.toggle(); runCurrent()
+        assertTrue(vm.state.value.busy)
+        assertEquals(true, vm.state.value.subscribed)
+        cancelled.complete(false); runCurrent()
+        assertFalse(vm.state.value.busy)
         assertEquals(false, vm.state.value.subscribed)
     }
 
