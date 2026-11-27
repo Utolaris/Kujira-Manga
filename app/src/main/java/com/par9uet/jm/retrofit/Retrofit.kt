@@ -48,9 +48,9 @@ class Retrofit(
                 writeSeconds = 15,
                 callSeconds = 20,
             )
+            .addInterceptor(toastInterceptor)
             .addInterceptor(baseUrlInterceptor)
             .addInterceptor(tokenInterceptor)
-            .addInterceptor(toastInterceptor)
             .applyHttpLogging()
             .cookieJar(CookieJar.NO_COOKIES)
             .build()

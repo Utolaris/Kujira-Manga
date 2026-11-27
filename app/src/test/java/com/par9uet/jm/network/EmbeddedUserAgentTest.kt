@@ -60,4 +60,10 @@ class EmbeddedUserAgentTest {
         assertEquals(deviceUserAgent, twice.header("User-Agent"))
         assertEquals(1, twice.headers("User-Agent").size)
     }
+
+    @Test fun chromeFallbackProvidesUnifiedChromeUserAgentWhenNotWarmedUp() {
+        val ua = DeviceWebViewUserAgent.currentOrChromeFallback()
+        assertEquals(DeviceWebViewUserAgent.FALLBACK_CHROME_USER_AGENT, ua)
+        assert(ua.contains("Chrome/"))
+    }
 }

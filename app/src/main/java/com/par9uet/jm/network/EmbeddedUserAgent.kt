@@ -34,10 +34,19 @@ fun interface EmbeddedUserAgentProvider {
  * 所以由 `Application.onCreate` 预热一次，之后请求线程只读缓存。
  */
 object DeviceWebViewUserAgent {
+    /**
+     * 设备 WebView 预热失败（或纯 JVM 测试环境）时的统一回退 Chrome UA。
+     * 所有图片层请求（封面、阅读器、图床探针、保底下载）共用同一 Chrome UA 来源，
+     * 避免同一会话里同时发出两套不同的伪装 UA。
+     */
+    const val FALLBACK_CHROME_USER_AGENT: String =
+        "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 " +
+            "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
+
     @Volatile
     private var value: String? = null
 
-    /** 只在主线程调用。失败静默：拿不到就继续用 SDK 默认 UA，不影响功能。 */
+    /** 只在主线程调用。失败静默：拿不到就继续用回退 UA，不影响功能。 */
     fun warmUp(context: Context) {
         if (value != null) return
         value = runCatching { WebSettings.getDefaultUserAgent(context) }
@@ -46,6 +55,9 @@ object DeviceWebViewUserAgent {
     }
 
     fun current(): String? = value
+
+    /** 优先返回设备真实 WebView Chrome UA；未就绪时统一回退到 [FALLBACK_CHROME_USER_AGENT]。 */
+    fun currentOrChromeFallback(): String = value ?: FALLBACK_CHROME_USER_AGENT
 }
 
 /**

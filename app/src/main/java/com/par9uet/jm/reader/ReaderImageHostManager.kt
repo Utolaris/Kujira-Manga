@@ -3,6 +3,7 @@ package com.par9uet.jm.reader
 import android.os.SystemClock
 import com.par9uet.jm.image.JmImageHostHealthManager
 import com.par9uet.jm.image.isJmImagePathAllowed
+import com.par9uet.jm.network.DeviceWebViewUserAgent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -76,7 +77,7 @@ internal class ReaderImageHostManager(
                     .url(warmupUrl)
                     .head()
                     .header("X-Requested-With", "com.JMComic3.app")
-                    .header("User-Agent", USER_AGENT)
+                    .header("User-Agent", DeviceWebViewUserAgent.currentOrChromeFallback())
                     .header("Referer", REFERER)
                     .build()
                 val call = httpClient.newCall(request)
@@ -104,8 +105,6 @@ internal class ReaderImageHostManager(
     private companion object {
         private const val WARMUP_REUSE_MILLIS = 4L * 60L * 1_000L
         private const val WARMUP_HOST_COUNT = 3
-        private const val USER_AGENT =
-            "Mozilla/5.0 (Linux; Android 9; Mobile) AppleWebKit/537.36 Chrome/91.0 Safari/537.36"
         private const val REFERER = "https://18comic.vip"
     }
 }

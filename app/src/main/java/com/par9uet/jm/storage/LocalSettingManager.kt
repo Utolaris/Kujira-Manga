@@ -8,6 +8,7 @@ import com.par9uet.jm.data.models.LauncherDisguise
 import com.par9uet.jm.data.models.LocalSetting
 import com.par9uet.jm.data.models.DEFAULT_COMMENT_FILTER_KEYWORDS
 import com.par9uet.jm.contentfilter.normalizeCommentKeywords
+import com.par9uet.jm.data.models.coerceApiEndpoint
 import com.par9uet.jm.data.models.coerceAppLanguage
 import com.par9uet.jm.storage.LocalSettingPersistence
 import com.par9uet.jm.contentfilter.flattenBlockedTagTemplates
@@ -80,7 +81,7 @@ class LocalSettingManager(
             it.softGlassLevel.coerceIn(MinSoftGlassLevel, MaxSoftGlassLevel))
     }
     override val editor: AppearanceEditor get() = this
-    override val apiEndpoint = _projectingState { it.api }
+    override val apiEndpoint = _projectingState { coerceApiEndpoint(it.api) }
     override val appLanguage = _projectingState { coerceAppLanguage(it.appLanguage) }
     override val localModeAccountIds = _projectingState { it.localModeAccountIds.orEmpty() }
     override val localModeEnteredAtByAccount = _projectingState { it.localModeEnteredAtByAccount.orEmpty() }
@@ -140,7 +141,7 @@ class LocalSettingManager(
     fun currentAutoCheckUpdateEnabled(): Boolean =
         _localSettingState.value.autoCheckUpdateEnabled
 
-    fun setApiEndpoint(url: String) = updateSetting { it.copy(api = url) }
+    fun setApiEndpoint(url: String) = updateSetting { it.copy(api = coerceApiEndpoint(url)) }
 
     /**
      * 服务端内容语言（内置 API 的 `lang` 参数）。写前先收口到合法取值，

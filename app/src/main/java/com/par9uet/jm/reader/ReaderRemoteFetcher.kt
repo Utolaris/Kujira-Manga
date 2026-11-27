@@ -23,6 +23,7 @@ import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Call
 import okhttp3.Callback
+import com.par9uet.jm.network.DeviceWebViewUserAgent
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -394,7 +395,7 @@ internal class ReaderRemoteFetcher(
         .get()
         .header("Accept", "image/webp,image/*,*/*;q=0.8")
         .header("X-Requested-With", "com.JMComic3.app")
-        .header("User-Agent", USER_AGENT)
+        .header("User-Agent", DeviceWebViewUserAgent.currentOrChromeFallback())
         .header("Referer", REFERER)
         .build()
 
@@ -426,8 +427,6 @@ internal class ReaderRemoteFetcher(
 
     private companion object {
         private const val PREEMPT_POLL_MILLIS = 12L
-        private const val USER_AGENT =
-            "Mozilla/5.0 (Linux; Android 9; Mobile) AppleWebKit/537.36 Chrome/91.0 Safari/537.36"
         private const val REFERER = "https://18comic.vip"
     }
 }

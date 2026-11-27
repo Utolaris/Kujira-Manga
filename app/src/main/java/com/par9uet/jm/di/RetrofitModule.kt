@@ -1,5 +1,6 @@
 package com.par9uet.jm.di
 
+import com.par9uet.jm.data.models.AVAILABLE_APIS
 import com.par9uet.jm.network.DohManager
 import com.par9uet.jm.retrofit.Retrofit
 import com.par9uet.jm.retrofit.ActiveSessionCookieStore
@@ -30,7 +31,7 @@ val retrofitModule = module {
     } bind ActiveSessionCookieStore::class
     single<ComicService> { get<Retrofit>().createService(ComicService::class.java) }
     single<RemoteSettingService> { get<Retrofit>().createService(RemoteSettingService::class.java) }
-    single { BaseUrlInterceptor(get()) }
+    single { BaseUrlInterceptor(get(), AVAILABLE_APIS) }
     single { TokenInterceptor() }
     single { ToastInterceptor(get()) }
     single { ResponseConverterFactory(get()) }

@@ -99,8 +99,32 @@ class LocalSettingStorageCompatibilityTest {
     fun `candidate catalogs come from code not from old json`() {
         assertEquals(listOf("auto", "light", "dark"), AVAILABLE_THEMES)
         assertFalse(AVAILABLE_THEMES.contains("legacy-theme"))
-        // Five built-in proxy endpoints remain the static catalog.
-        assertTrue(com.par9uet.jm.data.models.AVAILABLE_APIS.isNotEmpty())
+        // Official Server domains remain the static catalog.
+        assertEquals(
+            listOf(
+                "https://www.cdnbtd.cc",
+                "https://www.cdnutc.cc",
+                "https://www.cdngwc.net",
+                "https://www.cdngwc.club",
+            ),
+            AVAILABLE_APIS,
+        )
+    }
+
+    @Test
+    fun `retired or null api endpoint normalizes to default available endpoint`() {
+        val retiredJson = """{"api":"https://www.cdnhth.club"}"""
+        val retired = gson.fromJson(retiredJson, LocalSetting::class.java)
+        assertEquals(AVAILABLE_APIS.first(), normalizePersisted(retiredJson, retired).api)
+
+        val nullJson = """{"api":null}"""
+        val nulled = gson.fromJson(nullJson, LocalSetting::class.java)
+        assertEquals(AVAILABLE_APIS.first(), normalizePersisted(nullJson, nulled).api)
+
+        val valid = AVAILABLE_APIS.last()
+        val validJson = """{"api":"$valid"}"""
+        val decodedValid = gson.fromJson(validJson, LocalSetting::class.java)
+        assertEquals(valid, normalizePersisted(validJson, decodedValid).api)
     }
 
     @Test

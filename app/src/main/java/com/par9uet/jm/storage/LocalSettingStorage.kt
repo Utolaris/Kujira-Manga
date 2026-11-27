@@ -16,6 +16,7 @@ import com.par9uet.jm.contentfilter.normalizeCommentKeywords
 import com.par9uet.jm.contentfilter.flattenBlockedTagTemplates
 import com.par9uet.jm.contentfilter.normalizeBlockedTagList
 import com.par9uet.jm.contentfilter.normalizeBlockedTagTemplates
+import com.par9uet.jm.data.models.coerceApiEndpoint
 import com.par9uet.jm.data.models.coerceAppLanguage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
@@ -102,6 +103,7 @@ internal fun normalizePersisted(savedJson: String, saved: LocalSetting): LocalSe
         }
         val appLock = canonicalizeAppLock(saved, migratedUnlockMode)
         return saved.copy(
+            api = coerceApiEndpoint(saved.api),
             showComicCacheNotification = if (savedJson.hasField("showComicCacheNotification")) {
                 saved.showComicCacheNotification
             } else {

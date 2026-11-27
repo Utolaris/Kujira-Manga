@@ -5,6 +5,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.os.SystemClock
 import androidx.core.content.edit
+import com.par9uet.jm.network.DeviceWebViewUserAgent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -393,7 +394,7 @@ internal class JmImageHostHealthManager(
             .url("https://$host$IMAGE_PROBE_PATH")
             .head()
             .header("X-Requested-With", "com.JMComic3.app")
-            .header("User-Agent", USER_AGENT)
+            .header("User-Agent", DeviceWebViewUserAgent.currentOrChromeFallback())
             .header("Referer", REFERER)
             .build()
         val call = probeClient.newCall(request)
@@ -493,8 +494,6 @@ internal class JmImageHostHealthManager(
         private const val MAX_PREFERENCE_LENGTH = 4_096
         private const val NETWORK_CHANGE_DEBOUNCE_MILLIS = 300L
         private const val PERSISTENCE_DEBOUNCE_MILLIS = 500L
-        private const val USER_AGENT =
-            "Mozilla/5.0 (Linux; Android 9; Mobile) AppleWebKit/537.36 Chrome/91.0 Safari/537.36"
         private const val REFERER = "https://18comic.vip"
     }
 }

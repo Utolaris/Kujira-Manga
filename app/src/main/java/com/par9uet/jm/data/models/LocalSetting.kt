@@ -8,12 +8,12 @@ const val APP_LOCK_UNLOCK_MODE_BOTH = "both"
 
 // Supported API endpoints are a static application catalog, not user preferences; only the
 // selected value is persisted in LocalSetting.api.
+// 对齐 JMComic3 v2.1.14 官方 Server 线路池（排除官方明确过滤的線路5 www.cdnutc.me）。
 val AVAILABLE_APIS = listOf(
-    "https://www.cdnhth.club",
-    "https://www.cdnmhwscc.vip",
-    "https://www.jmapiproxyxxx.vip",
-    "https://www.cdnxxx-proxy.xyz",
-    "https://www.jmeadpoolcdn.life",
+    "https://www.cdnbtd.cc",
+    "https://www.cdnutc.cc",
+    "https://www.cdngwc.net",
+    "https://www.cdngwc.club",
 )
 
 // Supported themes; only the selected value is persisted in LocalSetting.theme.
@@ -152,3 +152,7 @@ const val DEFAULT_APP_LANGUAGE = APP_LANGUAGE_SIMPLIFIED
  */
 fun coerceAppLanguage(value: String?): String =
     value?.takeIf { it in AVAILABLE_APP_LANGUAGES } ?: DEFAULT_APP_LANGUAGE
+
+/** 把已持久化或外部传入的推荐 API 节点收口到当前可用候选集合；失效旧域名自动回退到默认节点。 */
+fun coerceApiEndpoint(value: String?): String =
+    value?.takeIf { it in AVAILABLE_APIS } ?: AVAILABLE_APIS.first()
