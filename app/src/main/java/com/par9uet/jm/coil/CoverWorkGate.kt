@@ -17,6 +17,7 @@ internal class CoverWorkGate(active: Boolean = true, visible: Boolean = true, sc
 
     private val visibility = MutableStateFlow(Visibility(active, visible, scrolling))
     val isReady: Boolean get() = visibility.value.ready
+    val isScrolling: Boolean get() = visibility.value.scrolling
     fun isDecodeReady(allowWhileScrolling: Boolean = false): Boolean = visibility.value.decodeReady(allowWhileScrolling)
 
     fun setVisibility(active: Boolean, visible: Boolean, scrolling: Boolean = false) {
@@ -31,30 +32,46 @@ internal class CoverWorkGate(active: Boolean = true, visible: Boolean = true, sc
     val changes = visibility.map { it.ready }.distinctUntilChanged()
 }
 
-/** Offscreen requests wait outside the permits, so visible covers always get the decode budget. */
+/**
+ * Offscreen requests wait outside the permits, so visible covers always get the decode budget.
+ * Disk hits can use a wider concurrency budget and skip frame-by-frame pacing when the grid is
+ * idle ([paceIdle] = false), while scrolling keeps per-frame pacing to avoid upload spikes.
+ */
 internal class CoverDecodeScheduler(
     maxParallelism: Int = 1,
+    diskMaxParallelism: Int = maxParallelism,
+    private val paceIdle: Boolean = true,
     private val awaitFrame: suspend () -> Unit = {},
 ) {
-    private val permits = Semaphore(maxParallelism)
+    private val networkPermits = Semaphore(maxParallelism)
+    private val diskPermits = if (diskMaxParallelism == maxParallelism) {
+        networkPermits
+    } else {
+        Semaphore(diskMaxParallelism)
+    }
 
     suspend fun <T> decode(
         gate: CoverWorkGate,
         dataSource: DataSource = DataSource.NETWORK,
         block: suspend () -> T,
     ): T {
-        // Disk/local cache hits must remain visible during a fling; they share the same bounded
-        // background decode budget. Only newly fetched network images wait for scrolling to settle.
-        val allowWhileScrolling = dataSource != DataSource.NETWORK
+        // Disk/local cache hits must remain visible during a fling; they share a bounded
+        // background decode budget. Newly fetched network images wait for scrolling to settle.
+        val isDisk = dataSource != DataSource.NETWORK
+        val allowWhileScrolling = isDisk
+        val permits = if (isDisk) diskPermits else networkPermits
         while (true) {
             gate.awaitDecodeReady(allowWhileScrolling)
             permits.withPermit {
                 // Visibility can change while queued behind another decode.
                 if (gate.isDecodeReady(allowWhileScrolling)) {
                     val result = block()
-                    // Hold the permit through publication pacing: fast disk decodes must not
-                    // turn into a batch of bitmap uploads and UI state changes in one frame.
-                    awaitFrame()
+                    // Hold the permit through publication pacing during scroll (or when paceIdle
+                    // is enabled): fast disk decodes during a fling will not burst into one frame,
+                    // while idle page entry publishes concurrently.
+                    if (paceIdle || gate.isScrolling) {
+                        awaitFrame()
+                    }
                     return result
                 }
             }
@@ -62,11 +79,19 @@ internal class CoverDecodeScheduler(
     }
 }
 
-/** Bound fetch + cache writes as well as decode; scrolling must not start a stream of misses. */
-internal class CoverFetchScheduler(maxParallelism: Int = 2) {
-    private val permits = Semaphore(maxParallelism)
+/**
+ * Bound network fetch + cache writes separately from local disk reads so slow network requests
+ * never stall cached covers (e.g. entering Favorites).
+ */
+internal class CoverFetchScheduler(
+    maxParallelism: Int = 2,
+    diskMaxParallelism: Int = 4,
+) {
+    private val networkPermits = Semaphore(maxParallelism)
+    private val diskPermits = Semaphore(diskMaxParallelism)
 
     suspend fun <T> fetch(gate: CoverWorkGate, cached: Boolean, block: suspend () -> T): T {
+        val permits = if (cached) diskPermits else networkPermits
         while (true) {
             gate.awaitDecodeReady(allowWhileScrolling = cached)
             permits.withPermit {

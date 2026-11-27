@@ -3,19 +3,22 @@ package com.par9uet.jm.coil
 import android.content.Context
 import coil.ImageLoader
 import coil.disk.DiskCache
+import coil.memory.MemoryCache
+import java.io.File
 import com.par9uet.jm.cache.CacheBudget
 import com.par9uet.jm.cache.getCommonCacheDir
-import okhttp3.Dns
+import com.par9uet.jm.network.DeviceWebViewUserAgent
 import com.par9uet.jm.network.applyAppHttpDefaults
 import okhttp3.Cache
 import okhttp3.ConnectionPool
 import okhttp3.Dispatcher
+import okhttp3.Dns
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 
 private val cdnHeaderInterceptor = Interceptor { chain ->
     val request = chain.request().newBuilder()
-        .header("User-Agent", "Mozilla/5.0 (Linux; Android 9; V1938CT Build/PQ3A.190705.11211812; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/91.0.4472.114 Safari/537.36")
+        .header("User-Agent", DeviceWebViewUserAgent.currentOrChromeFallback())
         .header("Referer", "https://18comic.vip")
         .build()
     chain.proceed(request)
@@ -36,11 +39,17 @@ fun createAsyncImageLoader(
         maxRequests = 12
         maxRequestsPerHost = 4
     }
+    val thumbnailCache = CoverThumbnailCache(File(getCommonCacheDir(context), "thumbs"))
     return ImageLoader.Builder(context)
         .components {
-            add(VisibleCoverFetcherFactory())
-            add(VisibleCoverDecoderFactory())
+            add(VisibleCoverFetcherFactory(thumbnailCache))
+            add(VisibleCoverDecoderFactory(thumbnailCache))
             add(coil.decode.ImageDecoderDecoder.Factory())
+        }
+        .memoryCache {
+            MemoryCache.Builder(context)
+                .maxSizePercent(0.30)
+                .build()
         }
         .okHttpClient {
             OkHttpClient.Builder()

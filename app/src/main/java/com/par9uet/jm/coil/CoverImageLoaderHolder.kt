@@ -66,6 +66,11 @@ class CoverImageLoaderHolder(
     @OptIn(coil.annotation.ExperimentalCoilApi::class)
     fun clearDiskCache() {
         _loader.value.diskCache?.clear()
+        runCatching {
+            java.io.File(com.par9uet.jm.cache.getCommonCacheDir(context), "thumbs")
+                .listFiles()
+                ?.forEach { it.delete() }
+        }
     }
 
     private fun replaceDiskCacheSize(mb: Int) {

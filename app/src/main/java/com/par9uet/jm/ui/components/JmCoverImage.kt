@@ -52,11 +52,14 @@ internal fun JmCoverImage(
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
     isScrolling: Boolean = false,
+    lowRam: Boolean = false,
     imageLoader: ImageLoader? = null,
     onReady: ((Boolean) -> Unit)? = null,
-    resolver: CoverImageHostResolver = getKoin().get(),
+    resolver: CoverImageHostResolver? = null,
 ) {
     val context = LocalContext.current
+    val sharedEnv = LocalCoverPipelineEnvironment.current
+    val activeResolver = resolver ?: sharedEnv?.resolver ?: getKoin().get()
     val pageActive = LocalCoverWorkActive.current
     val inViewport = LocalCoverInViewport.current
     val scrolling = isScrolling || LocalComicGridScrolling.current()
@@ -65,13 +68,15 @@ internal fun JmCoverImage(
     }
     SideEffect { workGate.setVisibility(pageActive, inViewport, scrolling) }
     val workVisible by workGate.changes.collectAsState(initial = workGate.isReady)
-    val loaderHolder: com.par9uet.jm.coil.CoverImageLoaderHolder = getKoin().get()
-    val holderLoader by loaderHolder.loader.collectAsState()
-    val activeImageLoader = imageLoader ?: holderLoader
+    val activeImageLoader = imageLoader ?: sharedEnv?.imageLoader ?: currentCoverImageLoader()
     val scrollingState = rememberUpdatedState(scrolling)
-    val networkGeneration by resolver.networkGeneration.collectAsState()
-    val candidateUrls = remember(comicId, remoteHost, networkGeneration) {
-        resolver.coverUrls(comicId, remoteHost)
+    val networkGeneration = if (resolver == null && sharedEnv != null) {
+        sharedEnv.networkGeneration
+    } else {
+        activeResolver.networkGeneration.collectAsState().value
+    }
+    val candidateUrls = remember(comicId, remoteHost, networkGeneration, activeResolver) {
+        activeResolver.coverUrls(comicId, remoteHost)
     }
     var attemptedUrls by remember(comicId, remoteHost, networkGeneration) {
         mutableStateOf(emptySet<String>())
@@ -84,12 +89,13 @@ internal fun JmCoverImage(
     // 只有漫画身份变化才清空，避免回前台换候选地址时闪回透明占位。
     var displayedCover by remember(comicId) { mutableStateOf<DisplayedCover?>(null) }
     val sizeResolver = remember(workGate) { CoverSizeResolver(workGate) }
-    val request = remember(context, candidateUrl, cacheKey, sizeResolver) {
+    val request = remember(context, candidateUrl, cacheKey, sizeResolver, lowRam) {
         candidateUrl?.let { url ->
             ImageRequest.Builder(context)
                 .data(url)
                 .memoryCacheKey(cacheKey)
                 .diskCacheKey(cacheKey)
+                .allowRgb565(lowRam)
                 .setParameter(CoverWorkGateParameter, workGate, memoryCacheKey = null)
                 // A larger cached bitmap is valid for a smaller grid cell. Also avoid CPU
                 // upscaling when the server's cover is smaller than the display slot.
@@ -116,7 +122,7 @@ internal fun JmCoverImage(
                         if (state.result.dataSource == DataSource.NETWORK) {
                             // Coil 全量加载耗时（排队/下载/解码/渲染）不是 TTFB，
                             // 只标记主机健康，不写入 Reader 排序使用的延迟 EWMA。
-                            resolver.recordHealthy(loadedUrl)
+                            activeResolver.recordHealthy(loadedUrl)
                         }
                         if ((!workGate.isReady && !state.result.dataSource.isMemorySource()) ||
                             shouldDeferCoverResult(scrollingState.value, state.result.dataSource)
@@ -146,7 +152,7 @@ internal fun JmCoverImage(
                         val failureKind = classifyImageHostFailure(state.result.throwable)
                         // 只有主机/网络级失败才全局冷却 CDN；资源级失败仅回退到下一个候选
                         if (failureKind == ImageHostFailureKind.HOST_FAILURE) {
-                            resolver.recordHostFailure(failedUrl)
+                            activeResolver.recordHostFailure(failedUrl)
                         }
                         if (failureKind != ImageHostFailureKind.CANCELLED) {
                             val updatedAttempts = attemptedUrls + failedUrl
@@ -169,7 +175,8 @@ internal fun JmCoverImage(
         },
     )
 
-    val foregroundWork = loaderHolder.foregroundWork
+    val foregroundWork = sharedEnv?.foregroundWork
+        ?: getKoin().get<com.par9uet.jm.coil.CoverImageLoaderHolder>().foregroundWork
     SideEffect {
         foregroundWork.update(workGate, pageActive && inViewport &&
             (scrolling || (candidateUrl != null && !requestFinished)))
@@ -241,17 +248,28 @@ private fun Constraints.toCoilSizeOrNull(): Size? {
         return null
     }
     val width = if (hasBoundedWidth) {
-        Dimension.Pixels(maxWidth)
+        Dimension.Pixels(bucketCoverDimensionPx(maxWidth))
     } else {
         Dimension.Undefined
     }
     val height = if (hasBoundedHeight) {
-        Dimension.Pixels(maxHeight)
+        Dimension.Pixels(bucketCoverDimensionPx(maxHeight))
     } else {
         Dimension.Undefined
     }
     return Size(width, height)
 }
+
+/** 向上对齐到离散尺寸桶，避免不同页面间距差几像素导致解码规格抖动或缓存难复用。 */
+internal fun bucketCoverDimensionPx(px: Int): Int {
+    if (px <= 0) return px
+    for (bucket in COVER_DIMENSION_BUCKETS) {
+        if (px <= bucket) return bucket
+    }
+    return px
+}
+
+private val COVER_DIMENSION_BUCKETS = intArrayOf(180, 240, 320, 480, 640, 960)
 
 internal data class CompletedCover(val painter: Painter, val dataSource: DataSource)
 

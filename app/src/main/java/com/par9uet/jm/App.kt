@@ -224,9 +224,27 @@ fun App(
                 }
             }
         }
+        val coverLoaderHolder = remember(koin) { koin.get<com.par9uet.jm.coil.CoverImageLoaderHolder>() }
+        val coverHostResolver = remember(koin) { koin.get<com.par9uet.jm.coil.CoverImageHostResolver>() }
+        val activeCoverLoader by coverLoaderHolder.loader.collectAsState()
+        val coverNetworkGeneration by coverHostResolver.networkGeneration.collectAsState()
+        val coverPipelineEnv = remember(
+            activeCoverLoader,
+            coverHostResolver,
+            coverNetworkGeneration,
+            coverLoaderHolder.foregroundWork,
+        ) {
+            com.par9uet.jm.ui.components.CoverPipelineEnvironment(
+                imageLoader = activeCoverLoader,
+                resolver = coverHostResolver,
+                networkGeneration = coverNetworkGeneration,
+                foregroundWork = coverLoaderHolder.foregroundWork,
+            )
+        }
         CompositionLocalProvider(
             LocalRemoteImageHost provides remoteImageHost,
             LocalComicDetailLoader provides detailLoader,
+            com.par9uet.jm.ui.components.LocalCoverPipelineEnvironment provides coverPipelineEnv,
         ) {
             RetainedMainNavigation(visible = !showOnboarding && !showAppLock && !securityLoadBlocked) { mainNavController ->
                 // 在根上准备"打开详情"的编排：先用列表项预置详情状态，再导航。

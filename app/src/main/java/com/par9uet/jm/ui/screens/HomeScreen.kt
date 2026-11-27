@@ -49,6 +49,7 @@ import com.par9uet.jm.ui.components.Comic
 import com.par9uet.jm.ui.components.ComicSkeleton
 import com.par9uet.jm.ui.components.CoverViewportItem
 import com.par9uet.jm.ui.components.LocalComicGridScrolling
+import com.par9uet.jm.ui.components.PrefetchDiskCoversBelowViewport
 import com.par9uet.jm.ui.components.rememberVisibleCoverKeys
 import com.par9uet.jm.ui.components.adaptiveComicGridCells
 import com.par9uet.jm.ui.components.comicGridMinCellSize
@@ -164,6 +165,15 @@ internal fun HomeScreen(
         return
     }
 
+    PrefetchDiskCoversBelowViewport(
+        gridState = gridState,
+        itemCount = comicList.size,
+        comicIdAt = { index ->
+            comicList.getOrNull(index)?.let { c ->
+                c.seriesId.toIntOrNull()?.takeIf { it > 0 } ?: c.id
+            }
+        },
+    )
     CompositionLocalProvider(LocalComicGridScrolling provides isGridScrolling) {
         LazyVerticalGrid(
             modifier = pullDownModifier.fillMaxSize(),

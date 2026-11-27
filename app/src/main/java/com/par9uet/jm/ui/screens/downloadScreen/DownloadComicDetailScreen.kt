@@ -27,7 +27,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -126,7 +126,7 @@ fun DownloadComicDetailScreen(
     }
     // 底部悬浮玻璃操作条（对齐漫画详情页的观感：悬浮 + 高斯模糊，非通栏底栏）
     val navigationBarInset = with(LocalDensity.current) {
-        WindowInsets.navigationBars.getBottom(this).toDp()
+        WindowInsets.navigationBarsIgnoringVisibility.getBottom(this).toDp()
     }
     val detailBarHeight = 64.dp
     val detailBarBottomPadding = 8.dp + navigationBarInset

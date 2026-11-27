@@ -74,8 +74,12 @@ fun Comic(
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Box {
-                ComicCoverImage(comic = comic, isScrolling = isScrolling,
-                    modifier = Modifier.coverSourceBounds(comic.id, coverBounds))
+                ComicCoverImage(
+                    comic = comic,
+                    isScrolling = isScrolling,
+                    lowRam = true,
+                    modifier = Modifier.coverSourceBounds(comic.id, coverBounds),
+                )
                 if (editing && selected) {
                     Checkbox(
                         checked = true,

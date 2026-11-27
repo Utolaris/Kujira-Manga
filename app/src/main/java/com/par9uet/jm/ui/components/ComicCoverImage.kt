@@ -41,14 +41,13 @@ fun ComicCoverImage(
     modifier: Modifier = Modifier,
     showIdChip: Boolean = false,
     isScrolling: Boolean = false,
+    lowRam: Boolean = false,
     imageLoader: ImageLoader? = null,
-    toastManager: ToastManager = getKoin().get(),
+    toastManager: ToastManager? = null,
     onShowDetail: (() -> Unit)? = null,
     onReady: ((Boolean) -> Unit)? = null,
 ) {
     val remoteImageHost = LocalRemoteImageHost.current
-    val clipboard = LocalClipboard.current
-    val scope = rememberCoroutineScope()
 
     Box(modifier = modifier) {
         JmCoverImage(
@@ -58,6 +57,7 @@ fun ComicCoverImage(
             contentDescription = "${comic.name}的封面",
             contentScale = ContentScale.Crop,
             isScrolling = isScrolling,
+            lowRam = lowRam,
             onReady = onReady,
             modifier = Modifier
                 .aspectRatio(3f / 4f)
@@ -66,6 +66,9 @@ fun ComicCoverImage(
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh),
         )
         if (showIdChip) {
+            val clipboard = LocalClipboard.current
+            val scope = rememberCoroutineScope()
+            val activeToastManager = toastManager ?: getKoin().get()
             // 右上角 JM{id} 标签：用 Surface + combinedClickable 实现
             // 不能用 AssistChip，因为它的 onClick 会消费点击事件导致 combinedClickable 不触发
             Surface(
@@ -80,7 +83,7 @@ fun ComicCoverImage(
                                 clipboard.setClipEntry(
                                     ClipEntry(ClipData.newPlainText("text", comic.id.toString()))
                                 )
-                                toastManager.showAsync("已复制漫画编码：${comic.id}")
+                                activeToastManager.showAsync("已复制漫画编码：${comic.id}")
                             }
                         },
                         onLongClick = { onShowDetail?.invoke() }

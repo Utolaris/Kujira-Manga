@@ -78,4 +78,17 @@ class CoverFetchSchedulerTest {
             runCatching { scheduler.fetch(CoverWorkGate(), false) { throw failure } }.exceptionOrNull())
         assertEquals("next", scheduler.fetch(CoverWorkGate(), false) { "next" })
     }
+
+    @Test fun stalledNetworkDownloadsDoNotBlockCachedDiskReads() = runTest {
+        val scheduler = CoverFetchScheduler(maxParallelism = 1, diskMaxParallelism = 4)
+        val release = CompletableDeferred<Unit>()
+        val networkJob = launch { scheduler.fetch(CoverWorkGate(), cached = false) { release.await() } }
+        runCurrent()
+        val diskResult = async { scheduler.fetch(CoverWorkGate(), cached = true) { "disk-hit" } }
+        runCurrent()
+        assertTrue(diskResult.isCompleted)
+        assertEquals("disk-hit", diskResult.await())
+        release.complete(Unit)
+        networkJob.join()
+    }
 }

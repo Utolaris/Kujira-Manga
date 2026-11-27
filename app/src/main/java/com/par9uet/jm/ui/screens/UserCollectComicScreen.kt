@@ -30,6 +30,7 @@ import androidx.paging.compose.collectAsLazyPagingItems
 import coil.compose.AsyncImage
 import com.par9uet.jm.R
 import com.par9uet.jm.ui.components.Comic
+import com.par9uet.jm.ui.components.PrefetchDiskCoversBelowViewport
 import com.par9uet.jm.ui.components.PullRefreshAndLoadMoreGrid
 import com.par9uet.jm.ui.components.adaptiveComicGridCells
 import com.par9uet.jm.ui.components.comicGridMinCellSize
@@ -89,6 +90,15 @@ internal fun UserCollectComicScreen(
         ),
         itemCount = favoriteItemCount,
         appendComplete = favoriteAppendComplete,
+    )
+    PrefetchDiskCoversBelowViewport(
+        gridState = gridState,
+        itemCount = favoriteItemCount,
+        comicIdAt = { index ->
+            collectComicLazyPagingItems.peek(index)?.let { c ->
+                c.seriesId.toIntOrNull()?.takeIf { it > 0 } ?: c.id
+            }
+        },
     )
     val pullRevealPadding = 36.dp * pullDownState.progress
     val gridModifier = Modifier

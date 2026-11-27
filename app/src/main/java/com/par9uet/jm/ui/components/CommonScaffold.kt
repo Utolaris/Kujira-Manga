@@ -3,12 +3,13 @@ package com.par9uet.jm.ui.components
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -26,6 +27,7 @@ import com.par9uet.jm.ui.glass.AppGlassTopBarDefaults
 import com.par9uet.jm.ui.glass.GlassCaptureHost
 
 /** Shared glass scaffold for hierarchical destinations. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CommonScaffold(
     title: String,
@@ -40,8 +42,10 @@ fun CommonScaffold(
     content: @Composable (topContentPadding: Dp, bottomContentPadding: Dp) -> Unit = { _, _ -> },
 ) {
     val density = LocalDensity.current
-    val statusBarInset = with(density) { WindowInsets.statusBars.getTop(this).toDp() }
-    val navigationBarInset = with(density) { WindowInsets.navigationBars.getBottom(this).toDp() }
+    // 阅读器退出时状态栏/导航栏可能仍处于隐藏态；首帧就按 ignoringVisibility 保留完整安全区，
+    // 避免返回瞬间顶栏和封面从顶部向下位移造成卡顿感（与 ComicDetailScreen 一致）。
+    val statusBarInset = with(density) { WindowInsets.statusBarsIgnoringVisibility.getTop(this).toDp() }
+    val navigationBarInset = with(density) { WindowInsets.navigationBarsIgnoringVisibility.getBottom(this).toDp() }
     val topContentPadding = statusBarInset + AppGlassTopBarDefaults.ContentHeight
 
     GlassCaptureHost(

@@ -156,6 +156,44 @@ class CoverWorkGateTest {
         assertTrue(hidden.isCancelled)
         assertEquals("next", scheduler.decode(CoverWorkGate()) { "next" })
     }
+
+    @Test fun idleDiskHitsDecodeInParallelWithoutFrameStallWhenPaceIdleIsFalse() = runTest {
+        var frameWaits = 0
+        val scheduler = CoverDecodeScheduler(
+            maxParallelism = 1,
+            diskMaxParallelism = 3,
+            paceIdle = false,
+            awaitFrame = { frameWaits++ },
+        )
+        val release = CompletableDeferred<Unit>()
+        var started = 0
+        val jobs = List(6) {
+            launch {
+                scheduler.decode(CoverWorkGate(scrolling = false), DataSource.DISK) {
+                    started++
+                    release.await()
+                }
+            }
+        }
+        runCurrent()
+        assertEquals(3, started)
+        release.complete(Unit)
+        jobs.forEach { it.join() }
+        assertEquals(6, started)
+        assertEquals(0, frameWaits)
+    }
+
+    @Test fun scrollingDiskHitsStillPacePerFrameWhenPaceIdleIsFalse() = runTest {
+        var frameWaits = 0
+        val scheduler = CoverDecodeScheduler(
+            maxParallelism = 1,
+            diskMaxParallelism = 2,
+            paceIdle = false,
+            awaitFrame = { frameWaits++ },
+        )
+        scheduler.decode(CoverWorkGate(scrolling = true), DataSource.DISK) { "cached" }
+        assertEquals(1, frameWaits)
+    }
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
