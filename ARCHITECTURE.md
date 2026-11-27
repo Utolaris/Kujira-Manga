@@ -5,7 +5,7 @@
 
 > 本文描述**当前代码的真实状态**。与代码不符的措辞视为文档缺陷，应直接修正。
 > 统计口径：`app/src/main/java/com/par9uet/jm` 下 `*.kt`，`find | wc -l` 汇总。
-> 最近核对 **2026-10-25**（canary）：**445** 文件 / **55,503** 行。
+> 最近核对 **2026-11-27**（canary）：**449** 文件 / **56,674** 行。
 > 耦合表用 `uv run scripts/check-coupling.py` 复现（细分口径，见脚本头）。
 
 ## 层级
@@ -101,7 +101,7 @@ CompositionLocal、封面导航端口模型），不含业务判断，因此 `ui
 
 ## 耦合现状
 
-`uv run scripts/check-coupling.py`（**2026-10-25 / canary**）。
+`uv run scripts/check-coupling.py`（**2026-11-27 / canary**）。
 口径：模块 = 一二级包目录，**细分模块单列**（`core/model` 与 `core` 根目录分开、
 `reader/atom` 与 `reader` 根包分开）；Ce = import 到的模块数，Ca = 依赖它的模块数，
 I = Ce/(Ce+Ca)。下表只保留决策相关行，完整列表以脚本输出为准。
@@ -110,20 +110,20 @@ I = Ce/(Ce+Ca)。下表只保留决策相关行，完整列表以脚本输出为
 
 | 模块 | 文件 | 行数 | Ce | Ca | I | 判断 |
 | --- | --- | --- | --- | --- | --- | --- |
-| `di` | 12 | 901 | 35 | 1 | 0.97 | 组合根，合法 |
-| `ui/screens` | 52 | 18,138 | 23 | 1 | 0.96 | 最大一块；直连已清零，见「表现层直连」 |
-| `ui/viewModel` | 22 | 4,527 | 32 | 3 | 0.91 | L2；扇出最高但多为契约与偏好 |
-| `ui/components` | 30 | 3,117 | 13 | 2 | 0.87 | 已收窄，无 L3/L4 领域依赖 |
-| `favorites/presentation` | 2 | 586 | 8 | 2 | 0.80 | L2（对 `ui.models` 的依赖见下） |
-| `favorites/data` | 14 | 1,259 | 10 | 3 | 0.77 | Room + 窄端口 |
-| `reader`（**仅根包**） | 15 | 2,100 | 8 | 6 | 0.57 | 根包说明见「阅读器链路」 |
-| `network` | 20 | 2,156 | 6 | 11 | 0.35 | DoH / RemoteConfig / 内置客户端 |
-| `storage` | 17 | 2,452 | 5 | 16 | 0.24 | 偏好与持久化收口 |
+| `di` | 12 | 912 | 36 | 1 | 0.97 | 组合根，合法 |
+| `ui/screens` | 53 | 18,333 | 23 | 1 | 0.96 | 最大一块；直连已清零，见「表现层直连」 |
+| `ui/viewModel` | 22 | 4,538 | 32 | 3 | 0.91 | L2；扇出最高但多为契约与偏好 |
+| `ui/components` | 30 | 3,289 | 13 | 2 | 0.87 | 已收窄，无 L3/L4 领域依赖 |
+| `favorites/presentation` | 2 | 619 | 8 | 2 | 0.80 | L2（对 `ui.models` 的依赖见下） |
+| `favorites/data` | 14 | 1,302 | 10 | 3 | 0.77 | Room + 窄端口 |
+| `reader`（**仅根包**） | 15 | 2,098 | 8 | 6 | 0.57 | 根包说明见「阅读器链路」 |
+| `network` | 20 | 2,215 | 6 | 12 | 0.33 | DoH / RemoteConfig / 内置客户端 |
+| `storage` | 17 | 2,479 | 5 | 16 | 0.24 | 偏好与持久化收口 |
 | `core`（**仅根目录**） | 6 | 279 | 2 | 21 | 0.09 | `BaseRepository`、`ToastManager`、`AppHaptics`（只依赖 Android 震动 API） |
 | `core/model` | 5 | 101 | 0 | 13 | 0.00 | 共享 DTO，**真正的零出度** |
-| `ui/models` | 6 | 200 | 1 | 7 | 0.12 | L1 纯数据 + 环境值，L2 仅引用其中的位置数据 |
+| `ui/models` | 6 | 202 | 1 | 7 | 0.12 | L1 纯数据 + 环境值，L2 仅引用其中的位置数据 |
 | `utils` | 14 | 839 | 1 | 28 | 0.03 | 稳定，不要动 |
-| `data`（= `data/models`） | 16 | 418 | 0 | 24 | 0.00 | 零出度契约，不要动（`data/comic` 另列） |
+| `data`（= `data/models`） | 17 | 445 | 0 | 26 | 0.00 | 零出度契约，不要动（`data/comic` 另列） |
 
 `ui/screens` 中详情、设置、阅读与备份页面代码较多。这是可读性问题，不能仅凭行数判为跨层耦合。
 `DownloadComicDetailScreen` 已经由 ViewModel 取得下载与导出状态，不再列为跨四层的待迁移页面。
@@ -276,8 +276,15 @@ host 释放时清理显示列表引用。模糊半径、透明度、圆角与帧
 面板在当前窗口的系统栏及顶栏之外布局，全屏遮罩继续拦截背景触摸；章节列表先让标题/底部动作占位，再使用剩余高度。
 调色面板以 `LocalDensity` 转换 window 像素；手机保留宽度上限，平板使用统一的 75% 宽度。
 
-例外：收藏筛选 `FavoritesModalHost.FilterDialog` 刻意用 Material `ModalBottomSheet`
-（密排 chip 时高斯模糊拉低可读性）；Welcome 引导无 host，走纯色 fallback。
+例外：收藏筛选保留实色 Material `ModalBottomSheet`，避免密排 chip 被玻璃背景干扰。
+`FavoritesModalHost` 收集 ViewModel 的匹配数并直接以参数传给面板，面板只管理搜索与翻页等界面状态，不持有 ViewModel。
+手机和平板共用 `FavoritesFilterSheet`，在 sheet 内自建 `GlassCaptureHost`，仅底部双按钮使用与详情页
+一致的悬浮玻璃胶囊；标签/作者列表可左右滑动，末尾预留操作条空间。搜索框下仅显示匹配数，
+三种筛选模式以等宽大按钮独立置于上方，不随标签列表滚动；清空后保留面板。
+选中标签使用 primaryContainer、作者使用 secondaryContainer；草稿匹配数由 ViewModel 订阅本地计数，
+与分页共用 SQL 条件（含账号、收藏夹、搜索、屏蔽和 AND/OR/NOT），选择时只预览、确定后应用；
+清空立即清除已生效的筛选，保留面板。平板面板宽度随当前窗口保持 75%，旋转/分屏时仍使用同一套界面。
+Welcome 引导无 host，走纯色 fallback。
 阅读器 host 显式用 `GlassBackdropMode.Blur`，与其他页面采用同一真实模糊路径；
 不根据加载/失败/前后台状态切回旧的 `Frosted` 模式。API 30 无 `RenderEffect`，
 玻璃层保留半透明底色，这是平台降级路径。
@@ -459,8 +466,13 @@ L4：`network/EmbeddedDinnerApi` 复用 SDK 网络传输；`dinner/atom/ArticleH
 L1：合集详情 JM 编码下的订阅按钮、首页右上角铃铛与 `NotificationScreen`。
 L2：`ComicTrackingViewModel` 判断合集、查询/切换订阅并复查状态；`NotificationViewModel` 管理
 通知分类、分页、展开和已读。SDK 为单本补出的自身章节不视为合集。
+订阅请求期间保留已确认状态并禁用重复点击；首次状态确认后淡入胶囊，确认变更后平滑切换文案与宽度。
+失败后将订阅状态标为未知，重试只查询；账号变化与迟到响应的隔离仍由 ViewModel 的账号快照及请求代次控制。
 L3：`NotificationRepository` 组合官方协议映射、追踪数组与 HTML 解析，以及全页一键已读。
 L4：`EmbeddedNotificationApi` 通过认证客户端执行带官方签名的 GET/POST；共享网络与账号会话。
+HTTP 状态由 SDK 传输校验，业务码与数据由适配器一次解析；不再套用会隐式重复解密的 SDK API 响应包装。
+订阅请求传当前合集 `id`；GET 保留明文布尔/数字/结构化数据，字符串密文按官方两套候选盐解密并校验 JSON。
+POST 只校验 HTTP/业务成功后以 GET 复查，不强制解密成功回执；切换候选不重发 POST。
 通知模型位于 `notification/model`，正文复用 `dinner/model.ArticleBlock`。
 
 `session/AccountRequestScope` 由 DI 适配到 `UserManager.withBoundRemoteSession`；所有通知与订阅读写

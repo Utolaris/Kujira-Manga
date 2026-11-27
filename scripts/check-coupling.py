@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """按「细分口径」统计模块耦合，定位跨层 import。
 
-口径（与 ARCHITECTURE.md「耦合热点」表的粗口径**不同**，两者不可直接对比）：
+口径（与 ARCHITECTURE.md「耦合现状」一致）：
   模块 = 一二级包目录，下列二级包单列，其余二级目录并入一级包：
     ui/screens  ui/viewModel  ui/components  ui/navigation  ui/glass  ui/theme
     ui/pagingSource  ui/composable  ui/interaction  ui/models  ui/state
