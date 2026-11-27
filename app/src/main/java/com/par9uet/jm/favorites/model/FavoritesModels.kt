@@ -10,6 +10,12 @@ data class FavoritesFilter(
     val tagLogic: TagFilterLogic = TagFilterLogic.AND,
 )
 
+/** A draft's local result count; null after loading means the count is unavailable. */
+data class FavoritesFilterPreview(
+    val count: Int? = null,
+    val isLoading: Boolean = false,
+)
+
 data class FavoritesSelectionState(
     val editing: Boolean = false,
     val selectedComicIds: Set<Int> = emptySet(),

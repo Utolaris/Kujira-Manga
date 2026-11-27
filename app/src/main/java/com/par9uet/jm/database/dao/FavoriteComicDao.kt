@@ -22,6 +22,16 @@ interface FavoriteComicDao {
     )
     fun pagingSource(query: SupportSQLiteQuery): PagingSource<Int, FavoriteComicEntity>
 
+    @RawQuery(
+        observedEntities = [
+            FavoriteComicEntity::class,
+            com.par9uet.jm.database.model.FavoriteMetadataEntity::class,
+            com.par9uet.jm.database.model.FavoriteMetadataTermEntity::class,
+            com.par9uet.jm.database.model.FavoriteFolderMembershipEntity::class,
+        ]
+    )
+    fun observeMatchCount(query: SupportSQLiteQuery): Flow<Int>
+
     @Query("SELECT * FROM favorite_comics WHERE accountId = :accountId ORDER BY albumId")
     suspend fun getAll(accountId: Int): List<FavoriteComicEntity>
 

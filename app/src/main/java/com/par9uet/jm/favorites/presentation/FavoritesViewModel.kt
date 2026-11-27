@@ -10,6 +10,7 @@ import com.par9uet.jm.favorites.model.FavoriteLocalQuery
 import com.par9uet.jm.favorites.model.FavoriteSession
 import com.par9uet.jm.favorites.model.PendingFavoriteChanges
 import com.par9uet.jm.favorites.model.FavoritesFilter
+import com.par9uet.jm.favorites.model.FavoritesFilterPreview
 import com.par9uet.jm.favorites.model.FavoritesFolderUiState
 import com.par9uet.jm.favorites.model.FavoritesGridUiState
 import com.par9uet.jm.favorites.model.FavoritesIntent
@@ -34,10 +35,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -170,6 +173,35 @@ class FavoritesViewModel(
         if (accountId > 0) observe(accountId, folderId) else flowOf(emptyMap())
     }
 
+    /** Observe only while the sheet collects; draft edits never change the applied pager. */
+    fun observeFilterPreview(
+        selectedTags: Set<String>,
+        selectedAuthors: Set<String>,
+        tagLogic: TagFilterLogic,
+    ): Flow<FavoritesFilterPreview> = combine(
+        contentPreferences.blockedTags,
+        _uiState.map { it.selectedFolderId to it.filter.searchText }.distinctUntilChanged(),
+        accountIdFlow,
+    ) { blockedTags, (folderId, searchText), accountId ->
+        FavoritesPagerKey(
+            accountId, blockedTags,
+            FavoritesFilter(searchText, selectedTags, selectedAuthors, tagLogic), folderId,
+        )
+    }.flatMapLatest { key ->
+        if (key.accountId <= 0) flowOf(FavoritesFilterPreview())
+        else localQuery.observeMatchCount(
+            accountId = key.accountId,
+            blockedTagList = key.blockedTagList,
+            searchText = key.filter.searchText,
+            selectedTags = key.filter.selectedTags,
+            selectedAuthors = key.filter.selectedAuthors,
+            folderId = key.folderId,
+            tagLogic = key.filter.tagLogic,
+        ).map { FavoritesFilterPreview(count = it) }
+            .onStart { emit(FavoritesFilterPreview(isLoading = true)) }
+            .catch { emit(FavoritesFilterPreview()) }
+    }
+
     /**
      * `cachedIn` 留在 `flatMapLatest` 内：换文件夹/筛选只缓存单 key 的 PagingData，
      * 避免外层 cachedIn 在 key 切换时把上一代列表混进新结果。
@@ -190,7 +222,8 @@ class FavoritesViewModel(
         Pager(
             // The grid renders real cards only. Room's counted null placeholders would have
             // no card height, then grow during the fling as each local page arrives.
-            config = PagingConfig(pageSize = 20, prefetchDistance = 6, initialLoadSize = 20, enablePlaceholders = false),
+            // 48 initial items cover a full 6-column viewport in one local SQLite query.
+            config = PagingConfig(pageSize = 36, prefetchDistance = 18, initialLoadSize = 48, enablePlaceholders = false),
             pagingSourceFactory = {
                 localQuery.pagingSource(
                     accountId = key.accountId,

@@ -4,14 +4,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,35 +19,26 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Bookmarks
-import androidx.compose.material.icons.rounded.Cancel
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Folder
 import com.par9uet.jm.ui.components.MotionButton as Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import com.par9uet.jm.ui.components.MotionIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import com.par9uet.jm.ui.components.MotionOutlinedButton as OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import com.par9uet.jm.ui.components.MotionTextButton as TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -58,19 +46,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.par9uet.jm.data.models.TagFilterLogic
 import com.par9uet.jm.favorites.model.FavoritesIntent
 import com.par9uet.jm.favorites.model.FavoritesModal
+import com.par9uet.jm.favorites.model.FavoritesFilterPreview
 import com.par9uet.jm.favorites.presentation.FavoritesViewModel
 import com.par9uet.jm.core.network.NetworkErrorKind
-import com.par9uet.jm.ui.components.SearchFieldSurface
-import com.par9uet.jm.ui.components.searchFieldColors
 import com.par9uet.jm.ui.glass.GlassConfirmDialog
 import com.par9uet.jm.ui.glass.GlassModal
-import com.par9uet.jm.ui.glass.tabletModalWidth
 import com.par9uet.jm.ui.navigation.LocalMainNavController
 
 /** 移动收藏夹列表：固定行高，最多可见 5 行，其余靠滑动。 */
@@ -80,7 +65,7 @@ private const val MoveFolderVisibleRows = 5
 /** 管理收藏夹列表：限制可见高度，夹多时滚动，避免居中弹窗被撑满全屏。 */
 private val ManageFolderVisibleHeight = 360.dp
 
-/** Renders every Favorites modal from the single ViewModel-owned modal state. */@OptIn(ExperimentalMaterial3Api::class)
+/** Renders every Favorites modal from the single ViewModel-owned modal state. */
 @Composable
 internal fun FavoritesModalHost(favoritesViewModel: FavoritesViewModel) {
     val navController = LocalMainNavController.current
@@ -113,12 +98,19 @@ internal fun FavoritesModalHost(favoritesViewModel: FavoritesViewModel) {
     }
 
     if (favoritesState.modal is FavoritesModal.Filter) {
-        FilterDialog(
+        val preview = key(draftSelectedTags, draftSelectedAuthors, draftTagLogic) {
+            val value by remember {
+                favoritesViewModel.observeFilterPreview(draftSelectedTags, draftSelectedAuthors, draftTagLogic)
+            }.collectAsState(initial = FavoritesFilterPreview(isLoading = true))
+            value
+        }
+        FavoritesFilterSheet(
             tagCountMap = tagCountMap,
             authorCountMap = authorCountMap,
-            draftSelectedTags = draftSelectedTags,
-            draftSelectedAuthors = draftSelectedAuthors,
-            draftTagLogic = draftTagLogic,
+            selectedTags = draftSelectedTags,
+            selectedAuthors = draftSelectedAuthors,
+            tagLogic = draftTagLogic,
+            preview = preview,
             onTagToggle = { tag ->
                 draftSelectedTags = if (tag in draftSelectedTags) {
                     draftSelectedTags - tag
@@ -443,223 +435,6 @@ internal fun FavoritesModalHost(favoritesViewModel: FavoritesViewModel) {
             },
             onDismiss = { favoritesViewModel.onIntent(FavoritesIntent.ModalDismissed) },
         )
-    }
-}
-
-/**
- * 筛选收藏。刻意用 Material ModalBottomSheet，不用 GlassModal：这里密排大量
- * 标签/作者 chip 与计数，高斯模糊背景会让文字对比度下降，影响扫读与勾选。
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun FilterDialog(
-    tagCountMap: Map<String, Int>,
-    authorCountMap: Map<String, Int>,
-    draftSelectedTags: Set<String>,
-    draftSelectedAuthors: Set<String>,
-    draftTagLogic: TagFilterLogic,
-    onTagToggle: (String) -> Unit,
-    onAuthorToggle: (String) -> Unit,
-    onTagLogicChange: (TagFilterLogic) -> Unit,
-    onConfirm: () -> Unit,
-    onClear: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var selectedTabIndex by remember { mutableIntStateOf(0) }
-    var filterQuery by remember { mutableStateOf("") }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val query = filterQuery.trim()
-    val filteredTagCountMap = remember(tagCountMap, query) {
-        if (query.isBlank()) tagCountMap
-        else tagCountMap.filterKeys { it.contains(query, ignoreCase = true) }
-    }
-    val filteredAuthorCountMap = remember(authorCountMap, query) {
-        if (query.isBlank()) authorCountMap
-        else authorCountMap.filterKeys { it.contains(query, ignoreCase = true) }
-    }
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        sheetMaxWidth = tabletModalWidth() ?: BottomSheetDefaults.SheetMaxWidth,
-        // 必须低于 SearchFieldSurface 的 surfaceContainerHigh，否则搜索框与 sheet 同色糊成一片，
-        // 看起来像「没有搜索框」；首页搜索页的底是 background，卡片因此才显形。
-        containerColor = MaterialTheme.colorScheme.surface,
-        sheetGesturesEnabled = false,
-        dragHandle = null,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight()
-                .padding(horizontal = 20.dp)
-                .navigationBarsPadding(),
-        ) {
-            Text(
-                text = "筛选收藏",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 8.dp),
-            )
-            Text(
-                text = "标签筛选逻辑",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 6.dp),
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                TagFilterLogic.entries.forEach { logic ->
-                    FilterChip(
-                        selected = draftTagLogic == logic,
-                        onClick = { onTagLogicChange(logic) },
-                        label = {
-                            Text(
-                                text = logic.label,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        },
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-            // 与首页搜索页共用同一个外壳，圆角 / 边框 / 图标位置；SearchFieldSurface 统一提供。
-            SearchFieldSurface(
-                field = {
-                    TextField(
-                        modifier = Modifier.weight(1f),
-                        value = filterQuery,
-                        onValueChange = { filterQuery = it },
-                        singleLine = true,
-                        placeholder = {
-                            Text(
-                                text = if (selectedTabIndex == 0) "搜索标签" else "搜索作者",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        },
-                        colors = searchFieldColors(),
-                    )
-                },
-                trailing = {
-                    if (filterQuery.isNotEmpty()) {
-                        IconButton(onClick = { filterQuery = "" }) {
-                            Icon(Icons.Rounded.Cancel, contentDescription = "清除")
-                        }
-                    }
-                },
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            PrimaryTabRow(
-                selectedTabIndex = selectedTabIndex,
-                // 不要给 Tab 栏整条填色：只保留文字/指示线，与 sheet 底融在一起。
-                containerColor = Color.Transparent,
-            ) {
-                Tab(
-                    selected = selectedTabIndex == 0,
-                    onClick = {
-                        selectedTabIndex = 0
-                        filterQuery = ""
-                    },
-                    text = { Text("标签 (${tagCountMap.size})") },
-                )
-                Tab(
-                    selected = selectedTabIndex == 1,
-                    onClick = {
-                        selectedTabIndex = 1
-                        filterQuery = ""
-                    },
-                    text = { Text("作者 (${authorCountMap.size})") },
-                )
-            }
-            // Tab 栏与下方 chip 之间留出间距；之前是紧贴着的，视觉上糊成一片。
-            Spacer(modifier = Modifier.height(12.dp))
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-            ) {
-                when (selectedTabIndex) {
-                    0 -> {
-                        if (filteredTagCountMap.isEmpty()) {
-                            Text(
-                                if (tagCountMap.isEmpty()) {
-                                    "当前已加载收藏中没有可筛选的标签"
-                                } else {
-                                    "没有匹配「$query」的标签"
-                                },
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(vertical = 24.dp),
-                            )
-                        } else {
-                            FlowRow(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .verticalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                filteredTagCountMap.forEach { (tag, count) ->
-                                    FilterChip(
-                                        selected = tag in draftSelectedTags,
-                                        onClick = { onTagToggle(tag) },
-                                        label = { Text("$tag  $count") },
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    1 -> {
-                        if (filteredAuthorCountMap.isEmpty()) {
-                            Text(
-                                if (authorCountMap.isEmpty()) {
-                                    "当前已加载收藏中没有可筛选的作者"
-                                } else {
-                                    "没有匹配「$query」的作者"
-                                },
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(vertical = 24.dp),
-                            )
-                        } else {
-                            FlowRow(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .verticalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                filteredAuthorCountMap.forEach { (author, count) ->
-                                    FilterChip(
-                                        selected = author in draftSelectedAuthors,
-                                        onClick = { onAuthorToggle(author) },
-                                        label = { Text("$author  $count") },
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            // 底部动作区不铺底色：只保留清空 / 确定按钮本身。
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                OutlinedButton(
-                    onClick = onClear,
-                    modifier = Modifier.weight(1f),
-                ) { Text("清空") }
-                Button(
-                    onClick = onConfirm,
-                    modifier = Modifier.weight(1f),
-                ) { Text("确定") }
-            }
-        }
     }
 }
 

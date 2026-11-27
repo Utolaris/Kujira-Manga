@@ -62,6 +62,20 @@ internal class FavoriteLocalQueryStore(
             counts.associate { it.value to it.count }
         }
 
+    override fun observeMatchCount(
+        accountId: Int,
+        blockedTagList: List<String>,
+        searchText: String,
+        selectedTags: Set<String>,
+        selectedAuthors: Set<String>,
+        folderId: Int,
+        tagLogic: TagFilterLogic,
+    ): Flow<Int> = comicDao.observeMatchCount(
+        buildFavoriteCountQuery(
+            accountId, blockedTagList, searchText, selectedTags, selectedAuthors, folderId, tagLogic,
+        )
+    )
+
     override suspend fun getCachedFolders(accountId: Int): Map<String, String> =
         folderDao.getAll(accountId).associate { it.folderId.toString() to it.name }
             .toMutableMap()

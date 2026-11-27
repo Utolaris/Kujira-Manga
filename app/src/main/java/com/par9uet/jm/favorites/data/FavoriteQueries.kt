@@ -11,6 +11,34 @@ internal fun buildFavoritePagingQuery(
     selectedAuthors: Set<String>,
     folderId: Int,
     tagLogic: TagFilterLogic,
+): SupportSQLiteQuery = buildFavoriteQuery(
+    accountId, blockedTagList, searchText, selectedTags, selectedAuthors, folderId, tagLogic,
+    countOnly = false,
+)
+
+/** Count the same deduplicated, scoped result as paging, without loading comic rows. */
+internal fun buildFavoriteCountQuery(
+    accountId: Int,
+    blockedTagList: List<String>,
+    searchText: String,
+    selectedTags: Set<String>,
+    selectedAuthors: Set<String>,
+    folderId: Int,
+    tagLogic: TagFilterLogic,
+): SupportSQLiteQuery = buildFavoriteQuery(
+    accountId, blockedTagList, searchText, selectedTags, selectedAuthors, folderId, tagLogic,
+    countOnly = true,
+)
+
+private fun buildFavoriteQuery(
+    accountId: Int,
+    blockedTagList: List<String>,
+    searchText: String,
+    selectedTags: Set<String>,
+    selectedAuthors: Set<String>,
+    folderId: Int,
+    tagLogic: TagFilterLogic,
+    countOnly: Boolean,
 ): SupportSQLiteQuery {
     val clauses = mutableListOf("c.accountId = ?")
     val args = mutableListOf<Any>(accountId)
@@ -57,12 +85,13 @@ internal fun buildFavoritePagingQuery(
     // GROUP BY 消除 JOIN 膨胀：同一 album 理论上 folderId 唯一，但同步/迁移异常时
     // 不该把重复行交给 LazyGrid 的 key（会直接 IllegalArgumentException）。
     val orderBy = "MIN(m.remoteOrder) ASC"
-    return SimpleSQLiteQuery(
-        "SELECT c.* FROM favorite_comics c " +
+    val selection = if (countOnly) "c.albumId" else "c.*"
+    val sql = "SELECT $selection FROM favorite_comics c " +
             "JOIN favorite_folder_memberships m ON m.accountId = c.accountId AND m.albumId = c.albumId " +
             "WHERE ${clauses.joinToString(" AND ")} " +
-            "GROUP BY c.accountId, c.albumId " +
-            "ORDER BY $orderBy, c.albumId ASC",
+            "GROUP BY c.accountId, c.albumId"
+    return SimpleSQLiteQuery(
+        if (countOnly) "SELECT COUNT(*) FROM ($sql)" else "$sql ORDER BY $orderBy, c.albumId ASC",
         args.toTypedArray(),
     )
 }

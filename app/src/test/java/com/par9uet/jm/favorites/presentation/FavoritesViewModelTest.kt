@@ -13,6 +13,7 @@ import com.par9uet.jm.favorites.data.FavoriteRemoteMutation
 import com.par9uet.jm.favorites.model.FavoriteLocalQuery
 import com.par9uet.jm.favorites.model.FavoriteSyncUiState
 import com.par9uet.jm.favorites.model.FavoritesFilter
+import com.par9uet.jm.favorites.model.FavoritesFilterPreview
 import com.par9uet.jm.favorites.model.FavoritesIntent
 import com.par9uet.jm.favorites.model.FavoritesModal
 import com.par9uet.jm.favorites.model.FavoritesSelectionState
@@ -56,6 +57,86 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class FavoritesViewModelTest {
+    @Test fun `clear removes tags authors and matching mode without dismissing the filter sheet`() = runTest(scheduler) {
+        val environment = environment()
+        runCurrent()
+        environment.viewModel.onIntent(FavoritesIntent.SearchChanged("雨"))
+        environment.viewModel.onIntent(FavoritesIntent.FilterApplied(setOf("科幻"), setOf("林间"), TagFilterLogic.NOT))
+        environment.viewModel.onIntent(FavoritesIntent.FilterOpened)
+        environment.viewModel.onIntent(FavoritesIntent.FilterCleared)
+        val state = environment.viewModel.uiState.value
+        assertEquals(FavoritesModal.Filter, state.modal)
+        assertEquals(FavoritesFilter(searchText = "雨"), state.filter)
+    }
+
+    @Test fun `draft count follows local changes and scope without applying the draft`() = runTest(scheduler) {
+        val query = RecordingCountQuery()
+        val settings = FakeLocalSettings()
+        val environment = environment(query = query, settings = settings)
+        runCurrent()
+        environment.viewModel.onIntent(FavoritesIntent.FolderSelected(3))
+        environment.viewModel.onIntent(FavoritesIntent.SearchChanged("雨"))
+        val values = mutableListOf<FavoritesFilterPreview>()
+        backgroundScope.launch {
+            environment.viewModel.observeFilterPreview(setOf("科幻", "日常"), setOf("作者"), TagFilterLogic.OR)
+                .collect { values += it }
+        }
+        runCurrent()
+        assertEquals(CountRequest(42, emptyList(), "雨", setOf("科幻", "日常"), setOf("作者"), 3, TagFilterLogic.OR), query.requests.last())
+        assertEquals(FavoritesFilterPreview(count = 12), values.last())
+        assertTrue(environment.viewModel.uiState.value.filter.selectedTags.isEmpty())
+        assertTrue(environment.viewModel.uiState.value.filter.selectedAuthors.isEmpty())
+
+        query.counts.getValue(42 to 3).value = 0
+        runCurrent()
+        assertEquals(FavoritesFilterPreview(count = 0), values.last())
+        settings.blockedTags.value = listOf("屏蔽")
+        runCurrent()
+        assertEquals(listOf("屏蔽"), query.requests.last().blockedTags)
+
+        environment.viewModel.onIntent(FavoritesIntent.FolderSelected(9))
+        runCurrent()
+        query.counts.getValue(42 to 9).value = 5
+        runCurrent()
+        query.counts.getValue(42 to 3).value = 99
+        runCurrent()
+        assertEquals(9, query.requests.last().folderId)
+        assertEquals("", query.requests.last().searchText)
+        assertEquals(FavoritesFilterPreview(count = 5), values.last())
+
+        environment.session.switchAccount(43)
+        runCurrent()
+        assertEquals(43, query.requests.last().accountId)
+        environment.session.signOut()
+        runCurrent()
+        assertEquals(FavoritesFilterPreview(), values.last())
+    }
+
+    @Test fun `failed draft count is unavailable and later scope changes can recover`() = runTest(scheduler) {
+        val query = object : FavoriteLocalQuery by EmptyFavoriteLocalQuery() {
+            override fun observeMatchCount(
+                accountId: Int, blockedTagList: List<String>, searchText: String,
+                selectedTags: Set<String>, selectedAuthors: Set<String>, folderId: Int, tagLogic: TagFilterLogic,
+            ): Flow<Int> = kotlinx.coroutines.flow.flow {
+                if (folderId == 0) error("Database unavailable")
+                emit(4)
+            }
+        }
+        val environment = environment(query = query)
+        runCurrent()
+        val values = mutableListOf<FavoritesFilterPreview>()
+        backgroundScope.launch {
+            environment.viewModel.observeFilterPreview(setOf("科幻"), emptySet(), TagFilterLogic.NOT)
+                .collect { values += it }
+        }
+        runCurrent()
+        assertEquals(FavoritesFilterPreview(isLoading = true), values.first())
+        assertEquals(FavoritesFilterPreview(), values.last())
+        environment.viewModel.onIntent(FavoritesIntent.FolderSelected(2))
+        runCurrent()
+        assertEquals(FavoritesFilterPreview(count = 4), values.last())
+    }
+
     @Test fun `thousands of stored favorites expose only loaded cards and prefetch the next local page`() = runTest(scheduler) {
         val loads = mutableListOf<PagingSource.LoadParams<Int>>()
         val query = object : FavoriteLocalQuery by EmptyFavoriteLocalQuery() {
@@ -83,13 +164,13 @@ class FavoritesViewModelTest {
         }
         backgroundScope.launch { environment.viewModel.collectComicPager.collectLatest { presenter.collectFrom(it) } }
         runCurrent()
-        assertEquals("Unloaded Room rows must not become heightless grid slots", 20, presenter.size)
+        assertEquals("Unloaded Room rows must not become heightless grid slots", 48, presenter.size)
         assertEquals(0, presenter.snapshot().placeholdersAfter)
         assertTrue(loads.all { !it.placeholdersEnabled })
-        assertEquals(20, presenter[19]?.id)
+        assertEquals(48, presenter[47]?.id)
         runCurrent()
-        assertEquals(40, presenter.size)
-        assertEquals((1..40).toList(), presenter.snapshot().items.map { it.id })
+        assertEquals(84, presenter.size)
+        assertEquals((1..84).toList(), presenter.snapshot().items.map { it.id })
         assertEquals(2, loads.size)
     }
 
@@ -671,6 +752,7 @@ class FavoritesViewModelTest {
         exit: com.par9uet.jm.core.model.LocalModeExitScheduler = com.par9uet.jm.core.model.LocalModeExitScheduler { true },
         operationGate: com.par9uet.jm.favorites.usecase.LocalFavoriteOperationGate = com.par9uet.jm.favorites.usecase.LocalFavoriteOperationGate(),
         query: FavoriteLocalQuery = EmptyFavoriteLocalQuery(),
+        settings: ContentPreferences = FakeLocalSettings(),
     ): TestEnvironment {
         val events = mutableListOf<String>()
         val session = TestFavoriteSession(accountId = 42)
@@ -680,7 +762,7 @@ class FavoritesViewModelTest {
         val memory = ListPositionMemory()
         val viewModel = FavoritesViewModel(
             favoriteSession = session,
-            contentPreferences = FakeLocalSettings(),
+            contentPreferences = settings,
             localQuery = query,
             toastManager = ToastManager(),
             uncollectFavorites = UncollectFavorites(remote, local, session, com.par9uet.jm.favorites.alwaysNetworkLocalModeStatus(), com.par9uet.jm.favorites.inMemoryLocalChanges(), com.par9uet.jm.favorites.usecase.LocalFavoriteOperationGate()),
@@ -700,8 +782,7 @@ class FavoritesViewModelTest {
     }
 
     private class FakeLocalSettings : ContentPreferences {
-        override val blockedTags: StateFlow<List<String>> =
-            MutableStateFlow(emptyList<String>()).asStateFlow()
+        override val blockedTags = MutableStateFlow(emptyList<String>())
         override val blockedCommentKeywords = kotlinx.coroutines.flow.MutableStateFlow(emptyList<String>())
     }
 
@@ -789,6 +870,11 @@ class FavoritesViewModelTest {
     }
 
     private class EmptyFavoriteLocalQuery : FavoriteLocalQuery {
+        override fun observeMatchCount(
+            accountId: Int, blockedTagList: List<String>, searchText: String,
+            selectedTags: Set<String>, selectedAuthors: Set<String>, folderId: Int, tagLogic: TagFilterLogic,
+        ): Flow<Int> = flowOf(0)
+
         override fun pagingSource(
             accountId: Int,
             blockedTagList: List<String>,
@@ -816,6 +902,23 @@ class FavoritesViewModelTest {
         override suspend fun getComics(accountId: Int, albumIds: Collection<Int>): List<Comic> =
             emptyList()
 
+    }
+
+    private data class CountRequest(
+        val accountId: Int, val blockedTags: List<String>, val searchText: String,
+        val tags: Set<String>, val authors: Set<String>, val folderId: Int, val logic: TagFilterLogic,
+    )
+
+    private class RecordingCountQuery : FavoriteLocalQuery by EmptyFavoriteLocalQuery() {
+        val requests = mutableListOf<CountRequest>()
+        val counts = mutableMapOf<Pair<Int, Int>, MutableStateFlow<Int>>()
+        override fun observeMatchCount(
+            accountId: Int, blockedTagList: List<String>, searchText: String,
+            selectedTags: Set<String>, selectedAuthors: Set<String>, folderId: Int, tagLogic: TagFilterLogic,
+        ): Flow<Int> {
+            requests += CountRequest(accountId, blockedTagList, searchText, selectedTags, selectedAuthors, folderId, tagLogic)
+            return counts.getOrPut(accountId to folderId) { MutableStateFlow(12) }
+        }
     }
 
     private class EmptyPagingSource : PagingSource<Int, Comic>() {

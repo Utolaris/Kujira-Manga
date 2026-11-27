@@ -12,6 +12,7 @@ import com.par9uet.jm.favorites.data.FavoriteRemoteItem
 import com.par9uet.jm.favorites.data.FavoriteStore
 import java.io.File
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -99,17 +100,58 @@ class FavoriteStoreRealDatabaseTest {
         selectedTags: Set<String> = emptySet(),
         folderId: Int = 0,
         tagLogic: TagFilterLogic = TagFilterLogic.AND,
+        selectedAuthors: Set<String> = emptySet(),
     ): List<Comic> {
         val result = store.pagingSource(
             accountId = accountId,
             blockedTagList = blockedTagList,
             searchText = searchText,
             selectedTags = selectedTags,
-            selectedAuthors = emptySet(),
+            selectedAuthors = selectedAuthors,
             folderId = folderId,
             tagLogic = tagLogic,
         ).load(PagingSource.LoadParams.Refresh(null, 50, false))
         return (result as PagingSource.LoadResult.Page).data
+    }
+
+    @Test
+    fun draftMatchCountAgreesWithPagingAcrossTagLogicAuthorsAndScope() = runBlocking {
+        seed(
+            accountA,
+            listOf(
+                FavoriteRemoteItem(101, "雨中科幻日常", tags = listOf("科幻", "日常"), authors = listOf("林间")),
+                FavoriteRemoteItem(102, "雨中科幻", tags = listOf("科幻"), authors = listOf("山田")),
+                FavoriteRemoteItem(103, "雨中日常", tags = listOf("日常"), authors = listOf("林间")),
+                FavoriteRemoteItem(104, "风中日常", tags = listOf("日常", "屏蔽"), authors = listOf("林间")),
+            ),
+            folders = mapOf(0 to "全部", 2 to "精选"),
+            memberships = mapOf(2 to listOf(101, 102, 104)),
+        )
+        seed(accountB, listOf(FavoriteRemoteItem(105, "雨中科幻", tags = listOf("科幻"))))
+        suspend fun checkCount(
+            expected: Int,
+            tags: Set<String> = emptySet(),
+            authors: Set<String> = emptySet(),
+            logic: TagFilterLogic = TagFilterLogic.AND,
+            folderId: Int = 0,
+            search: String = "",
+            blocked: List<String> = emptyList(),
+        ) {
+            val count = store.observeMatchCount(accountA, blocked, search, tags, authors, folderId, logic).first()
+            assertEquals(expected, count)
+            assertEquals(
+                load(accountA, search, blocked, tags, folderId, logic, authors).size,
+                count,
+            )
+        }
+        checkCount(4)
+        checkCount(1, tags = setOf("科幻", "日常"))
+        checkCount(4, tags = setOf("科幻", "日常"), logic = TagFilterLogic.OR)
+        checkCount(2, tags = setOf("科幻"), logic = TagFilterLogic.NOT)
+        checkCount(1, tags = setOf("科幻", "日常"), authors = setOf("林间"),
+            logic = TagFilterLogic.OR, folderId = 2, search = "雨", blocked = listOf("屏蔽"))
+        checkCount(0, tags = setOf("科幻"), authors = setOf("不存在的作者"))
+        checkCount(2, authors = setOf("林间", "山田"), folderId = 2, blocked = listOf("屏蔽"))
     }
 
     @Test

@@ -8,6 +8,15 @@ import org.junit.Test
 
 class FavoritesModalFlowTest {
     @Test
+    fun `clearing filters keeps the filter sheet open`() {
+        assertEquals(
+            FavoritesModal.Filter,
+            reduceFavoritesModal(FavoritesModal.Filter, FavoritesIntent.FilterCleared),
+        )
+        assertEquals(null, reduceFavoritesModal(null, FavoritesIntent.FilterCleared))
+    }
+
+    @Test
     fun `folder management can reach every folder action modal and return to management`() {
         var modal: FavoritesModal? = reduceFavoritesModal(
             current = null,

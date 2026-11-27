@@ -13,7 +13,7 @@ internal fun reduceFavoritesModal(
     hasSelection: Boolean = false,
 ): FavoritesModal? = when (intent) {
     FavoritesIntent.FilterOpened -> FavoritesModal.Filter
-    FavoritesIntent.FilterCleared,
+    FavoritesIntent.FilterCleared -> current
     FavoritesIntent.FilterDismissed,
     FavoritesIntent.ModalDismissed,
     FavoritesIntent.FolderManagementDismissed -> null

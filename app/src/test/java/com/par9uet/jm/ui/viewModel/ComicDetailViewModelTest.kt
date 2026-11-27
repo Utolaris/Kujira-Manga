@@ -459,6 +459,11 @@ class ComicDetailViewModelTest {
     }
 
     private class FakeFavoriteLocalData : FavoriteLocalQuery, FavoriteLocalMutation {
+        override fun observeMatchCount(
+            accountId: Int, blockedTagList: List<String>, searchText: String,
+            selectedTags: Set<String>, selectedAuthors: Set<String>, folderId: Int, tagLogic: TagFilterLogic,
+        ): Flow<Int> = flowOf(0)
+
         private val folderFlows = mutableMapOf<Int, MutableStateFlow<Map<String, String>>>()
         val observedAccounts = mutableListOf<Int>()
         val added = mutableListOf<Triple<Int, Int, Int>>()

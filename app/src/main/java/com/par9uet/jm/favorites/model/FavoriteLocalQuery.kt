@@ -31,6 +31,16 @@ interface FavoriteLocalQuery {
 
     fun observeAuthorCounts(accountId: Int, folderId: Int): Flow<Map<String, Int>>
 
+    fun observeMatchCount(
+        accountId: Int,
+        blockedTagList: List<String>,
+        searchText: String,
+        selectedTags: Set<String>,
+        selectedAuthors: Set<String>,
+        folderId: Int,
+        tagLogic: TagFilterLogic,
+    ): Flow<Int>
+
     suspend fun getCachedFolders(accountId: Int): Map<String, String>
 
     suspend fun getComics(accountId: Int, albumIds: Collection<Int>): List<Comic>
