@@ -99,4 +99,31 @@ class CacheFilesTest {
             assertEquals(16L, files.scan().single { it.area == CacheArea.DOWNLOAD }.sizeBytes)
         } finally { root.deleteRecursively() }
     }
+
+    @Test fun `separate filesDir download directory is counted and protected from non-download cleanup`() = runTest {
+        val cacheRoot = Files.createTempDirectory("cache-root").toFile()
+        val filesDownload = Files.createTempDirectory("files-download").toFile()
+        try {
+            File(cacheRoot, "common").mkdirs()
+            File(cacheRoot, "common/cover").writeBytes(ByteArray(30))
+            File(filesDownload, "JM100/chapter-1").mkdirs()
+            File(filesDownload, "JM100/chapter-1/1.webp").writeBytes(ByteArray(120))
+
+            val files = DeviceCacheFiles(cacheRoot, downloadDirectory = filesDownload)
+            val sizes = files.scan().associate { it.area to it.sizeBytes }
+            assertEquals(30L, sizes[CacheArea.COMMON])
+            assertEquals(120L, sizes[CacheArea.DOWNLOAD])
+            assertEquals(150L, sizes[CacheArea.ALL])
+
+            files.remove(setOf(CacheArea.COMMON))
+            assertFalse(File(cacheRoot, "common").exists())
+            assertTrue(File(filesDownload, "JM100/chapter-1/1.webp").exists())
+
+            files.remove(setOf(CacheArea.DOWNLOAD))
+            assertFalse(filesDownload.exists())
+        } finally {
+            cacheRoot.deleteRecursively()
+            filesDownload.deleteRecursively()
+        }
+    }
 }

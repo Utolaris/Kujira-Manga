@@ -25,11 +25,22 @@ fun interface ExternalDownloadSize {
 class DeviceCacheFiles(
     private val cacheDirectory: File,
     private val externalDownloadSize: ExternalDownloadSize = ExternalDownloadSize { 0L },
+    private val downloadDirectory: File? = null,
 ) : CacheFiles {
+    private fun separateDownloadDir(): File? {
+        val dir = downloadDirectory ?: return null
+        val legacyDownload = File(cacheDirectory, CacheArea.DOWNLOAD.id)
+        return if (runCatching { dir.canonicalFile == legacyDownload.canonicalFile }.getOrDefault(false)) {
+            null
+        } else {
+            dir
+        }
+    }
+
     override suspend fun scan(): List<CacheSize> = withContext(backgroundIoDispatcher()) {
-        // 外部目录不在 cacheDir 内，所以必须同时并入 DOWNLOAD 与 ALL：只加 DOWNLOAD 会让
-        // `ALL - 命名合计` 的残差算出负数被吞掉，饼图里其他分区的占比跟着失真。
-        val external = externalDownloadSize.sizeBytes()
+        // 外部目录（SAF）与 filesDir/download 都不在 cacheDir 内，必须同时并入 DOWNLOAD 与 ALL：
+        // 只加 DOWNLOAD 会让 `ALL - 命名合计` 的残差算出负数被吞掉，饼图里其他分区的占比跟着失真。
+        val external = externalDownloadSize.sizeBytes() + (separateDownloadDir()?.let(::size) ?: 0L)
         val namedAreas = CacheArea.entries.filterNot { it == CacheArea.ALL }.associateBy { it.id }
         val localSizes = mutableMapOf<CacheArea, Long>()
         var allLocalBytes = 0L
@@ -52,9 +63,17 @@ class DeviceCacheFiles(
     }
 
     override suspend fun remove(areas: Set<CacheArea>) = withContext(backgroundIoDispatcher()) {
-        val targets = if (CacheArea.ALL in areas) {
-            cacheDirectory.listFiles().orEmpty().filterNot { it.name == "reader_pages" }
-        } else areas.filterNot { it == CacheArea.READER }.map(::directory)
+        val targets = buildList {
+            if (CacheArea.ALL in areas) {
+                addAll(cacheDirectory.listFiles().orEmpty().filterNot { it.name == "reader_pages" })
+                separateDownloadDir()?.let(::add)
+            } else {
+                addAll(areas.filterNot { it == CacheArea.READER }.map(::directory))
+                if (CacheArea.DOWNLOAD in areas) {
+                    separateDownloadDir()?.let(::add)
+                }
+            }
+        }
         targets.forEach { file ->
             check(!file.exists() || file.deleteRecursively()) { "部分缓存文件清理失败，请重试" }
         }

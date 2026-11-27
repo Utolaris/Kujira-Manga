@@ -212,9 +212,11 @@ val appModule = module {
         com.par9uet.jm.cache.DocumentTreeDownloadSize(get<android.content.Context>())
     }
     single<com.par9uet.jm.cache.atom.CacheFiles> {
+        val context = get<android.content.Context>()
         com.par9uet.jm.cache.atom.DeviceCacheFiles(
-            get<android.content.Context>().cacheDir,
-            get<com.par9uet.jm.cache.atom.ExternalDownloadSize>(),
+            cacheDirectory = context.cacheDir,
+            externalDownloadSize = get<com.par9uet.jm.cache.atom.ExternalDownloadSize>(),
+            downloadDirectory = com.par9uet.jm.cache.getDownloadDir(context),
         )
     }
     single {
@@ -229,7 +231,15 @@ val appModule = module {
             clearDownloads = { deleteFiles -> get<com.par9uet.jm.download.coordinator.DownloadManager>().clearDownloadedCache(deleteFiles) },
         )
     }
-    single { com.par9uet.jm.startup.StartupCacheCleanup(get(), get(), get()) }
+    single {
+        val context = get<android.content.Context>()
+        com.par9uet.jm.startup.StartupCacheCleanup(
+            files = get(),
+            settings = get(),
+            cleanup = get(),
+            migrateLegacyDownloads = { com.par9uet.jm.cache.migrateLegacyDownloadDirIfNeeded(context) },
+        )
+    }
     viewModel { com.par9uet.jm.ui.viewModel.CacheCleanupViewModel(get(), get(), get(), get()) }
     single { DownloadToastAggregator(get()) }
     single { com.par9uet.jm.startup.StartupHomeLoad() }

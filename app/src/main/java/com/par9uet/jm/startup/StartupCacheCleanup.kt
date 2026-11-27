@@ -12,11 +12,15 @@ class StartupCacheCleanup(
     private val files: CacheFiles,
     private val settings: LocalSettingManager,
     private val cleanup: CacheCleanupOperations,
+    private val migrateLegacyDownloads: () -> Unit = {},
 ) {
     private val checked = AtomicBoolean(false)
 
     suspend fun checkOnce() {
         if (!checked.compareAndSet(false, true)) return
+        // Move any pre-migration downloads out of cacheDir before OS cleaners or quota scans run.
+        // PostStartupCoordinator already runs checkOnce() on BackgroundWork().context.
+        migrateLegacyDownloads()
         if (settings.securityLoadBlocked.value || CacheBudget.isUnlimited(settings.cacheBudgetMb.value)) return
         val scanned = files.scan()
         // A scan can take time (especially SAF). Honor the latest persisted settings before deleting.
